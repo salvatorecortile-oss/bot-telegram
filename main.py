@@ -2117,13 +2117,13 @@ async def monitor_trailing_sl_closures(stop_event):
                             source_chat_id=SOURCE_CHAT,
                             source_message_id=original_message_id,
                             symbol="XAUUSD",
-                            direction=row[3],
+                            direction=direction,
                             open_price=open_price_for_report,
                             close_price=actual_close_price,
                             profit_pips=_calculate_closed_trade_pips(
                                 open_price_for_report,
                                 actual_close_price,
-                                row[3],
+                                direction,
                             ),
                             close_status="TAKE_PROFIT_HIT",
                             close_datetime=close_datetime.isoformat(),
@@ -2182,14 +2182,14 @@ async def monitor_trailing_sl_closures(stop_event):
                         close_pips_for_report = _calculate_closed_trade_pips(
                             open_price_for_report,
                             actual_close_price,
-                            row[3],
+                            direction,
                         )
                         record_daily_trade_result(
                             position_ticket=position_ticket,
                             source_chat_id=SOURCE_CHAT,
                             source_message_id=original_message_id,
                             symbol="XAUUSD",
-                            direction=row[3],
+                            direction=direction,
                             open_price=open_price_for_report,
                             close_price=actual_close_price,
                             profit_pips=close_pips_for_report,
@@ -2248,14 +2248,14 @@ async def monitor_trailing_sl_closures(stop_event):
                     close_pips_for_report = _calculate_closed_trade_pips(
                         open_price_for_report,
                         actual_close_price,
-                        row[3],
+                        direction,
                     )
                     record_daily_trade_result(
                         position_ticket=position_ticket,
                         source_chat_id=SOURCE_CHAT,
                         source_message_id=original_message_id,
                         symbol="XAUUSD",
-                        direction=row[3],
+                        direction=direction,
                         open_price=open_price_for_report,
                         close_price=actual_close_price,
                         profit_pips=close_pips_for_report,
