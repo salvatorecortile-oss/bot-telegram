@@ -410,7 +410,7 @@ async def new_message_handler(event):
         # --------------------------------------------------------
         # RIEPILOGO DI CÉDRIC:
         # non deve nemmeno essere passato al parser operativo.
-        # Il nostro riepilogo viene generato autonomamente alle 21:59 IT.
+        # Il nostro riepilogo viene generato autonomamente alle 23:00 IT.
         # --------------------------------------------------------
         raw_text = message.text or ""
         if re.search(r"riepilogo\s+giornaliero", raw_text, re.IGNORECASE):
@@ -552,12 +552,12 @@ async def new_message_handler(event):
 
         # --------------------------------------------------------
         # RIEPILOGO CÉDRIC: IGNORATO COMPLETAMENTE.
-        # Il nostro report viene generato autonomamente alle 21:59 IT
+        # Il nostro report viene generato autonomamente alle 23:00 IT
         # usando le chiusure reali registrate da MT5.
         # --------------------------------------------------------
         if action == "DAILY_RECAP":
             logger.info(
-                "⏭️ RIEPILOGO CÉDRIC IGNORATO | #%s | Report YARDFX alle 21:59 IT.",
+                "⏭️ RIEPILOGO CÉDRIC IGNORATO | #%s | Report YARDFX alle 23:00 IT.",
                 source_message_id,
             )
             cleanup_old_timestamp_counters()
@@ -1514,15 +1514,20 @@ async def morning_message_scheduler(stop_event):
 
 async def daily_close_scheduler(stop_event):
     """
-    Alle 21:59 Europe/Rome: chiude a mercato tutte le posizioni del bot,
-    poi invia il report giornaliero YARDFX (vedi send_daily_report_now).
-    Il report parte sempre dopo il tentativo di chiusura, cosi' include
-    anche l'eventuale chiusura forzata appena fatta.
+    Chiude a mercato tutte le posizioni del bot alle 22:59 Europe/Rome.
+
+    NOTA ORARI: il mercato reale (conto live) chiude alle 23:00; chiudiamo
+    un minuto prima (22:59) per essere sicuri di trovarlo ancora aperto,
+    invece di rischiare un rifiuto "Market closed" a ridosso della
+    chiusura. Il conto demo attuale a volte ha una pausa a orari leggermente
+    diversi: da qui il retry qui sotto. Il report giornaliero (vedi
+    daily_report_scheduler) parte separatamente alle 23:00, quando il
+    mercato reale e' gia' chiuso.
     """
     while not stop_event.is_set():
         try:
             now_local = datetime.now(ITALY_TZ)
-            target = now_local.replace(hour=21, minute=59, second=0, microsecond=0)
+            target = now_local.replace(hour=22, minute=59, second=0, microsecond=0)
             if target <= now_local:
                 target += timedelta(days=1)
 
@@ -1542,13 +1547,13 @@ async def daily_close_scheduler(stop_event):
                 ]
 
                 if not bot_positions:
-                    logger.info("🌙 21:59 | Nessun trade XAUUSD del bot aperto. Nessun messaggio di chiusura inviato.")
+                    logger.info("🌙 22:59 | Nessun trade XAUUSD del bot aperto. Nessun messaggio di chiusura inviato.")
                 else:
                     closed_prices = []
                     for position in bot_positions:
                         ticket = int(position.ticket)
                         # Alcuni broker (spesso i demo) hanno una breve pausa di
-                        # mercato proprio intorno alle 21:59 per il rollover
+                        # mercato proprio intorno a quest'orario per il rollover
                         # giornaliero (retcode 10018 "Market closed"): è
                         # transitorio, quindi ritentiamo alcune volte prima di
                         # rinunciare, invece di lasciare la posizione aperta
@@ -1560,7 +1565,7 @@ async def daily_close_scheduler(stop_event):
                                 result = await asyncio.to_thread(close_position, ticket)
                                 closed_prices.append(float(result.price))
                                 logger.info(
-                                    "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 21:59 IT",
+                                    "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 22:59 IT",
                                     ticket, float(result.price),
                                 )
                                 break
@@ -1574,7 +1579,7 @@ async def daily_close_scheduler(stop_event):
                                     )
                                     await asyncio.sleep(retry_delay_seconds)
                                     continue
-                                logger.exception("❌ ERRORE CHIUSURA 21:59 | Position=%s", ticket)
+                                logger.exception("❌ ERRORE CHIUSURA 22:59 | Position=%s", ticket)
                                 break
 
                     # Un solo avviso giornaliero, solo se esistevano posizioni da chiudere.
@@ -1583,10 +1588,6 @@ async def daily_close_scheduler(stop_event):
                             await send_forced_daily_close_message(closed_prices[-1])
                         except Exception:
                             logger.exception("❌ ERRORE MESSAGGIO CHIUSURA GIORNALIERA")
-
-            # Report giornaliero: sempre alla fine, chiusura riuscita o no,
-            # cosi' arriva comunque ogni giorno feriale alle 21:59.
-            await send_daily_report_now()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1594,14 +1595,46 @@ async def daily_close_scheduler(stop_event):
             await asyncio.sleep(5)
 
 
+async def daily_report_scheduler(stop_event):
+    """
+    Invia il report giornaliero YARDFX alle 23:00 Europe/Rome, lun-ven.
+
+    Orario separato da daily_close_scheduler (22:59) apposta: sul conto
+    reale il mercato chiude alle 23:00, quindi il report parte un minuto
+    DOPO la chiusura forzata, quando il mercato è già chiuso e la
+    posizione (se c'era) risulta già chiusa.
+    """
+    while not stop_event.is_set():
+        try:
+            now_local = datetime.now(ITALY_TZ)
+            target = now_local.replace(hour=23, minute=0, second=0, microsecond=0)
+            if target <= now_local:
+                target += timedelta(days=1)
+            while target.weekday() >= 5:
+                target += timedelta(days=1)
+
+            wait_seconds = max(0.0, (target - now_local).total_seconds())
+            logger.info("📊 DAILY REPORT SCHEDULER | Prossimo report: %s IT", target.strftime("%d/%m/%Y %H:%M:%S"))
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=wait_seconds)
+                continue
+            except asyncio.TimeoutError:
+                pass
+
+            await send_daily_report_now()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ ERRORE DAILY REPORT SCHEDULER")
+            await asyncio.sleep(5)
+
+
 async def send_daily_report_now():
     """
     Costruisce e invia il report giornaliero YARDFX, se non gia' inviato
-    oggi. Chiamata da daily_close_scheduler subito dopo il tentativo di
-    chiusura forzata delle 21:59, cosi' il report include anche l'eventuale
-    chiusura appena fatta. Salta il weekend, il report considera
-    esclusivamente le chiusure reali registrate da MT5: il report di
-    Cédric viene sempre ignorato.
+    oggi. Chiamata da daily_report_scheduler alle 23:00. Salta il weekend,
+    il report considera esclusivamente le chiusure reali registrate da
+    MT5: il report di Cédric viene sempre ignorato.
     """
     now_local = datetime.now(ITALY_TZ)
     if now_local.weekday() >= 5:
@@ -2286,7 +2319,7 @@ async def monitor_trailing_sl_closures(stop_event):
                         continue
 
                     # Chiusura esterna/non riconducibile a TP3 o SL.
-                    # Può essere una chiusura forzata delle 21:59.
+                    # Può essere una chiusura forzata delle 22:59.
                     open_price_for_report = float(row[11] or row[5] or 0.0)
                     close_pips_for_report = _calculate_closed_trade_pips(
                         open_price_for_report,
@@ -2608,9 +2641,9 @@ async def main():
     logger.info("SEGNALE COMPLETO    : APERTURA IMMEDIATA")
     logger.info("TP1 +50             : INFORMATIVO | PROTEZIONE DA MT5")
     logger.info("TP2 / TP3 PIPS      : INFORMATIVI")
-    logger.info("CHIUSURA GIORN.     : TUTTE LE POSIZIONI ENTRO LE 21:59 IT")
+    logger.info("CHIUSURA GIORN.     : TUTTE LE POSIZIONI ENTRO LE 22:59 IT")
     logger.info("BUONGIORNO          : LUN-VEN | ORE 06:00 IT")
-    logger.info("RIEPILOGO GIORN.    : LUN-VEN | ORE 21:59 IT")
+    logger.info("RIEPILOGO GIORN.    : LUN-VEN | ORE 23:00 IT")
     logger.info("RIEPILOGO SETT.     : SABATO | ORE 10:00 IT")
     logger.info("SL HIT              : RILEVATO DA MT5")
     logger.info("TAKE PROFIT         : TP3 LOGICO | NON CHIUDE | ATTIVA TRAILING 15%")
@@ -2783,8 +2816,13 @@ async def main():
     logger.info("🛡️ Monitor trailing SL avviato.")
 
     # ========================================================
-    # DAILY REPORT YARDFX (inviato da daily_close_scheduler alle 21:59)
+    # DAILY REPORT YARDFX
     # ========================================================
+
+    daily_report_stop_event = asyncio.Event()
+    daily_report_task = asyncio.create_task(
+        daily_report_scheduler(daily_report_stop_event)
+    )
 
     weekly_report_stop_event = asyncio.Event()
     weekly_report_task = asyncio.create_task(
@@ -2801,9 +2839,10 @@ async def main():
         daily_close_scheduler(daily_close_stop_event)
     )
 
+    logger.info("📊 YARDFX Daily Report avviato | Lun-Ven 23:00 Europe/Rome.")
     logger.info("📊 YARDFX Weekly Report avviato | Sabato 10:00 Europe/Rome.")
     logger.info("☀️ YARDFX Buongiorno avviato | Lun-Ven 06:00 Europe/Rome.")
-    logger.info("🌙 YARDFX Daily Close + Report avviato | Lun-Ven, chiusura e report alle 21:59 Europe/Rome.")
+    logger.info("🌙 YARDFX Daily Close avviato | Tutte le posizioni chiuse alle 22:59 Europe/Rome.")
 
     # ========================================================
     # TELEGRAM LOOP
@@ -2816,6 +2855,13 @@ async def main():
         monitor_task.cancel()
         try:
             await monitor_task
+        except asyncio.CancelledError:
+            pass
+
+        daily_report_stop_event.set()
+        daily_report_task.cancel()
+        try:
+            await daily_report_task
         except asyncio.CancelledError:
             pass
 
