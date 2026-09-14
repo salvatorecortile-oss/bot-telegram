@@ -1,0 +1,4 @@
+BOT 2 verificato e corretto.
+
+File runtime esclusi volutamente dal pacchetto: .env, sessioni Telegram, database, logs, backup e __pycache__.
+Mantieni i tuoi file runtime originali nella cartella del bot.

@@ -1,0 +1,4 @@
+Telethon>=1.44,<2
+MetaTrader5
+python-dotenv>=1.0
+qrcode[pil]>=7.4
