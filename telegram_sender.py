@@ -13,9 +13,8 @@ from config import DESTINATION_CHAT
 GOOD_MORNING_MESSAGE_TEMPLATE = (
     "☀️ **BUONGIORNO RAGAZZI** ☀️\n\n"
     "Una nuova giornata di trading sta per iniziare.\n"
-    "Vi lascio qui sotto le info:\n\n"
     "📩 **Hai bisogno di assistenza?**\n"
-    "Scrivimi in privato `@`yard\\_fx\n\n"
+    "Scrivimi in privato @yard_fx\n"
     "Restate pronti e soprattutto disciplinati. 📊\n"
     "Ci sentiamo tra poco con le operazioni della giornata.\n"
     "**- YardFX**"
@@ -35,15 +34,11 @@ OPEN_TRADE_MESSAGE_TEMPLATE = (
 )
 
 BE_APPLIED_MESSAGE_TEMPLATE = (
-    "🟢 <b>PROTEZIONE +10 PIPS ATTIVATA</b>\n"
+    "🟢 <b>BE ATTIVATO A +10 PIPS</b>\n"
     "📍 Prezzo attuale: <b>{current_price:.2f}</b>\n"
     "🛡️ STOP LOSS: <b>{sl:.2f}</b>"
 )
 
-PIPS_UPDATE_MESSAGE_TEMPLATE = (
-    "📈 <b>+{pips} PIPS</b>\n"
-    "📍 Prezzo attuale: <b>{current_price:.2f}</b>"
-)
 
 LIVE_SL_MOVE_MESSAGE_TEMPLATE = (
     "🛡️ <b>STOP LOSS AGGIORNATO</b>\n"
@@ -122,7 +117,6 @@ DAILY_RECAP_MESSAGE_TEMPLATE = DAILY_REPORT_MESSAGE_TEMPLATE
 
 # Compatibilità con vecchi riferimenti del bot.
 PROFIT_MESSAGE = BE_APPLIED_MESSAGE_TEMPLATE
-PIPS_MESSAGE_TEMPLATE = PIPS_UPDATE_MESSAGE_TEMPLATE
 PIPS_SL_MESSAGE_TEMPLATE = LIVE_SL_MOVE_MESSAGE_TEMPLATE
 
 
@@ -143,16 +137,6 @@ def format_open_trade_message(signal):
     )
 
 
-def format_pips_message(pips, current_price=None):
-    pips_text = _format_pips_value(pips)
-    if current_price is None:
-        return PIPS_UPDATE_MESSAGE_TEMPLATE.split("\n")[0].format(pips=pips_text)
-    return PIPS_UPDATE_MESSAGE_TEMPLATE.format(
-        pips=pips_text,
-        current_price=float(current_price),
-    )
-
-
 def format_signal_for_destination(source_message, signal=None):
     """Crea il messaggio brandizzato da pubblicare nella destination."""
     if signal is None:
@@ -164,10 +148,8 @@ def format_signal_for_destination(source_message, signal=None):
         return format_open_trade_message(signal)
 
     if action in {"PIPS_UPDATE", "PIPS_INFO"}:
-        return format_pips_message(
-            signal["pips"],
-            signal.get("current_price"),
-        )
+        # I messaggi pips non vengono più copiati nella destination.
+        return None
 
     if action == "DAILY_RECAP":
         # Il riepilogo di Cédric NON viene più pubblicato.

@@ -521,10 +521,31 @@ async def new_message_handler(event):
             return
 
         # --------------------------------------------------------
+        # AGGIORNAMENTO PIPS (+50, +100 ecc mandati dal provider) -> IGNORATO
+        # --------------------------------------------------------
+        # Non viene copiato nel canale destinazione: il trailing/protezione
+        # e' calcolato esclusivamente dal monitor MT5, questi messaggi sono
+        # solo rumore informativo del provider.
+        if action == "PIPS_UPDATE":
+            update_status(
+                SOURCE_CHAT,
+                source_message_id,
+                "PIPS_INFO_IGNORED",
+                trade_datetime=datetime.now(timezone.utc).isoformat(),
+            )
+            logger.info(
+                "⏭️ PIPS INFORMATIVO IGNORATO #%s | +%.2f",
+                source_message_id,
+                float(signal["pips"]),
+            )
+            cleanup_old_timestamp_counters()
+            return
+
+        # --------------------------------------------------------
         # Per gli aggiornamenti informativi leggiamo il prezzo live
         # di MT5 prima di pubblicarli.
         # --------------------------------------------------------
-        if action in {"PIPS_UPDATE", "SL_HIT", "MODIFY_SL"}:
+        if action in {"SL_HIT", "MODIFY_SL"}:
             signal["current_price"] = get_live_xau_price(
                 signal.get("direction")
             )
@@ -717,25 +738,6 @@ async def new_message_handler(event):
         # --------------------------------------------------------
         # EVENTI INFORMATIVI
         # --------------------------------------------------------
-        if action == "PIPS_UPDATE":
-            # Nessun movimento SL basato sul messaggio Telegram.
-            # Il trailing viene calcolato esclusivamente dal monitor MT5.
-            update_status(
-                SOURCE_CHAT,
-                source_message_id,
-                "PIPS_INFO_COPIED",
-                trade_datetime=datetime.now(timezone.utc).isoformat(),
-            )
-            logger.info(
-                "📈 PIPS INFORMATIVO #%s | +%.2f | Prezzo MT5=%.2f | "
-                "Nessuna modifica SL da Telegram.",
-                source_message_id,
-                float(signal["pips"]),
-                float(signal.get("current_price") or 0.0),
-            )
-            cleanup_old_timestamp_counters()
-            return
-
         if action == "SL_HIT":
             await process_sl_hit(signal, source_message_id)
             cleanup_old_timestamp_counters()
