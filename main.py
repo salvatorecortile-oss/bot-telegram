@@ -541,6 +541,19 @@ async def new_message_handler(event):
             return
 
         # --------------------------------------------------------
+        # MESSAGGIO DI CORREZIONE (SL/TP1 senza TP3) -> UPDATE_PARAMS
+        # --------------------------------------------------------
+        # NON viene copiato come messaggio nuovo nella destination: deve
+        # solo modificare la copia del segnale originale già inviata (stessa
+        # regola già usata per gli edit, vedi process_update_params). Per
+        # questo il controllo sta PRIMA della copia qui sotto, come
+        # INFO_ONLY/DAILY_RECAP.
+        if action == "UPDATE_PARAMS":
+            await process_update_params(signal, source_message_id)
+            cleanup_old_timestamp_counters()
+            return
+
+        # --------------------------------------------------------
         # COPIA FORMATTA NELLA DESTINATION
         # --------------------------------------------------------
         destination_start = time.monotonic()
@@ -644,16 +657,6 @@ async def new_message_handler(event):
                 signal["direction"],
                 signal["entry"],
             )
-            cleanup_old_timestamp_counters()
-            return
-
-        # --------------------------------------------------------
-        # MESSAGGIO DI CORREZIONE (SL/TP1 senza TP3) -> UPDATE_PARAMS
-        # --------------------------------------------------------
-        # Non apre un nuovo trade: aggiorna solo la posizione già aperta
-        # nella stessa direzione (stessa logica usata per gli edit).
-        if action == "UPDATE_PARAMS":
-            await process_update_params(signal, source_message_id)
             cleanup_old_timestamp_counters()
             return
 
