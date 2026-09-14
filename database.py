@@ -120,6 +120,38 @@ def init_database():
         columns = {row[1] for row in conn.execute("PRAGMA table_info(trade_protections)").fetchall()}
         if "tp3_reached" not in columns:
             conn.execute("ALTER TABLE trade_protections ADD COLUMN tp3_reached INTEGER NOT NULL DEFAULT 0")
+        if "sl_status_message_id" not in columns:
+            conn.execute("ALTER TABLE trade_protections ADD COLUMN sl_status_message_id INTEGER")
+
+
+def set_sl_status_message_id(position_ticket, source_chat_id, source_message_id, message_id):
+    """
+    Salva l'id del messaggio "card" di stato SL live per una posizione: il
+    monitor lo modifica (edit) a ogni step successivo di protezione invece
+    di inviare un nuovo messaggio ogni volta.
+    """
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO trade_protections (
+                position_ticket, source_chat_id, source_message_id,
+                sl_status_message_id
+            ) VALUES (?, ?, ?, ?)
+            ON CONFLICT(position_ticket) DO UPDATE SET
+                sl_status_message_id = excluded.sl_status_message_id
+            """,
+            (int(position_ticket), int(source_chat_id), int(source_message_id), int(message_id)),
+        )
+
+
+def get_sl_status_message_id(position_ticket):
+    """Restituisce l'id del messaggio "card" di stato SL live, o None se non esiste ancora."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT sl_status_message_id FROM trade_protections WHERE position_ticket = ?",
+            (int(position_ticket),),
+        ).fetchone()
+    return int(row[0]) if row and row[0] is not None else None
 
 
 def get_latest_open_trade(source_chat_id, symbol="XAUUSD", direction=None):

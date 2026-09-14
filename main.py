@@ -60,6 +60,8 @@ from database import (
     has_trailing_sl_update,
     has_breakeven_applied,
     mark_automatic_breakeven,
+    set_sl_status_message_id,
+    get_sl_status_message_id,
     mark_tp3_reached,
     has_tp3_reached,
     record_daily_trade_result,
@@ -2058,26 +2060,74 @@ async def monitor_trailing_sl_closures(stop_event):
 
                         try:
                             if trigger_pips == 50.0:
+                                # Primo step (BE): nuovo messaggio, diventa la
+                                # "card" di stato che tutti gli step successivi
+                                # andranno solo a modificare.
                                 sent = await send_be_applied_message(
                                     current_price=current_price,
                                     sl=new_sl,
                                 )
-                            else:
-                                sent = await send_live_sl_move_message(
-                                    pips=trigger_pips,
-                                    current_price=current_price,
-                                    sl=new_sl,
+                                await asyncio.to_thread(
+                                    set_sl_status_message_id,
+                                    position_ticket,
+                                    trade_source_chat,
+                                    original_message_id,
+                                    sent.id,
                                 )
-                            logger.info(
-                                "📤 LIVE SL UPDATE INVIATO | Destination #%s | "
-                                "Prezzo=%.2f | SL=%.2f",
-                                sent.id,
-                                current_price,
-                                new_sl,
-                            )
+                                logger.info(
+                                    "📤 LIVE SL UPDATE INVIATO | Destination #%s | "
+                                    "Prezzo=%.2f | SL=%.2f",
+                                    sent.id,
+                                    current_price,
+                                    new_sl,
+                                )
+                            else:
+                                # Step successivi: nessun nuovo messaggio,
+                                # modifichiamo la card già inviata al BE.
+                                status_message_id = await asyncio.to_thread(
+                                    get_sl_status_message_id, position_ticket
+                                )
+                                if status_message_id is None:
+                                    # Nessuna card precedente (caso raro: es.
+                                    # posizione adottata dal recovery senza
+                                    # essere mai passata dal BE). Creiamo la
+                                    # card ora, così gli step futuri la trovano.
+                                    sent = await send_live_sl_move_message(
+                                        pips=trigger_pips,
+                                        current_price=current_price,
+                                        sl=new_sl,
+                                    )
+                                    await asyncio.to_thread(
+                                        set_sl_status_message_id,
+                                        position_ticket,
+                                        trade_source_chat,
+                                        original_message_id,
+                                        sent.id,
+                                    )
+                                    logger.info(
+                                        "📤 LIVE SL UPDATE INVIATO (nuova card) | Destination #%s | "
+                                        "Prezzo=%.2f | SL=%.2f",
+                                        sent.id,
+                                        current_price,
+                                        new_sl,
+                                    )
+                                else:
+                                    await edit_destination_message_pips(
+                                        status_message_id,
+                                        pips=trigger_pips,
+                                        sl=new_sl,
+                                        current_price=current_price,
+                                    )
+                                    logger.info(
+                                        "✏️ LIVE SL UPDATE MODIFICATO | Destination #%s | "
+                                        "Prezzo=%.2f | SL=%.2f",
+                                        status_message_id,
+                                        current_price,
+                                        new_sl,
+                                    )
                         except Exception:
                             logger.exception(
-                                "❌ ERRORE INVIO LIVE SL UPDATE | Position=%s",
+                                "❌ ERRORE INVIO/MODIFICA LIVE SL UPDATE | Position=%s",
                                 position_ticket,
                             )
 
