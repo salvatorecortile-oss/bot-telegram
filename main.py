@@ -900,7 +900,7 @@ async def process_trade(
         logger.info("TP1 INFO    : %.2f", float(signal.get("tp1") or 0.0))
         logger.info("TP2 INFO    : %.2f", float(signal.get("tp2") or 0.0))
         logger.info("TP3         : %.2f | OPERATIVO", signal["tp3"])
-        logger.info("BE          : ATTIVATO AL TP1 +50 PIPS")
+        logger.info("BE          : ATTIVATO A +100 PIPS")
         logger.info("LIVE TRAIL  : GESTITO DA PREZZO MT5")
         logger.info("----------------------------------------")
         print_separator()
@@ -1285,8 +1285,6 @@ def _calculate_position_profit_pips(position):
 # Ogni voce e' (trigger_pips, protected_pips): al raggiungimento di
 # trigger_pips di profitto, lo SL viene spostato a protected_pips.
 LIVE_PROTECTION_LEVELS = (
-    (50.0, 10.0),
-    (80.0, 20.0),
     (100.0, 40.0),
     (125.0, 55.0),
     (150.0, 70.0),
@@ -1313,9 +1311,7 @@ def _live_protection_step(profit_pips):
     """
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
-        +50   -> SL +10
-        +80   -> SL +20
-        +100  -> SL +40
+        +100  -> SL +40 (BE)
         +125  -> SL +55
         +150  -> SL +70
         +175  -> SL +99
@@ -1526,11 +1522,11 @@ async def morning_message_scheduler(stop_event):
 
 
 async def daily_close_scheduler(stop_event):
-    """Chiude a mercato tutte le posizioni del bot alle 22:00 Europe/Rome."""
+    """Chiude a mercato tutte le posizioni del bot alle 21:59 Europe/Rome."""
     while not stop_event.is_set():
         try:
             now_local = datetime.now(ITALY_TZ)
-            target = now_local.replace(hour=22, minute=0, second=0, microsecond=0)
+            target = now_local.replace(hour=21, minute=59, second=0, microsecond=0)
             if target <= now_local:
                 target += timedelta(days=1)
 
@@ -1551,14 +1547,14 @@ async def daily_close_scheduler(stop_event):
 
                 # Se non ci sono trade aperti, NON viene pubblicato alcun messaggio.
                 if not bot_positions:
-                    logger.info("🌙 22:00 | Nessun trade XAUUSD del bot aperto. Nessun messaggio inviato.")
+                    logger.info("🌙 21:59 | Nessun trade XAUUSD del bot aperto. Nessun messaggio inviato.")
                     continue
 
                 closed_prices = []
                 for position in bot_positions:
                     ticket = int(position.ticket)
                     # Alcuni broker (spesso i demo) hanno una breve pausa di
-                    # mercato proprio intorno alle 22:00 per il rollover
+                    # mercato proprio intorno alle 21:59 per il rollover
                     # giornaliero (retcode 10018 "Market closed"): è
                     # transitorio, quindi ritentiamo alcune volte prima di
                     # rinunciare, invece di lasciare la posizione aperta
@@ -1570,7 +1566,7 @@ async def daily_close_scheduler(stop_event):
                             result = await asyncio.to_thread(close_position, ticket)
                             closed_prices.append(float(result.price))
                             logger.info(
-                                "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 22:00 IT",
+                                "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 21:59 IT",
                                 ticket, float(result.price),
                             )
                             break
@@ -1584,7 +1580,7 @@ async def daily_close_scheduler(stop_event):
                                 )
                                 await asyncio.sleep(retry_delay_seconds)
                                 continue
-                            logger.exception("❌ ERRORE CHIUSURA 22:00 | Position=%s", ticket)
+                            logger.exception("❌ ERRORE CHIUSURA 21:59 | Position=%s", ticket)
                             break
 
                 # Un solo avviso giornaliero, solo se esistevano posizioni da chiudere.
@@ -2052,7 +2048,7 @@ async def monitor_trailing_sl_closures(stop_event):
 
                         new_sl = float(result["sl"])
 
-                        if trigger_pips == 50.0:
+                        if trigger_pips == 100.0:
                             await asyncio.to_thread(
                                 mark_automatic_breakeven,
                                 position_ticket,
@@ -2081,11 +2077,11 @@ async def monitor_trailing_sl_closures(stop_event):
                         )
 
                         try:
-                            if trigger_pips == 50.0:
+                            if trigger_pips == 100.0:
                                 # BE: messaggio fisso, non viene mai più
                                 # modificato. La card di stato che gli step
                                 # successivi aggiorneranno parte dal PROSSIMO
-                                # step (+80), non da questo.
+                                # step (+125), non da questo.
                                 sent = await send_be_applied_message(
                                     current_price=current_price,
                                     sl=new_sl,
@@ -2321,7 +2317,7 @@ async def monitor_trailing_sl_closures(stop_event):
                         continue
 
                     # Chiusura esterna/non riconducibile a TP3 o SL.
-                    # Può essere una chiusura forzata delle 22:00.
+                    # Può essere una chiusura forzata delle 21:59.
                     open_price_for_report = float(row[11] or row[5] or 0.0)
                     close_pips_for_report = _calculate_closed_trade_pips(
                         open_price_for_report,
@@ -2623,9 +2619,7 @@ async def main():
     logger.info("TRAILING TELEGRAM   : DISABILITATO")
     logger.info("")
     logger.info("🛡️ GESTIONE SL LIVE")
-    logger.info("+50 PIPS            : SL +10 DA MT5")
-    logger.info("+80 PIPS            : SL +20")
-    logger.info("+100 PIPS           : SL +40")
+    logger.info("+100 PIPS           : SL +40 (BE) DA MT5")
     logger.info("+125 PIPS           : SL +55")
     logger.info("+150 PIPS           : SL +70")
     logger.info("+175 PIPS           : SL +99")
@@ -2645,7 +2639,7 @@ async def main():
     logger.info("SEGNALE COMPLETO    : APERTURA IMMEDIATA")
     logger.info("TP1 +50             : INFORMATIVO | PROTEZIONE DA MT5")
     logger.info("TP2 / TP3 PIPS      : INFORMATIVI")
-    logger.info("CHIUSURA GIORN.     : TUTTE LE POSIZIONI ENTRO LE 22:00 IT")
+    logger.info("CHIUSURA GIORN.     : TUTTE LE POSIZIONI ENTRO LE 21:59 IT")
     logger.info("BUONGIORNO          : LUN-VEN | ORE 06:00 IT")
     logger.info("RIEPILOGO GIORN.    : LUN-VEN | ORE 23:00 IT")
     logger.info("RIEPILOGO SETT.     : SABATO | ORE 10:00 IT")
@@ -2846,7 +2840,7 @@ async def main():
     logger.info("📊 YARDFX Daily Report avviato | Lun-Ven 23:00 Europe/Rome.")
     logger.info("📊 YARDFX Weekly Report avviato | Sabato 10:00 Europe/Rome.")
     logger.info("☀️ YARDFX Buongiorno avviato | Lun-Ven 06:00 Europe/Rome.")
-    logger.info("🌙 YARDFX Daily Close avviato | Tutte le posizioni chiuse alle 22:00 Europe/Rome.")
+    logger.info("🌙 YARDFX Daily Close avviato | Tutte le posizioni chiuse alle 21:59 Europe/Rome.")
 
     # ========================================================
     # TELEGRAM LOOP

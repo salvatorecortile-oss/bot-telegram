@@ -23,7 +23,7 @@ GOOD_MORNING_MESSAGE_TEMPLATE = (
 FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE = (
     "🌙 <b>CHIUSURA GIORNALIERA</b>\n"
     "📍 Prezzo di chiusura: <b>{price:.2f}</b>\n"
-    "🕙 Tutte le operazioni vengono chiuse entro le 22:00."
+    "🕙 Tutte le operazioni vengono chiuse entro le 21:59."
 )
 
 OPEN_TRADE_MESSAGE_TEMPLATE = (
