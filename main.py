@@ -554,6 +554,113 @@ async def new_message_handler(event):
             return
 
         # --------------------------------------------------------
+        # ANNUNCIO "SEGNALE IN ARRIVO" -> IGNORATO COMPLETAMENTE
+        # --------------------------------------------------------
+        # NON viene copiato nel canale destinazione e NON apre alcuna
+        # posizione. Solo il segnale completo (SL + TP3), gestito sotto
+        # come azione OPEN, viene copiato nel canale e apre su MT5.
+        if action == "OPEN_SIGNAL":
+            update_status(
+                SOURCE_CHAT,
+                source_message_id,
+                "SIGNAL_ANNOUNCED",
+            )
+            logger.info(
+                "⏭️ SEGNALE IN ARRIVO IGNORATO | #%s | %s %s | Entry indicativa=%.2f",
+                source_message_id,
+                signal["symbol"],
+                signal["direction"],
+                signal["entry"],
+            )
+            cleanup_old_timestamp_counters()
+            return
+
+        # --------------------------------------------------------
+        # SEGNALE COMPLETO -> APERTURA IMMEDIATA
+        # --------------------------------------------------------
+        # La copia nel canale destinazione avviene SOLO dentro process_trade,
+        # DOPO l'apertura reale su MT5, mostrando come ENTRY il prezzo di
+        # esecuzione REALE (non quello dichiarato dal segnale). Se il trade
+        # non apre per qualunque motivo, nel canale non compare nulla, e non
+        # viene mai fatta alcuna modifica successiva al messaggio.
+        if action == "OPEN":
+            logger.info(
+                "🎯 SEGNALE ÉLITE | %s %s | Entry %.2f | SL=%.2f | "
+                "TP1 info=%.2f | TP2 info=%.2f | TAKE PROFIT=%.2f",
+                signal["symbol"],
+                signal["direction"],
+                signal["entry"],
+                signal["sl"],
+                float(signal.get("tp1") or 0.0),
+                float(signal.get("tp2") or 0.0),
+                signal["tp3"],
+            )
+
+            if not TRADING_ENABLED:
+                logger.warning("🚫 TRADE DISABILITATO DA CONFIG | #%s", source_message_id)
+                update_status(SOURCE_CHAT, source_message_id, "TRADE_DISABLED")
+                cleanup_old_timestamp_counters()
+                return
+
+            if not MT5_READY:
+                logger.warning("🚫 MT5 NON PRONTO | #%s", source_message_id)
+                update_status(SOURCE_CHAT, source_message_id, "MT5_NOT_READY")
+                cleanup_old_timestamp_counters()
+                return
+
+            signal_age = calculate_signal_age_seconds(telegram_datetime)
+            logger.info(
+                "⏱ SIGNAL AGE #%s: %.3fs | Limite=%ss",
+                source_message_id,
+                signal_age,
+                MAX_SIGNAL_AGE_SECONDS,
+            )
+
+            if signal_age > MAX_SIGNAL_AGE_SECONDS:
+                logger.warning(
+                    "🚫 SEGNALE TROPPO VECCHIO | #%s | Età %.3fs > %.3fs",
+                    source_message_id,
+                    signal_age,
+                    MAX_SIGNAL_AGE_SECONDS,
+                )
+                update_status(SOURCE_CHAT, source_message_id, "SIGNAL_TOO_OLD")
+                cleanup_old_timestamp_counters()
+                return
+
+            slot_available = await reserve_simultaneous_signal_slot(
+                telegram_datetime,
+                source_message_id,
+            )
+
+            if not slot_available:
+                update_status(SOURCE_CHAT, source_message_id, "SIMULTANEOUS_LIMIT")
+                cleanup_old_timestamp_counters()
+                return
+
+            update_status(SOURCE_CHAT, source_message_id, "OPENING_IMMEDIATE")
+
+            task = asyncio.create_task(
+                process_trade(
+                    signal=signal,
+                    message=message,
+                    received_datetime=received_datetime,
+                    received_monotonic=received_monotonic,
+                    telegram_datetime=telegram_datetime,
+                )
+            )
+
+            active_trade_tasks[source_message_id] = task
+
+            logger.info(
+                "🚀 Trade task #%s avviato | task attivi=%s",
+                source_message_id,
+                len(active_trade_tasks),
+            )
+
+            cleanup_old_timestamp_counters()
+            return
+
+        # --------------------------------------------------------
         # COPIA FORMATTA NELLA DESTINATION
         # --------------------------------------------------------
         destination_start = time.monotonic()
@@ -637,126 +744,16 @@ async def new_message_handler(event):
             cleanup_old_timestamp_counters()
             return
 
-        # --------------------------------------------------------
-        # ANNUNCIO "SEGNALE IN ARRIVO" -> SOLO INFORMATIVO
-        # --------------------------------------------------------
-        # Viene copiato nel canale destinazione (già fatto sopra) ma NON
-        # apre alcuna posizione: l'apertura reale avviene solo quando arriva
-        # il segnale completo (SL + TP3), gestito più sotto come azione OPEN.
-        if action == "OPEN_SIGNAL":
-            update_status(
-                SOURCE_CHAT,
-                source_message_id,
-                "SIGNAL_ANNOUNCED",
-            )
-            logger.info(
-                "📣 SEGNALE IN ARRIVO #%s | %s %s | Entry indicativa=%.2f | "
-                "Solo annuncio: nessuna apertura, in attesa del segnale completo.",
-                source_message_id,
-                signal["symbol"],
-                signal["direction"],
-                signal["entry"],
-            )
-            cleanup_old_timestamp_counters()
-            return
-
-        # --------------------------------------------------------
-        # DA QUI IN POI: SEGNALE COMPLETO -> APERTURA IMMEDIATA
-        # --------------------------------------------------------
-        logger.info(
-            "🎯 SEGNALE ÉLITE | %s %s | Entry %.2f | SL=%.2f | "
-            "TP1 info=%.2f | TP2 info=%.2f | TAKE PROFIT=%.2f",
-            signal["symbol"],
-            signal["direction"],
-            signal["entry"],
-            signal["sl"],
-            float(signal.get("tp1") or 0.0),
-            float(signal.get("tp2") or 0.0),
-            signal["tp3"],
-        )
-
-        if not TRADING_ENABLED:
-            logger.warning("🚫 TRADE DISABILITATO DA CONFIG | #%s", source_message_id)
-            update_status(SOURCE_CHAT, source_message_id, "TRADE_DISABLED")
-            return
-
-        if not MT5_READY:
-            logger.warning("🚫 MT5 NON PRONTO | #%s", source_message_id)
-            update_status(SOURCE_CHAT, source_message_id, "MT5_NOT_READY")
-            return
-
-        signal_age = calculate_signal_age_seconds(telegram_datetime)
-        logger.info(
-            "⏱ SIGNAL AGE #%s: %.3fs | Limite=%ss",
-            source_message_id,
-            signal_age,
-            MAX_SIGNAL_AGE_SECONDS,
-        )
-
-        if signal_age > MAX_SIGNAL_AGE_SECONDS:
-            logger.warning(
-                "🚫 SEGNALE TROPPO VECCHIO | #%s | Età %.3fs > %.3fs",
-                source_message_id,
-                signal_age,
-                MAX_SIGNAL_AGE_SECONDS,
-            )
-            update_status(
-                SOURCE_CHAT,
-                source_message_id,
-                "SIGNAL_TOO_OLD",
-            )
-            return
-
-        slot_available = await reserve_simultaneous_signal_slot(
-            telegram_datetime,
-            source_message_id,
-        )
-
-        if not slot_available:
-            update_status(
-                SOURCE_CHAT,
-                source_message_id,
-                "SIMULTANEOUS_LIMIT",
-            )
-            return
-
-        update_status(
-            SOURCE_CHAT,
-            source_message_id,
-            "OPENING_IMMEDIATE",
-        )
-
-        task = asyncio.create_task(
-            process_trade(
-                signal=signal,
-                received_datetime=received_datetime,
-                received_monotonic=received_monotonic,
-                telegram_datetime=telegram_datetime,
-                destination_datetime=destination_datetime,
-            )
-        )
-
-        active_trade_tasks[source_message_id] = task
-
-        logger.info(
-            "🚀 Trade task #%s avviato | task attivi=%s",
-            source_message_id,
-            len(active_trade_tasks),
-        )
-
-        cleanup_old_timestamp_counters()
-
-
 # ============================================================
 # PROCESSAMENTO APERTURA TRADE
 # ============================================================
 
 async def process_trade(
     signal,
+    message,
     received_datetime,
     received_monotonic,
     telegram_datetime,
-    destination_datetime,
 ):
 
     source_message_id = signal["message_id"]
@@ -806,6 +803,36 @@ async def process_trade(
 
         trade_processing_time = trade_end_monotonic - trade_start_monotonic
 
+        # --------------------------------------------------------
+        # COPIA NELLA DESTINATION *DOPO* L'APERTURA REALE SU MT5
+        # --------------------------------------------------------
+        # L'ENTRY mostrata è il prezzo di esecuzione REALE di MT5, non
+        # quello dichiarato dal segnale Cédric. Scritta una sola volta, in
+        # automatico: nessuna modifica successiva al messaggio.
+        destination_signal = dict(signal)
+        destination_signal["entry"] = result.price
+        try:
+            destination_message = await copy_message_to_destination(
+                message,
+                signal=destination_signal,
+            )
+            update_copy(
+                SOURCE_CHAT,
+                source_message_id,
+                destination_message.id,
+                datetime.now(timezone.utc).isoformat(),
+            )
+            logger.info(
+                "📤 Copiato in destination #%s | Entry reale MT5=%.2f",
+                destination_message.id,
+                result.price,
+            )
+        except Exception:
+            logger.exception(
+                "❌ ERRORE COPIA DESTINATION (post-apertura) #%s",
+                source_message_id,
+            )
+
         telegram_aware = (
             telegram_datetime
             if telegram_datetime.tzinfo is not None
@@ -818,19 +845,10 @@ async def process_trade(
             else received_datetime.replace(tzinfo=timezone.utc)
         )
 
-        destination_aware = (
-            destination_datetime
-            if destination_datetime.tzinfo is not None
-            else destination_datetime.replace(tzinfo=timezone.utc)
-        )
-
         trade_end_aware = trade_end_datetime
 
         source_to_trade = (trade_end_aware - telegram_aware).total_seconds()
         bot_to_trade = (trade_end_aware - received_aware).total_seconds()
-        destination_to_trade = (
-            trade_end_aware - destination_aware
-        ).total_seconds()
 
         print_separator()
         logger.info("📊 EXECUTION REPORT #%s", source_message_id)
@@ -845,10 +863,6 @@ async def process_trade(
             received_aware.astimezone(ITALY_TZ).strftime("%H:%M:%S.%f")[:-3],
         )
         logger.info(
-            "Destination    : %s IT",
-            destination_aware.astimezone(ITALY_TZ).strftime("%H:%M:%S.%f")[:-3],
-        )
-        logger.info(
             "Trade opened   : %s IT",
             trade_end_aware.astimezone(ITALY_TZ).strftime("%H:%M:%S.%f")[:-3],
         )
@@ -858,12 +872,7 @@ async def process_trade(
             "Source → Bot       : %.3fs",
             (received_aware - telegram_aware).total_seconds(),
         )
-        logger.info(
-            "Bot → Destination  : %.3fs",
-            (destination_aware - received_aware).total_seconds(),
-        )
         logger.info("Bot → Trade        : %.3fs", bot_to_trade)
-        logger.info("Destination → Trade: %.3fs", destination_to_trade)
         logger.info("Source → Trade     : %.3fs", source_to_trade)
         logger.info("Trade Engine       : %.3fs", trade_processing_time)
         logger.info("----------------------------------------")
@@ -874,7 +883,7 @@ async def process_trade(
         logger.info("Deal        : %s", result.deal)
         logger.info("Volume      : %s", result.volume)
         logger.info("Open Price  : %.2f", result.price)
-        logger.info("Signal Entry: %.2f", signal["entry"])
+        logger.info("Signal Entry (dichiarata da Cédric): %.2f", signal["entry"])
 
         price_difference = result.price - signal["entry"]
         price_difference_percent = (
