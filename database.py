@@ -224,6 +224,14 @@ def get_recovery_candidates(direction, symbol="XAUUSD", limit=20):
     """Trova record DB senza ticket che possono essere associati a una posizione MT5.
 
     Usato solo dal recovery. Non modifica il database.
+
+    NOTA: 'PARAMS_APPLIED' e' volutamente escluso. Non e' mai lo stato di una
+    posizione a se stante: e' lo stato del messaggio di CORREZIONE (SL/TP1)
+    applicato a una posizione gia' aperta su un'altra riga (vedi
+    process_update_params). Il suo mt5_ticket e' sempre NULL per design, non
+    perche' manchi un'associazione: includerlo qui fa si' che il recovery
+    scriva il ticket sbagliato su un record storico che non rappresenta
+    alcun trade aperto.
     """
     query = """
         SELECT
@@ -235,7 +243,7 @@ def get_recovery_candidates(direction, symbol="XAUUSD", limit=20):
         WHERE symbol = ?
           AND direction = ?
           AND mt5_ticket IS NULL
-          AND status IN ('OPENING_IMMEDIATE', 'OPENED', 'TP_SET', 'PARAMS_APPLIED', 'COPIED')
+          AND status IN ('OPENING_IMMEDIATE', 'OPENED', 'TP_SET', 'COPIED')
         ORDER BY source_message_id DESC
         LIMIT ?
     """
@@ -247,8 +255,18 @@ def associate_position_ticket(
     source_chat_id, source_message_id, position_ticket,
     *, mt5_deal=None, mt5_volume=None, mt5_price=None, trade_datetime=None
 ):
-    """Associa un ticket MT5 a una riga DB gia' esistente, senza crearne una nuova."""
-    fields = ["mt5_ticket = ?", "updated_at = CURRENT_TIMESTAMP"]
+    """Associa un ticket MT5 a una riga DB gia' esistente, senza crearne una nuova.
+
+    Porta anche lo status a 'OPENED' (se non gia' piu' avanzato): senza
+    questo, la successiva verifica del recovery (che richiede status
+    OPENED/TP_SET) fallirebbe sempre, facendo risultare "non associata"
+    una posizione che invece e' stata appena associata correttamente.
+    """
+    fields = [
+        "mt5_ticket = ?",
+        "updated_at = CURRENT_TIMESTAMP",
+        "status = CASE WHEN status IN ('OPENED', 'TP_SET') THEN status ELSE 'OPENED' END",
+    ]
     params = [int(position_ticket)]
     if mt5_deal is not None:
         fields.append("mt5_deal = ?"); params.append(int(mt5_deal))
