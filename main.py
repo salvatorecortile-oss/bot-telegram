@@ -2060,19 +2060,13 @@ async def monitor_trailing_sl_closures(stop_event):
 
                         try:
                             if trigger_pips == 50.0:
-                                # Primo step (BE): nuovo messaggio, diventa la
-                                # "card" di stato che tutti gli step successivi
-                                # andranno solo a modificare.
+                                # BE: messaggio fisso, non viene mai più
+                                # modificato. La card di stato che gli step
+                                # successivi aggiorneranno parte dal PROSSIMO
+                                # step (+80), non da questo.
                                 sent = await send_be_applied_message(
                                     current_price=current_price,
                                     sl=new_sl,
-                                )
-                                await asyncio.to_thread(
-                                    set_sl_status_message_id,
-                                    position_ticket,
-                                    trade_source_chat,
-                                    original_message_id,
-                                    sent.id,
                                 )
                                 logger.info(
                                     "📤 LIVE SL UPDATE INVIATO | Destination #%s | "
@@ -2082,16 +2076,12 @@ async def monitor_trailing_sl_closures(stop_event):
                                     new_sl,
                                 )
                             else:
-                                # Step successivi: nessun nuovo messaggio,
-                                # modifichiamo la card già inviata al BE.
+                                # Step successivi al BE: il primo crea la card
+                                # di stato, tutti quelli dopo la modificano.
                                 status_message_id = await asyncio.to_thread(
                                     get_sl_status_message_id, position_ticket
                                 )
                                 if status_message_id is None:
-                                    # Nessuna card precedente (caso raro: es.
-                                    # posizione adottata dal recovery senza
-                                    # essere mai passata dal BE). Creiamo la
-                                    # card ora, così gli step futuri la trovano.
                                     sent = await send_live_sl_move_message(
                                         pips=trigger_pips,
                                         current_price=current_price,
