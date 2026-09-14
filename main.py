@@ -1557,15 +1557,35 @@ async def daily_close_scheduler(stop_event):
                 closed_prices = []
                 for position in bot_positions:
                     ticket = int(position.ticket)
-                    try:
-                        result = await asyncio.to_thread(close_position, ticket)
-                        closed_prices.append(float(result.price))
-                        logger.info(
-                            "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 22:00 IT",
-                            ticket, float(result.price),
-                        )
-                    except Exception:
-                        logger.exception("❌ ERRORE CHIUSURA 22:00 | Position=%s", ticket)
+                    # Alcuni broker (spesso i demo) hanno una breve pausa di
+                    # mercato proprio intorno alle 22:00 per il rollover
+                    # giornaliero (retcode 10018 "Market closed"): è
+                    # transitorio, quindi ritentiamo alcune volte prima di
+                    # rinunciare, invece di lasciare la posizione aperta
+                    # tutta la notte per un rifiuto che dura pochi minuti.
+                    max_attempts = 6
+                    retry_delay_seconds = 20
+                    for attempt in range(1, max_attempts + 1):
+                        try:
+                            result = await asyncio.to_thread(close_position, ticket)
+                            closed_prices.append(float(result.price))
+                            logger.info(
+                                "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 22:00 IT",
+                                ticket, float(result.price),
+                            )
+                            break
+                        except Exception as e:
+                            market_closed = "10018" in str(e)
+                            if market_closed and attempt < max_attempts:
+                                logger.warning(
+                                    "⚠️ MERCATO CHIUSO (10018) | Position=%s | Tentativo %s/%s | "
+                                    "Riprovo tra %ss",
+                                    ticket, attempt, max_attempts, retry_delay_seconds,
+                                )
+                                await asyncio.sleep(retry_delay_seconds)
+                                continue
+                            logger.exception("❌ ERRORE CHIUSURA 22:00 | Position=%s", ticket)
+                            break
 
                 # Un solo avviso giornaliero, solo se esistevano posizioni da chiudere.
                 if closed_prices:
