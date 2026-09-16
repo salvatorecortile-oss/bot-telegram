@@ -34,22 +34,26 @@ OPEN_TRADE_MESSAGE_TEMPLATE = (
 )
 
 BE_APPLIED_MESSAGE_TEMPLATE = (
-    "🟢 <b>BE ATTIVATO A +10 PIPS</b>\n"
-    "📍 Prezzo attuale: <b>{current_price:.2f}</b>\n"
-    "🛡️ STOP LOSS: <b>{sl:.2f}</b>"
+    "🟢 <b>BE ATTIVATO</b>\n"
+    "📈 <b>+{pips} PIPS</b>\n"
 )
 
+PIPS_PROGRESS_MESSAGE_TEMPLATE = (
+    "📈 <b>+{pips} PIPS</b>\n"
+)
 
-LIVE_SL_MOVE_MESSAGE_TEMPLATE = (
-    "🛡️ <b>STOP LOSS AGGIORNATO</b>\n"
-    "📈 Profitto: <b>+{pips} PIPS</b>\n"
-    "📍 Prezzo attuale: <b>{current_price:.2f}</b>\n"
-    "🛑 Nuovo SL: <b>{sl:.2f}</b>"
+# Copia informativa quando Cédric scrive "STOP LOSS" in chat (nessuna
+# posizione chiusa per davvero a quel momento): resta com'era, con il
+# prezzo live. Da non confondere con SL_HIT_MESSAGE_TEMPLATE, usato per
+# la chiusura reale rilevata da MT5.
+SL_HIT_INFO_MESSAGE_TEMPLATE = (
+    "🛑 <b>STOP LOSS PRESO</b>\n"
+    "📍 Prezzo attuale/chiusura: <b>{price:.2f}</b>"
 )
 
 SL_HIT_MESSAGE_TEMPLATE = (
     "🛑 <b>STOP LOSS PRESO</b>\n"
-    "📍 Prezzo attuale/chiusura: <b>{price:.2f}</b>"
+    "📈 <b>{pips:+.0f} PIPS</b>"
 )
 
 BREAKEVEN_SL_HIT_MESSAGE_TEMPLATE = (
@@ -68,14 +72,13 @@ TRAILING_SL_HIT_MESSAGE_TEMPLATE = (
 TAKE_PROFIT_REACHED_MESSAGE_TEMPLATE = (
     "🟢 <b>TAKE PROFIT RAGGIUNTO!</b>\n"
     "✅ Chiudere l'operazione o se si vuole lasciare aperta seguite i prossimi messaggi.\n\n"
-    "<b>TRAILING AUTOMATICO ATTIVO</b>\n"
-    "Nuovo SL: <b>{sl:.3f}</b>\n"
-    "PIPS TOTALI: <b>+{pips}</b>"
+    "📈 <b>PIPS TOTALI: +{pips}</b>"
 )
 
 WEEKLY_REPORT_MESSAGE_TEMPLATE = (
     "📊 YARDFX ELITE\n"
     "📅 REPORT SETTIMANALE\n\n"
+    "📅 {date_range}\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
     "Operazioni: {operations}\n"
     "✅ {wins} Win\n"
@@ -88,6 +91,21 @@ WEEKLY_REPORT_MESSAGE_TEMPLATE = (
     "Ci sentiamo lunedì con nuove operazioni.\n\n"
     "Buon weekend!\n"
     "- YardFX"
+)
+
+MONTHLY_REPORT_TEMPLATE = (
+    "📊 <b>YARDFX REPORT</b>\n"
+    "📅 <b>RISULTATO MENSILE</b>\n\n"
+    "📅 {date_range}\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+    "Operazioni: {operations}\n"
+    "✅ {wins} Win\n"
+    "❌ {losses} Loss\n"
+    "📈 Win Rate: {win_rate:.1f}%\n"
+    "📊 TOT {pips:+.0f} PIPS\n\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+    "Grazie per averci seguito e supportato in questo mese.\n"
+    "<b>- YardFX</b>"
 )
 
 DAILY_REPORT_MESSAGE_TEMPLATE = (
@@ -117,7 +135,6 @@ DAILY_RECAP_MESSAGE_TEMPLATE = DAILY_REPORT_MESSAGE_TEMPLATE
 
 # Compatibilità con vecchi riferimenti del bot.
 PROFIT_MESSAGE = BE_APPLIED_MESSAGE_TEMPLATE
-PIPS_SL_MESSAGE_TEMPLATE = LIVE_SL_MOVE_MESSAGE_TEMPLATE
 
 
 
@@ -159,7 +176,7 @@ def format_signal_for_destination(source_message, signal=None):
         price = signal.get("current_price")
         if price is None:
             return "🛑 <b>STOP LOSS PRESO</b>"
-        return SL_HIT_MESSAGE_TEMPLATE.format(price=float(price))
+        return SL_HIT_INFO_MESSAGE_TEMPLATE.format(price=float(price))
 
     if action == "MODIFY_SL":
         sl = float(signal["sl"])
@@ -176,32 +193,23 @@ def format_signal_for_destination(source_message, signal=None):
     return None
 
 
-def format_live_sl_move_message(pips, current_price, sl):
-    return LIVE_SL_MOVE_MESSAGE_TEMPLATE.format(
-        pips=_format_pips_value(pips),
-        current_price=float(current_price),
-        sl=float(sl),
+async def send_be_applied_message(pips, reply_to=None):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        BE_APPLIED_MESSAGE_TEMPLATE.format(pips=_format_pips_value(pips)),
+        parse_mode="html",
+        silent=True,
+        reply_to=reply_to,
     )
 
 
-async def send_be_applied_message(current_price, sl):
+async def send_pips_progress_message(pips, reply_to=None):
     return await client.send_message(
         DESTINATION_CHAT,
-        BE_APPLIED_MESSAGE_TEMPLATE.format(
-            current_price=float(current_price),
-            sl=float(sl),
-        ),
+        PIPS_PROGRESS_MESSAGE_TEMPLATE.format(pips=_format_pips_value(pips)),
         parse_mode="html",
         silent=True,
-    )
-
-
-async def send_live_sl_move_message(pips, current_price, sl):
-    return await client.send_message(
-        DESTINATION_CHAT,
-        format_live_sl_move_message(pips, current_price, sl),
-        parse_mode="html",
-        silent=True,
+        reply_to=reply_to,
     )
 
 
@@ -212,12 +220,13 @@ def format_trailing_sl_hit_message(sl, price, pips):
         pips=float(pips),
     )
 
-async def send_trailing_sl_hit_message(sl, price, pips):
+async def send_trailing_sl_hit_message(sl, price, pips, reply_to=None):
     return await client.send_message(
         DESTINATION_CHAT,
         format_trailing_sl_hit_message(sl, price, pips),
         parse_mode="html",
         silent=True,
+        reply_to=reply_to,
     )
 
 
@@ -225,37 +234,39 @@ def format_breakeven_sl_hit_message(price):
     return BREAKEVEN_SL_HIT_MESSAGE_TEMPLATE.format(price=float(price))
 
 
-async def send_initial_sl_hit_message(price):
+async def send_initial_sl_hit_message(pips, reply_to=None):
     return await client.send_message(
         DESTINATION_CHAT,
-        SL_HIT_MESSAGE_TEMPLATE.format(price=float(price)),
+        SL_HIT_MESSAGE_TEMPLATE.format(pips=float(pips)),
         parse_mode="html",
         silent=True,
+        reply_to=reply_to,
     )
 
 
-async def send_breakeven_sl_hit_message(price):
+async def send_breakeven_sl_hit_message(price, reply_to=None):
     return await client.send_message(
         DESTINATION_CHAT,
         format_breakeven_sl_hit_message(price),
         parse_mode="html",
         silent=True,
+        reply_to=reply_to,
     )
 
 
-def format_take_profit_reached_message(sl, pips):
+def format_take_profit_reached_message(pips):
     return TAKE_PROFIT_REACHED_MESSAGE_TEMPLATE.format(
-        sl=float(sl),
         pips=_format_pips_value(pips),
     )
 
 
-async def send_take_profit_reached_message(sl, pips):
+async def send_take_profit_reached_message(pips, reply_to=None):
     return await client.send_message(
         DESTINATION_CHAT,
-        format_take_profit_reached_message(sl, pips),
+        format_take_profit_reached_message(pips),
         parse_mode="html",
         silent=True,
+        reply_to=reply_to,
     )
 
 
@@ -317,8 +328,9 @@ async def send_daily_report_message(
     )
 
 
-def format_weekly_report_message(operations, wins, losses, breakeven, win_rate, result_pips):
+def format_weekly_report_message(date_range, operations, wins, losses, breakeven, win_rate, result_pips):
     return WEEKLY_REPORT_MESSAGE_TEMPLATE.format(
+        date_range=str(date_range),
         operations=int(operations),
         wins=int(wins),
         losses=int(losses),
@@ -328,16 +340,44 @@ def format_weekly_report_message(operations, wins, losses, breakeven, win_rate, 
     )
 
 
-async def send_weekly_report_message(operations, wins, losses, breakeven, win_rate, result_pips):
+async def send_weekly_report_message(date_range, operations, wins, losses, breakeven, win_rate, result_pips):
     return await client.send_message(
         DESTINATION_CHAT,
         format_weekly_report_message(
+            date_range=date_range,
             operations=operations,
             wins=wins,
             losses=losses,
             breakeven=breakeven,
             win_rate=win_rate,
             result_pips=result_pips,
+        ),
+        parse_mode="html",
+        silent=True,
+    )
+
+
+def format_monthly_report_message(date_range, operations, wins, losses, win_rate, pips):
+    return MONTHLY_REPORT_TEMPLATE.format(
+        date_range=str(date_range),
+        operations=int(operations),
+        wins=int(wins),
+        losses=int(losses),
+        win_rate=float(win_rate),
+        pips=float(pips),
+    )
+
+
+async def send_monthly_report_message(date_range, operations, wins, losses, win_rate, pips):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        format_monthly_report_message(
+            date_range=date_range,
+            operations=operations,
+            wins=wins,
+            losses=losses,
+            win_rate=win_rate,
+            pips=pips,
         ),
         parse_mode="html",
         silent=True,
@@ -415,24 +455,6 @@ async def edit_destination_message_with_signal(destination_message_id, signal):
     except MessageNotModifiedError:
         return False
 
-    return True
-
-
-async def edit_destination_message_pips(destination_message_id, pips, sl, current_price=None):
-    formatted_text = format_live_sl_move_message(
-        pips,
-        current_price if current_price is not None else 0.0,
-        sl,
-    )
-    try:
-        await client.edit_message(
-            DESTINATION_CHAT,
-            int(destination_message_id),
-            text=formatted_text,
-            parse_mode="html",
-        )
-    except MessageNotModifiedError:
-        return False
     return True
 
 

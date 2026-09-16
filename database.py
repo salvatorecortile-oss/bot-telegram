@@ -116,42 +116,53 @@ def init_database():
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS monthly_reports (
+                report_month TEXT PRIMARY KEY,
+                sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+
         # Migrazione per database creati con la versione precedente.
         columns = {row[1] for row in conn.execute("PRAGMA table_info(trade_protections)").fetchall()}
         if "tp3_reached" not in columns:
             conn.execute("ALTER TABLE trade_protections ADD COLUMN tp3_reached INTEGER NOT NULL DEFAULT 0")
         if "sl_status_message_id" not in columns:
             conn.execute("ALTER TABLE trade_protections ADD COLUMN sl_status_message_id INTEGER")
+        if "last_pips_notified" not in columns:
+            conn.execute("ALTER TABLE trade_protections ADD COLUMN last_pips_notified INTEGER NOT NULL DEFAULT 0")
 
 
-def set_sl_status_message_id(position_ticket, source_chat_id, source_message_id, message_id):
+def set_last_pips_notified(position_ticket, source_chat_id, source_message_id, pips_value):
     """
-    Salva l'id del messaggio "card" di stato SL live per una posizione: il
-    monitor lo modifica (edit) a ogni step successivo di protezione invece
-    di inviare un nuovo messaggio ogni volta.
+    Salva l'ultimo multiplo di 100 pips di profitto per cui e' gia' stato
+    mandato un aggiornamento nel canale, per non ripetere lo stesso
+    annuncio ogni volta che il monitor gira (ogni 0.5s).
     """
     with get_connection() as conn:
         conn.execute(
             """
             INSERT INTO trade_protections (
                 position_ticket, source_chat_id, source_message_id,
-                sl_status_message_id
+                last_pips_notified
             ) VALUES (?, ?, ?, ?)
             ON CONFLICT(position_ticket) DO UPDATE SET
-                sl_status_message_id = excluded.sl_status_message_id
+                last_pips_notified = excluded.last_pips_notified
             """,
-            (int(position_ticket), int(source_chat_id), int(source_message_id), int(message_id)),
+            (int(position_ticket), int(source_chat_id), int(source_message_id), int(pips_value)),
         )
 
 
-def get_sl_status_message_id(position_ticket):
-    """Restituisce l'id del messaggio "card" di stato SL live, o None se non esiste ancora."""
+def get_last_pips_notified(position_ticket):
+    """Restituisce l'ultimo multiplo di 100 pips gia' notificato (0 se nessuno)."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT sl_status_message_id FROM trade_protections WHERE position_ticket = ?",
+            "SELECT last_pips_notified FROM trade_protections WHERE position_ticket = ?",
             (int(position_ticket),),
         ).fetchone()
-    return int(row[0]) if row and row[0] is not None else None
+    return int(row[0]) if row and row[0] is not None else 0
 
 
 def get_latest_open_trade(source_chat_id, symbol="XAUUSD", direction=None):
@@ -856,6 +867,53 @@ def mark_weekly_report_sent(report_week):
         conn.execute(
             "INSERT OR IGNORE INTO weekly_reports (report_week, sent_at) VALUES (?, CURRENT_TIMESTAMP)",
             (str(report_week),),
+        )
+
+
+def get_monthly_trade_results(month_start, month_end_exclusive, source_chat_id):
+    """
+    Restituisce le chiusure reali del mese in Europe/Rome.
+    month_end_exclusive e' il primo giorno del mese successivo (limite
+    escluso), stessa convenzione di get_weekly_trade_results.
+    """
+    italy_tz = ZoneInfo("Europe/Rome")
+    start_local = datetime.combine(month_start, dt_time.min, tzinfo=italy_tz)
+    end_local = datetime.combine(month_end_exclusive, dt_time.min, tzinfo=italy_tz)
+    start_utc = start_local.astimezone(timezone.utc).isoformat()
+    end_utc = end_local.astimezone(timezone.utc).isoformat()
+
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            SELECT
+                position_ticket, source_message_id, symbol, direction,
+                open_price, close_price, profit_pips, close_status,
+                close_datetime, breakeven_applied, trailing_applied, tp3_hit
+            FROM daily_trade_results
+            WHERE source_chat_id = ?
+              AND close_datetime >= ?
+              AND close_datetime < ?
+            ORDER BY close_datetime ASC, position_ticket ASC
+            """,
+            (source_chat_id, start_utc, end_utc),
+        )
+        return cur.fetchall()
+
+
+def has_monthly_report(report_month):
+    with get_connection() as conn:
+        cur = conn.execute(
+            "SELECT 1 FROM monthly_reports WHERE report_month = ? LIMIT 1",
+            (str(report_month),),
+        )
+        return cur.fetchone() is not None
+
+
+def mark_monthly_report_sent(report_month):
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO monthly_reports (report_month, sent_at) VALUES (?, CURRENT_TIMESTAMP)",
+            (str(report_month),),
         )
 
 

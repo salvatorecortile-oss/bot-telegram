@@ -1,8 +1,9 @@
 import asyncio
+import calendar
 import logging
 import re
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -16,15 +17,15 @@ from telegram_sender import (
     copy_message_to_destination,
     edit_destination_message,
     edit_destination_message_with_signal,
-    edit_destination_message_pips,
     send_trailing_sl_hit_message,
     send_breakeven_sl_hit_message,
     send_initial_sl_hit_message,
     send_be_applied_message,
-    send_live_sl_move_message,
+    send_pips_progress_message,
     send_take_profit_reached_message,
     send_daily_report_message,
     send_weekly_report_message,
+    send_monthly_report_message,
     send_good_morning_message,
     send_forced_daily_close_message,
 )
@@ -60,17 +61,20 @@ from database import (
     has_trailing_sl_update,
     has_breakeven_applied,
     mark_automatic_breakeven,
-    set_sl_status_message_id,
-    get_sl_status_message_id,
+    get_last_pips_notified,
+    set_last_pips_notified,
     mark_tp3_reached,
     has_tp3_reached,
     record_daily_trade_result,
     get_daily_trade_results,
     get_weekly_trade_results,
+    get_monthly_trade_results,
     has_daily_report,
     mark_daily_report_sent,
     has_weekly_report,
     mark_weekly_report_sent,
+    has_monthly_report,
+    mark_monthly_report_sent,
 )
 
 from config import (
@@ -628,6 +632,41 @@ async def new_message_handler(event):
             if not MT5_READY:
                 logger.warning("🚫 MT5 NON PRONTO | #%s", source_message_id)
                 update_status(SOURCE_CHAT, source_message_id, "MT5_NOT_READY")
+                cleanup_old_timestamp_counters()
+                return
+
+            # --------------------------------------------------------
+            # BLOCCO SEGNALI IN DIREZIONE OPPOSTA A UN TRADE GIA' APERTO
+            # --------------------------------------------------------
+            # Se c'e' gia' una posizione del bot aperta in direzione
+            # OPPOSTA, il segnale non va ne' copiato nel canale ne' aperto
+            # su MT5, finche' quella posizione non si chiude (in profitto o
+            # in perdita). Segnali nella STESSA direzione restano ammessi e
+            # possono aprirsi/essere copiati insieme.
+            try:
+                existing_positions = await asyncio.to_thread(
+                    mt5.positions_get, symbol="XAUUSD"
+                ) or []
+            except Exception:
+                existing_positions = []
+
+            opposite_direction_open = any(
+                (
+                    "BUY" if int(getattr(p, "type", -1)) == mt5.POSITION_TYPE_BUY
+                    else "SELL"
+                ) != signal["direction"]
+                for p in existing_positions
+                if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
+            )
+
+            if opposite_direction_open:
+                logger.warning(
+                    "🚫 SEGNALE %s BLOCCATO | #%s | Trade opposto già aperto: "
+                    "ignorato, non copiato nel canale, non aperto su MT5.",
+                    signal["direction"],
+                    source_message_id,
+                )
+                update_status(SOURCE_CHAT, source_message_id, "BLOCKED_OPPOSITE_DIRECTION")
                 cleanup_old_timestamp_counters()
                 return
 
@@ -1379,6 +1418,19 @@ def _format_report_pips(value):
     return f"{value:+.2f} PIPS"
 
 
+_ITALIAN_MONTH_ABBR = {
+    1: "GEN", 2: "FEB", 3: "MAR", 4: "APR", 5: "MAG", 6: "GIU",
+    7: "LUG", 8: "AGO", 9: "SET", 10: "OTT", 11: "NOV", 12: "DIC",
+}
+
+
+def _format_date_range_it(start_date, end_date):
+    """Es. '14 SET - 18 SET' oppure '1 SET - 30 SET'."""
+    def fmt(d):
+        return f"{d.day} {_ITALIAN_MONTH_ABBR[d.month]}"
+    return f"{fmt(start_date)} - {fmt(end_date)}"
+
+
 def _build_daily_report(report_date):
     rows = get_daily_trade_results(report_date, SOURCE_CHAT)
 
@@ -1427,6 +1479,25 @@ def _build_weekly_report(week_start, week_end):
     }
 
 
+def _build_monthly_report(month_start, month_end_exclusive):
+    """month_end_exclusive e' il primo giorno del mese successivo (limite escluso)."""
+    rows = get_monthly_trade_results(month_start, month_end_exclusive, SOURCE_CHAT)
+
+    operations = len(rows)
+    wins = sum(1 for row in rows if float(row[6]) > 1.0)
+    losses = sum(1 for row in rows if float(row[6]) < -1.0)
+    result_pips = sum(float(row[6]) for row in rows)
+    win_rate = (wins / operations * 100.0) if operations else 0.0
+
+    return {
+        "operations": operations,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate,
+        "pips": result_pips,
+    }
+
+
 async def weekly_report_scheduler(stop_event):
     """Invia il report settimanale ogni sabato alle 10:00 Europe/Rome."""
     while not stop_event.is_set():
@@ -1454,6 +1525,16 @@ async def weekly_report_scheduler(stop_event):
             except asyncio.TimeoutError:
                 pass
 
+            # Guardia anti doppio invio: su attese molto lunghe asyncio puo'
+            # risvegliarsi qualche centinaio di ms prima del timeout, con
+            # l'evento target ancora "nel futuro" - se procedessimo subito
+            # verrebbe reimpostato un nuovo timeout brevissimo, causando un
+            # secondo invio mezzo secondo dopo. Aspettiamo l'eventuale
+            # residuo prima di considerare l'orario davvero raggiunto.
+            residual = (target - datetime.now(ITALY_TZ)).total_seconds()
+            if residual > 0:
+                await asyncio.sleep(residual)
+
             saturday = datetime.now(ITALY_TZ).date()
             week_end = saturday
             week_start = saturday - timedelta(days=5)  # lunedi della settimana corrente
@@ -1464,8 +1545,11 @@ async def weekly_report_scheduler(stop_event):
                 continue
 
             stats = await asyncio.to_thread(_build_weekly_report, week_start, week_end)
+            # week_end e' il limite ESCLUSO (sabato); il range mostrato va
+            # da lunedi a venerdi, l'ultimo giorno incluso nei dati.
+            date_range = _format_date_range_it(week_start, week_end - timedelta(days=1))
             try:
-                sent = await send_weekly_report_message(**stats)
+                sent = await send_weekly_report_message(date_range=date_range, **stats)
                 await asyncio.to_thread(mark_weekly_report_sent, report_week)
                 logger.info(
                     "📊 YARDFX WEEKLY REPORT INVIATO | Week=%s | Destination=%s | Message=%s | Operazioni=%s | PIPS=%s",
@@ -1499,6 +1583,11 @@ async def morning_message_scheduler(stop_event):
                 continue
             except asyncio.TimeoutError:
                 pass
+
+            # Guardia anti doppio invio (vedi weekly_report_scheduler).
+            residual = (target - datetime.now(ITALY_TZ)).total_seconds()
+            if residual > 0:
+                await asyncio.sleep(residual)
 
             try:
                 sent = await send_good_morning_message()
@@ -1538,6 +1627,11 @@ async def daily_close_scheduler(stop_event):
                 continue
             except asyncio.TimeoutError:
                 pass
+
+            # Guardia anti doppio invio (vedi weekly_report_scheduler).
+            residual = (target - datetime.now(ITALY_TZ)).total_seconds()
+            if residual > 0:
+                await asyncio.sleep(residual)
 
             if MT5_READY and TRADING_ENABLED:
                 positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD") or []
@@ -1621,11 +1715,80 @@ async def daily_report_scheduler(stop_event):
             except asyncio.TimeoutError:
                 pass
 
+            # Guardia anti doppio invio (vedi weekly_report_scheduler).
+            residual = (target - datetime.now(ITALY_TZ)).total_seconds()
+            if residual > 0:
+                await asyncio.sleep(residual)
+
             await send_daily_report_now()
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("❌ ERRORE DAILY REPORT SCHEDULER")
+            await asyncio.sleep(5)
+
+
+async def monthly_report_scheduler(stop_event):
+    """
+    Invia il report mensile YARDFX alle 23:59 Europe/Rome, l'ultimo
+    giorno del mese (qualunque giorno della settimana sia).
+    """
+    while not stop_event.is_set():
+        try:
+            now_local = datetime.now(ITALY_TZ)
+            last_day = calendar.monthrange(now_local.year, now_local.month)[1]
+            target = now_local.replace(day=last_day, hour=23, minute=59, second=0, microsecond=0)
+            if target <= now_local:
+                next_year = now_local.year + 1 if now_local.month == 12 else now_local.year
+                next_month = 1 if now_local.month == 12 else now_local.month + 1
+                next_last_day = calendar.monthrange(next_year, next_month)[1]
+                target = now_local.replace(
+                    year=next_year, month=next_month, day=next_last_day,
+                    hour=23, minute=59, second=0, microsecond=0,
+                )
+
+            wait_seconds = max(0.0, (target - now_local).total_seconds())
+            logger.info(
+                "📊 MONTHLY REPORT SCHEDULER | Prossimo report: %s IT",
+                target.strftime("%d/%m/%Y %H:%M:%S"),
+            )
+            try:
+                await asyncio.wait_for(stop_event.wait(), timeout=wait_seconds)
+                continue
+            except asyncio.TimeoutError:
+                pass
+
+            # Guardia anti doppio invio (vedi weekly_report_scheduler).
+            residual = (target - datetime.now(ITALY_TZ)).total_seconds()
+            if residual > 0:
+                await asyncio.sleep(residual)
+
+            month_start = date(target.year, target.month, 1)
+            if target.month == 12:
+                month_end_exclusive = date(target.year + 1, 1, 1)
+            else:
+                month_end_exclusive = date(target.year, target.month + 1, 1)
+            report_month = month_start.isoformat()
+
+            if await asyncio.to_thread(has_monthly_report, report_month):
+                logger.info("📊 MONTHLY REPORT %s già inviato. Nessun duplicato.", report_month)
+                continue
+
+            stats = await asyncio.to_thread(_build_monthly_report, month_start, month_end_exclusive)
+            date_range = _format_date_range_it(month_start, month_end_exclusive - timedelta(days=1))
+            try:
+                sent = await send_monthly_report_message(date_range=date_range, **stats)
+                await asyncio.to_thread(mark_monthly_report_sent, report_month)
+                logger.info(
+                    "📊 YARDFX MONTHLY REPORT INVIATO | Month=%s | Destination=%s | Message=%s | Operazioni=%s | PIPS=%s",
+                    report_month, DESTINATION_CHAT, sent.id, stats["operations"], stats["pips"],
+                )
+            except Exception:
+                logger.exception("❌ ERRORE INVIO YARDFX MONTHLY REPORT | Month=%s", report_month)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ ERRORE MONTHLY REPORT SCHEDULER")
             await asyncio.sleep(5)
 
 
@@ -1940,6 +2103,52 @@ async def monitor_trailing_sl_closures(stop_event):
                         )
                         profit_pips = _calculate_position_profit_pips(position)
 
+                        # --------------------------------------------------
+                        # AGGIORNAMENTO NEL CANALE OGNI 100 PIPS DI PROFITTO
+                        # --------------------------------------------------
+                        # Indipendente dagli step fini di protezione SL qui
+                        # sotto (che continuano a muovere lo SL su MT5 come
+                        # sempre, silenziosamente): qui contiamo solo i
+                        # multipli di 100 pips di profitto e mandiamo un
+                        # messaggio in risposta al segnale originale, una
+                        # volta sola per multiplo. A +100 e' il messaggio di
+                        # BE, dai +200 in poi il semplice aggiornamento pips.
+                        # Continua anche dopo il TP raggiunto, fino alla
+                        # chiusura del trade.
+                        if profit_pips >= 100.0:
+                            pips_bucket = int(profit_pips // 100) * 100
+                            last_notified = await asyncio.to_thread(
+                                get_last_pips_notified, position_ticket
+                            )
+                            if pips_bucket > last_notified:
+                                await asyncio.to_thread(
+                                    set_last_pips_notified,
+                                    position_ticket,
+                                    trade_source_chat,
+                                    original_message_id,
+                                    pips_bucket,
+                                )
+                                try:
+                                    if pips_bucket == 100:
+                                        sent = await send_be_applied_message(
+                                            pips=pips_bucket,
+                                            reply_to=destination_message_id,
+                                        )
+                                    else:
+                                        sent = await send_pips_progress_message(
+                                            pips=pips_bucket,
+                                            reply_to=destination_message_id,
+                                        )
+                                    logger.info(
+                                        "📈 AGGIORNAMENTO PIPS | Position=%s | +%s PIPS | Destination #%s",
+                                        position_ticket, pips_bucket, sent.id,
+                                    )
+                                except Exception:
+                                    logger.exception(
+                                        "❌ ERRORE MESSAGGIO AGGIORNAMENTO PIPS | Position=%s",
+                                        position_ticket,
+                                    )
+
                         # Il TP3 del segnale e' il nostro TAKE PROFIT logico.
                         # Non viene impostato come TP broker-side: quando il prezzo
                         # lo raggiunge, il bot avvisa il gruppo e lascia correre il trade
@@ -1992,8 +2201,8 @@ async def monitor_trailing_sl_closures(stop_event):
                                 update_trade_sl(trade_source_chat, original_message_id, tp_sl, status="OPENED")
                             try:
                                 sent = await send_take_profit_reached_message(
-                                    sl=tp_sl,
                                     pips=profit_pips,
+                                    reply_to=destination_message_id,
                                 )
                                 logger.info(
                                     "🎯 TAKE PROFIT RAGGIUNTO | Position=%s | Prezzo=%.2f | PIPS=%.2f | SL=%.3f | Destination #%s",
@@ -2077,69 +2286,9 @@ async def monitor_trailing_sl_closures(stop_event):
                             protection_mode,
                             new_sl,
                         )
-
-                        try:
-                            if trigger_pips == 100.0:
-                                # BE: messaggio fisso, non viene mai più
-                                # modificato. La card di stato che gli step
-                                # successivi aggiorneranno parte dal PROSSIMO
-                                # step (+125), non da questo.
-                                sent = await send_be_applied_message(
-                                    current_price=current_price,
-                                    sl=new_sl,
-                                )
-                                logger.info(
-                                    "📤 LIVE SL UPDATE INVIATO | Destination #%s | "
-                                    "Prezzo=%.2f | SL=%.2f",
-                                    sent.id,
-                                    current_price,
-                                    new_sl,
-                                )
-                            else:
-                                # Step successivi al BE: il primo crea la card
-                                # di stato, tutti quelli dopo la modificano.
-                                status_message_id = await asyncio.to_thread(
-                                    get_sl_status_message_id, position_ticket
-                                )
-                                if status_message_id is None:
-                                    sent = await send_live_sl_move_message(
-                                        pips=trigger_pips,
-                                        current_price=current_price,
-                                        sl=new_sl,
-                                    )
-                                    await asyncio.to_thread(
-                                        set_sl_status_message_id,
-                                        position_ticket,
-                                        trade_source_chat,
-                                        original_message_id,
-                                        sent.id,
-                                    )
-                                    logger.info(
-                                        "📤 LIVE SL UPDATE INVIATO (nuova card) | Destination #%s | "
-                                        "Prezzo=%.2f | SL=%.2f",
-                                        sent.id,
-                                        current_price,
-                                        new_sl,
-                                    )
-                                else:
-                                    await edit_destination_message_pips(
-                                        status_message_id,
-                                        pips=trigger_pips,
-                                        sl=new_sl,
-                                        current_price=current_price,
-                                    )
-                                    logger.info(
-                                        "✏️ LIVE SL UPDATE MODIFICATO | Destination #%s | "
-                                        "Prezzo=%.2f | SL=%.2f",
-                                        status_message_id,
-                                        current_price,
-                                        new_sl,
-                                    )
-                        except Exception:
-                            logger.exception(
-                                "❌ ERRORE INVIO/MODIFICA LIVE SL UPDATE | Position=%s",
-                                position_ticket,
-                            )
+                        # Nessun messaggio da qui: l'aggiornamento nel canale
+                        # (BE a +100, poi ogni 100 pips) e' gestito sopra,
+                        # indipendentemente da questo step fine di protezione.
 
                         continue
 
@@ -2297,14 +2446,17 @@ async def monitor_trailing_sl_closures(stop_event):
                                     sl=last_sl_price,
                                     price=actual_close_price,
                                     pips=close_pips_for_report,
+                                    reply_to=destination_message_id,
                                 )
                             elif breakeven_applied:
                                 sent = await send_breakeven_sl_hit_message(
-                                    actual_close_price
+                                    actual_close_price,
+                                    reply_to=destination_message_id,
                                 )
                             else:
                                 sent = await send_initial_sl_hit_message(
-                                    actual_close_price
+                                    close_pips_for_report,
+                                    reply_to=destination_message_id,
                                 )
 
                             logger.info(
@@ -2824,6 +2976,11 @@ async def main():
         daily_report_scheduler(daily_report_stop_event)
     )
 
+    monthly_report_stop_event = asyncio.Event()
+    monthly_report_task = asyncio.create_task(
+        monthly_report_scheduler(monthly_report_stop_event)
+    )
+
     weekly_report_stop_event = asyncio.Event()
     weekly_report_task = asyncio.create_task(
         weekly_report_scheduler(weekly_report_stop_event)
@@ -2840,6 +2997,7 @@ async def main():
     )
 
     logger.info("📊 YARDFX Daily Report avviato | Lun-Ven 23:00 Europe/Rome.")
+    logger.info("📊 YARDFX Monthly Report avviato | Ultimo giorno del mese 23:59 Europe/Rome.")
     logger.info("📊 YARDFX Weekly Report avviato | Sabato 10:00 Europe/Rome.")
     logger.info("☀️ YARDFX Buongiorno avviato | Lun-Ven 06:00 Europe/Rome.")
     logger.info("🌙 YARDFX Daily Close avviato | Tutte le posizioni chiuse alle 22:59 Europe/Rome.")
@@ -2862,6 +3020,13 @@ async def main():
         daily_report_task.cancel()
         try:
             await daily_report_task
+        except asyncio.CancelledError:
+            pass
+
+        monthly_report_stop_event.set()
+        monthly_report_task.cancel()
+        try:
+            await monthly_report_task
         except asyncio.CancelledError:
             pass
 
