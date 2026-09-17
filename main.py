@@ -1082,13 +1082,17 @@ async def process_update_params(signal, source_message_id):
         # get_open_trade_for_signal() restituisce destination_message_id
         # come ultimo campo per non rompere gli indici storici usati dal bot.
         destination_message_id = row[11]
+        real_entry_price = row[10]
 
         if destination_message_id is not None:
             try:
                 message_edit_start = time.monotonic()
+                signal_for_edit = dict(signal)
+                if real_entry_price:
+                    signal_for_edit["entry"] = float(real_entry_price)
                 edited = await edit_destination_message_with_signal(
                     destination_message_id,
-                    signal,
+                    signal_for_edit,
                 )
                 message_edit_delay = time.monotonic() - message_edit_start
 
