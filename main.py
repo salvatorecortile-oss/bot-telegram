@@ -546,10 +546,22 @@ async def new_message_handler(event):
             return
 
         # --------------------------------------------------------
+        # CÉDRIC SCRIVE "STOP LOSS" NEL SUO CANALE -> IGNORATO
+        # --------------------------------------------------------
+        # Solo informativo lato Cédric: NON viene copiato nel canale
+        # destinazione, per non duplicare il messaggio di chiusura reale
+        # che il monitor manda (in risposta al segnale) quando MT5 conferma
+        # la chiusura effettiva della posizione.
+        if action == "SL_HIT":
+            await process_sl_hit(signal, source_message_id)
+            cleanup_old_timestamp_counters()
+            return
+
+        # --------------------------------------------------------
         # Per gli aggiornamenti informativi leggiamo il prezzo live
         # di MT5 prima di pubblicarli.
         # --------------------------------------------------------
-        if action in {"SL_HIT", "MODIFY_SL"}:
+        if action == "MODIFY_SL":
             signal["current_price"] = get_live_xau_price(
                 signal.get("direction")
             )
@@ -777,11 +789,6 @@ async def new_message_handler(event):
         # --------------------------------------------------------
         # EVENTI INFORMATIVI
         # --------------------------------------------------------
-        if action == "SL_HIT":
-            await process_sl_hit(signal, source_message_id)
-            cleanup_old_timestamp_counters()
-            return
-
         if action == "MODIFY_SL":
             await process_modify_sl(signal, source_message_id)
             cleanup_old_timestamp_counters()
