@@ -1331,7 +1331,7 @@ def _calculate_position_profit_pips(position):
 # Ogni voce e' (trigger_pips, protected_pips): al raggiungimento di
 # trigger_pips di profitto, lo SL viene spostato a protected_pips.
 LIVE_PROTECTION_LEVELS = (
-    (100.0, 40.0),
+    (100.0, 20.0),
     (125.0, 55.0),
     (150.0, 70.0),
     (175.0, 99.0),
@@ -1357,7 +1357,7 @@ def _live_protection_step(profit_pips):
     """
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
-        +100  -> SL +40 (BE)
+        +100  -> SL +20 (BE)
         +125  -> SL +55
         +150  -> SL +70
         +175  -> SL +99
