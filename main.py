@@ -2662,6 +2662,26 @@ async def edited_message_handler(event):
         # ====================================================
         # AGGIORNA DESTINATION
         # ====================================================
+        # Se Cedric modifica il messaggio originale (es. per correggere un
+        # refuso), NON dobbiamo mai far ricomparire la SUA entry al posto
+        # di quella reale MT5 gia' mostrata all'apertura: la recuperiamo dal
+        # DB (mt5_price) e la usiamo al posto di quella riparsata dal testo.
+        try:
+            edited_signal = parse_signal(message.text or "")
+        except Exception as e:
+            logger.exception(
+                "❌ Errore parsing EDIT #%s: %s",
+                source_message_id,
+                e,
+            )
+            edited_signal = None
+
+        signal_for_destination_edit = edited_signal
+        if edited_signal and edited_signal.get("action") == "OPEN":
+            real_entry_price = row[12]
+            if real_entry_price:
+                signal_for_destination_edit = dict(edited_signal)
+                signal_for_destination_edit["entry"] = float(real_entry_price)
 
         edit_start = time.monotonic()
 
@@ -2670,6 +2690,7 @@ async def edited_message_handler(event):
             await edit_destination_message(
                 destination_message_id,
                 message,
+                signal=signal_for_destination_edit,
             )
 
         except MessageNotModifiedError:
@@ -2718,16 +2739,6 @@ async def edited_message_handler(event):
         # viene modificato con un TP corretto, MT5 viene aggiornato
         # automaticamente.
         # ====================================================
-
-        try:
-            edited_signal = parse_signal(message.text or "")
-        except Exception as e:
-            logger.exception(
-                "❌ Errore parsing EDIT #%s: %s",
-                source_message_id,
-                e,
-            )
-            edited_signal = None
 
         if edited_signal and edited_signal.get("action") == "UPDATE_PARAMS":
             logger.info(
