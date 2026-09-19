@@ -26,7 +26,7 @@ FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE = (
 )
 
 OPEN_TRADE_MESSAGE_TEMPLATE = (
-    "👑 <b>XAUUSD — {direction}</b>\n\n"
+    "👑 <b>XAUUSD-P — {direction}</b>\n\n"
     "🟢 <b>ENTRY:</b> {entry:.2f}\n"
     "🛑 <b>STOP LOSS:</b> {sl:.2f}\n"
     "🎯 <b>TAKE PROFIT:</b> {tp3:.2f}"

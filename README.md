@@ -10,7 +10,7 @@ Bot per:
 
 ## Regole trading attuali
 
-- Simbolo: `XAUUSD`
+- Simbolo: `XAUUSD-P`
 - Lotto: configurato nel `.env`
 - Il segnale è composto da **2 messaggi**.
 - Messaggio 1 (`Segnale in arrivo long/short GOLD! ...`): apre **immediatamente** a mercato.

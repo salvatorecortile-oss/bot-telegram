@@ -353,19 +353,19 @@ def cleanup_old_timestamp_counters():
 
 
 # ============================================================
-# PREZZO LIVE XAUUSD
+# PREZZO LIVE XAUUSD-P
 # ============================================================
 
 def get_live_xau_price(direction=None):
     """
-    Restituisce il prezzo live di XAUUSD.
+    Restituisce il prezzo live di XAUUSD-P.
     BUY -> ASK, SELL -> BID.
     Senza direzione usa il mid-price.
     """
     if direction is None:
         # Se esiste una posizione del bot, usiamo il prezzo corrente
         # della posizione (quello coerente con il suo lato).
-        positions = mt5.positions_get(symbol="XAUUSD") or []
+        positions = mt5.positions_get(symbol="XAUUSD-P") or []
         bot_positions = [
             p for p in positions
             if getattr(p, "magic", None) == int(MAGIC_NUMBER)
@@ -373,7 +373,7 @@ def get_live_xau_price(direction=None):
         if bot_positions:
             return float(getattr(bot_positions[-1], "price_current", 0.0) or 0.0)
 
-    tick = mt5.symbol_info_tick("XAUUSD")
+    tick = mt5.symbol_info_tick("XAUUSD-P")
     if tick is None:
         return None
 
@@ -657,7 +657,7 @@ async def new_message_handler(event):
             # possono aprirsi/essere copiati insieme.
             try:
                 existing_positions = await asyncio.to_thread(
-                    mt5.positions_get, symbol="XAUUSD"
+                    mt5.positions_get, symbol="XAUUSD-P"
                 ) or []
             except Exception:
                 existing_positions = []
@@ -1007,7 +1007,7 @@ async def process_update_params(signal, source_message_id):
     """
     Il secondo messaggio contiene SL/TP1.
     NON apre un nuovo trade: aggiorna esclusivamente l'ultima
-    posizione XAUUSD aperta dal bot nella stessa direzione.
+    posizione XAUUSD-P aperta dal bot nella stessa direzione.
     """
     new_sl = float(signal["sl"])
     new_tp1 = float(signal["tp1"])
@@ -1040,7 +1040,7 @@ async def process_update_params(signal, source_message_id):
         for attempt in range(10):
             row = get_open_trade_for_signal(
                 source_chat_id=SOURCE_CHAT,
-                symbol="XAUUSD",
+                symbol="XAUUSD-P",
                 direction=direction,
                 entry=entry,
             )
@@ -1148,7 +1148,7 @@ async def process_update_params(signal, source_message_id):
         elif result["tp_applied"]:
             # Manteniamo lo SL già presente nel DB quando il nuovo SL è invalido.
             row_after = get_open_trade_for_signal(
-                SOURCE_CHAT, "XAUUSD", direction, entry
+                SOURCE_CHAT, "XAUUSD-P", direction, entry
             )
             existing_db_sl = row_after[5] if row_after else None
             if existing_db_sl is not None:
@@ -1221,7 +1221,7 @@ async def process_modify_sl(signal, source_message_id):
     try:
         row = get_latest_open_trade(
             source_chat_id=SOURCE_CHAT,
-            symbol="XAUUSD",
+            symbol="XAUUSD-P",
         )
 
         if row is None:
@@ -1306,8 +1306,8 @@ async def process_sl_hit(signal, source_message_id):
 # ============================================================
 
 def _calculate_position_profit_pips(position):
-    """Calcola il profitto live in PIPS di una posizione XAUUSD."""
-    info = mt5.symbol_info("XAUUSD")
+    """Calcola il profitto live in PIPS di una posizione XAUUSD-P."""
+    info = mt5.symbol_info("XAUUSD-P")
     if info is None:
         return 0.0
 
@@ -1402,8 +1402,8 @@ def _live_protection_step(profit_pips):
 
 
 def _calculate_closed_trade_pips(open_price, close_price, direction):
-    """Calcola i PIPS reali XAUUSD usando lo stesso pip_size del monitor MT5."""
-    info = mt5.symbol_info("XAUUSD")
+    """Calcola i PIPS reali XAUUSD-P usando lo stesso pip_size del monitor MT5."""
+    info = mt5.symbol_info("XAUUSD-P")
     if info is None:
         return 0.0
 
@@ -1645,14 +1645,14 @@ async def daily_close_scheduler(stop_event):
                 await asyncio.sleep(residual)
 
             if MT5_READY and TRADING_ENABLED:
-                positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD") or []
+                positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
                 bot_positions = [
                     position for position in positions
                     if int(getattr(position, "magic", -1)) == int(MAGIC_NUMBER)
                 ]
 
                 if not bot_positions:
-                    logger.info("🌙 22:59 | Nessun trade XAUUSD del bot aperto. Nessun messaggio di chiusura inviato.")
+                    logger.info("🌙 22:59 | Nessun trade XAUUSD-P del bot aperto. Nessun messaggio di chiusura inviato.")
                 else:
                     closed_prices = []
                     for position in bot_positions:
@@ -1860,7 +1860,7 @@ async def send_daily_report_now():
 # ============================================================
 
 async def recover_open_positions_after_startup():
-    """Recovery sicuro e verificabile delle posizioni XAUUSD del BOT.
+    """Recovery sicuro e verificabile delle posizioni XAUUSD-P del BOT.
 
     MT5 e' la fonte primaria. Il recovery NON apre, chiude o modifica ordini.
     Una posizione viene associata al DB solo tramite ticket esatto oppure,
@@ -1876,7 +1876,7 @@ async def recover_open_positions_after_startup():
         return
 
     try:
-        positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD")
+        positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P")
     except Exception as e:
         logger.exception("❌ RECOVERY AVVIO | Errore lettura posizioni MT5: %s", e)
         return
@@ -1889,7 +1889,7 @@ async def recover_open_positions_after_startup():
 
     logger.info("=" * 72)
     logger.info("🔄 RECOVERY AVVIO")
-    logger.info("    📊 Posizioni XAUUSD MT5   : %s", len(positions))
+    logger.info("    📊 Posizioni XAUUSD-P MT5   : %s", len(positions))
     logger.info("    🤖 Posizioni BOT (Magic)  : %s", len(bot_positions))
     logger.info("    🔢 Magic                  : %s", MAGIC_NUMBER)
     logger.info("=" * 72)
@@ -1926,7 +1926,7 @@ async def recover_open_positions_after_startup():
         row = await asyncio.to_thread(
             get_open_trade_by_ticket_any_source,
             ticket,
-            "XAUUSD",
+            "XAUUSD-P",
         )
 
         if row is None:
@@ -1935,7 +1935,7 @@ async def recover_open_positions_after_startup():
             candidates = await asyncio.to_thread(
                 get_recovery_candidates,
                 direction,
-                "XAUUSD",
+                "XAUUSD-P",
                 20,
             )
 
@@ -1956,7 +1956,7 @@ async def recover_open_positions_after_startup():
                     row = await asyncio.to_thread(
                         get_open_trade_by_ticket_any_source,
                         ticket,
-                        "XAUUSD",
+                        "XAUUSD-P",
                     )
                     if row is not None:
                         associated_now += 1
@@ -1968,7 +1968,7 @@ async def recover_open_positions_after_startup():
             elif len(candidates) > 1:
                 logger.warning("⚠️ RECOVERY AMBIGUA")
                 logger.warning("    🎫 Ticket       : %s", ticket)
-                logger.warning("    💱 Symbol       : XAUUSD")
+                logger.warning("    💱 Symbol       : XAUUSD-P")
                 logger.warning("    📊 Direzione    : %s", direction)
                 logger.warning("    🔢 Candidate DB : %s", len(candidates))
                 logger.warning("    🛑 Azione       : NESSUNA MODIFICA")
@@ -1984,7 +1984,7 @@ async def recover_open_positions_after_startup():
                 adopted_message_id = await asyncio.to_thread(
                     adopt_orphan_position,
                     SOURCE_CHAT,
-                    "XAUUSD",
+                    "XAUUSD-P",
                     direction,
                     entry,
                     sl,
@@ -1997,7 +1997,7 @@ async def recover_open_positions_after_startup():
                     row = await asyncio.to_thread(
                         get_open_trade_by_ticket_any_source,
                         ticket,
-                        "XAUUSD",
+                        "XAUUSD-P",
                     )
                     if row is not None:
                         associated_now += 1
@@ -2012,7 +2012,7 @@ async def recover_open_positions_after_startup():
             orphaned += 1
             logger.warning("⚠️ RECOVERY MT5 NON ASSOCIATO")
             logger.warning("    🎫 Ticket       : %s", ticket)
-            logger.warning("    💱 Symbol       : XAUUSD")
+            logger.warning("    💱 Symbol       : XAUUSD-P")
             logger.warning("    📊 Direzione    : %s", direction)
             logger.warning("    📍 Entry MT5    : %.2f", entry)
             logger.warning("    💰 Prezzo LIVE  : %.2f", current)
@@ -2029,7 +2029,7 @@ async def recover_open_positions_after_startup():
 
         logger.info("🔄 POSIZIONE RECUPERATA")
         logger.info("    🎫 Ticket       : %s", ticket)
-        logger.info("    💱 Symbol       : XAUUSD")
+        logger.info("    💱 Symbol       : XAUUSD-P")
         logger.info("    📊 Direzione    : %s", direction)
         logger.info("    📍 Entry MT5    : %.2f", entry)
         logger.info("    💰 Prezzo LIVE  : %.2f", current)
@@ -2067,7 +2067,7 @@ async def monitor_trailing_sl_closures(stop_event):
                 rows = await asyncio.to_thread(
                     get_open_trades,
                     SOURCE_CHAT,
-                    "XAUUSD",
+                    "XAUUSD-P",
                 )
 
                 # Aggiunge eventuali posizioni recuperate da MT5 associate
@@ -2178,7 +2178,7 @@ async def monitor_trailing_sl_closures(stop_event):
                             # Non peggioriamo mai uno SL gia' migliore.
                             dynamic_protected_pips = max(0.0, profit_pips * 0.85)
                             existing_sl_price = float(getattr(position, "sl", 0.0) or 0.0)
-                            pip_size = float(mt5.symbol_info("XAUUSD").point) * 10.0
+                            pip_size = float(mt5.symbol_info("XAUUSD-P").point) * 10.0
                             existing_protected_pips = 0.0
                             if pip_size > 0 and existing_sl_price > 0:
                                 if str(direction).upper() == "BUY":
@@ -2237,7 +2237,7 @@ async def monitor_trailing_sl_closures(stop_event):
                         # Aggiorniamo solo se miglioriamo lo SL di almeno 5 PIPS,
                         # evitando modifiche continue per ogni tick.
                         existing_sl_price = float(getattr(position, "sl", 0.0) or 0.0)
-                        pip_size = float(mt5.symbol_info("XAUUSD").point) * 10.0
+                        pip_size = float(mt5.symbol_info("XAUUSD-P").point) * 10.0
                         existing_protected_pips = 0.0
                         if pip_size > 0 and existing_sl_price > 0:
                             if str(direction).upper() == "BUY":
@@ -2352,7 +2352,7 @@ async def monitor_trailing_sl_closures(stop_event):
                             position_ticket=position_ticket,
                             source_chat_id=SOURCE_CHAT,
                             source_message_id=original_message_id,
-                            symbol="XAUUSD",
+                            symbol="XAUUSD-P",
                             direction=direction,
                             open_price=open_price_for_report,
                             close_price=actual_close_price,
@@ -2389,7 +2389,7 @@ async def monitor_trailing_sl_closures(stop_event):
                             original_message_id,
                         )
                         pip_size_for_report = 0.0
-                        symbol_info_for_report = mt5.symbol_info("XAUUSD")
+                        symbol_info_for_report = mt5.symbol_info("XAUUSD-P")
                         if symbol_info_for_report is not None:
                             pip_size_for_report = float(symbol_info_for_report.point) * 10.0
 
@@ -2424,7 +2424,7 @@ async def monitor_trailing_sl_closures(stop_event):
                             position_ticket=position_ticket,
                             source_chat_id=SOURCE_CHAT,
                             source_message_id=original_message_id,
-                            symbol="XAUUSD",
+                            symbol="XAUUSD-P",
                             direction=direction,
                             open_price=open_price_for_report,
                             close_price=actual_close_price,
@@ -2493,7 +2493,7 @@ async def monitor_trailing_sl_closures(stop_event):
                         position_ticket=position_ticket,
                         source_chat_id=SOURCE_CHAT,
                         source_message_id=original_message_id,
-                        symbol="XAUUSD",
+                        symbol="XAUUSD-P",
                         direction=direction,
                         open_price=open_price_for_report,
                         close_price=actual_close_price,
@@ -2784,7 +2784,7 @@ async def main():
     logger.info("SESSION             : gestita dal client Telegram")
     logger.info("")
     logger.info("💱 TRADING")
-    logger.info("SYMBOL              : XAUUSD")
+    logger.info("SYMBOL              : XAUUSD-P")
     logger.info("TRADING ENABLED     : %s", TRADING_ENABLED)
     logger.info("MAX SIGNAL AGE      : %ss", MAX_SIGNAL_AGE_SECONDS)
     logger.info("MAX SAME-SECOND     : %s segnali", MAX_SIMULTANEOUS_SIGNALS)

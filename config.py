@@ -44,7 +44,7 @@ MT5_SERVER = os.getenv("MT5_SERVER", "")
 # =========================
 # TRADING
 # =========================
-MT5_SYMBOL = os.getenv("MT5_SYMBOL", "XAUUSD")
+MT5_SYMBOL = os.getenv("MT5_SYMBOL", "XAUUSD-P")
 LOT_SIZE = float(os.getenv("LOT_SIZE", "0.01"))
 
 # Entry valida: entry +/- ENTRY_RANGE in USD.
