@@ -564,7 +564,7 @@ def move_position_to_profit_protection(position_ticket, profit_pips, protection_
     """
     Calcola e applica uno SL protettivo in base ai PIPS comunicati dal provider.
 
-    Per XAUUSD-P il pip viene ricavato dinamicamente come 10 * point del broker.
+    Per XAUUSD il pip viene ricavato dinamicamente come 10 * point del broker.
     Esempio con point=0.01: 1 pip = 0.10 di prezzo.
 
     BUY: SL = entry + (profit_pips * pip_size * percentuale)

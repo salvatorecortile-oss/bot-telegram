@@ -36,11 +36,11 @@ def _first_number_after_label(text, labels):
 def _find_symbol(text):
     upper = text.upper()
     if re.search(r"\bXAU\s*/\s*USD\b", upper):
-        return "XAUUSD-P"
+        return "XAUUSD"
     if re.search(r"\bXAUUSD\b", upper):
-        return "XAUUSD-P"
+        return "XAUUSD"
     if re.search(r"\bGOLD\b", upper):
-        return "XAUUSD-P"
+        return "XAUUSD"
     return None
 
 
@@ -155,7 +155,7 @@ def parse_signal(text):
     if re.search(r"\bRIEPILOGO\s+GIORNALIERO\b", clean, re.IGNORECASE):
         return {
             "action": "DAILY_RECAP",
-            "symbol": "XAUUSD-P",
+            "symbol": "XAUUSD",
             "raw_recap": clean,
         }
 
@@ -165,7 +165,7 @@ def parse_signal(text):
     # SEGNALE COMPLETO -> APERTURA DIRETTA
     # ------------------------------------------------------------
     direction = _find_direction(clean)
-    entry = _extract_entry(clean) if symbol == "XAUUSD-P" else None
+    entry = _extract_entry(clean) if symbol == "XAUUSD" else None
 
     sl = _first_number_after_label(
         clean,
@@ -179,7 +179,7 @@ def parse_signal(text):
     tp2 = _first_number_after_label(clean, [r"\bTP\s*2\b", r"\bTP2\b"])
 
     if (
-        symbol == "XAUUSD-P"
+        symbol == "XAUUSD"
         and direction is not None
         and entry is not None
         and sl is not None
@@ -187,7 +187,7 @@ def parse_signal(text):
     ):
         return {
             "action": "OPEN",
-            "symbol": "XAUUSD-P",
+            "symbol": "XAUUSD",
             "direction": direction,
             "entry": entry,
             "sl": sl,
@@ -203,12 +203,12 @@ def parse_signal(text):
     # segnale già inviato). NON apre un nuovo trade: aggiorna solo la
     # posizione già aperta nella stessa direzione (vedi process_update_params
     # in main.py). TP2 viene sempre ignorato.
-    if symbol == "XAUUSD-P" and direction is not None and sl is not None and tp1 is not None:
+    if symbol == "XAUUSD" and direction is not None and sl is not None and tp1 is not None:
         update_entry = _extract_update_entry(clean)
         if update_entry is not None:
             return {
                 "action": "UPDATE_PARAMS",
-                "symbol": "XAUUSD-P",
+                "symbol": "XAUUSD",
                 "direction": direction,
                 "entry": update_entry,
                 "sl": sl,
@@ -223,7 +223,7 @@ def parse_signal(text):
     # il segnale completo (SL + TP3) gestito sopra come azione OPEN.
     if re.search(r"\bSEGNALE\s+IN\s+ARRIVO\b", clean, re.IGNORECASE):
         announce_direction = _find_direction(clean)
-        announce_symbol = _find_symbol(clean) or "XAUUSD-P"
+        announce_symbol = _find_symbol(clean) or "XAUUSD"
         number_match = re.search(_NUMBER, clean)
         announce_entry = _float(number_match.group(1)) if number_match else None
         if announce_direction is not None and announce_entry is not None:
@@ -250,13 +250,13 @@ def parse_signal(text):
         if abs(pips - 50.0) < 1e-9:
             return {
                 "action": "PIPS_UPDATE",
-                "symbol": "XAUUSD-P",
+                "symbol": "XAUUSD",
                 "pips": pips,
                 "milestone": "TP1",
             }
         return {
             "action": "PIPS_UPDATE",
-            "symbol": "XAUUSD-P",
+            "symbol": "XAUUSD",
             "pips": pips,
             "milestone": "TP1",
         }
@@ -272,7 +272,7 @@ def parse_signal(text):
     ):
         return {
             "action": "SL_HIT",
-            "symbol": "XAUUSD-P",
+            "symbol": "XAUUSD",
         }
 
     # ------------------------------------------------------------
@@ -286,7 +286,7 @@ def parse_signal(text):
     if pips_match:
         return {
             "action": "PIPS_UPDATE",
-            "symbol": "XAUUSD-P",
+            "symbol": "XAUUSD",
             "pips": _float(pips_match.group(1)),
         }
 
@@ -301,12 +301,12 @@ def parse_signal(text):
     if sl_modified:
         return {
             "action": "MODIFY_SL",
-            "symbol": "XAUUSD-P",
+            "symbol": "XAUUSD",
             "sl": _float(sl_modified.group(1)),
         }
 
     # Messaggi generici di profitto: solo informazione, mai gestione SL/chiusura.
     if re.search(r"\bOPERAZIONE\s+IN\s+PROFITTO\b", clean, re.IGNORECASE):
-        return {"action": "INFO_ONLY", "symbol": "XAUUSD-P"}
+        return {"action": "INFO_ONLY", "symbol": "XAUUSD"}
 
     return None

@@ -165,7 +165,7 @@ def get_last_pips_notified(position_ticket):
     return int(row[0]) if row and row[0] is not None else 0
 
 
-def get_latest_open_trade(source_chat_id, symbol="XAUUSD-P", direction=None):
+def get_latest_open_trade(source_chat_id, symbol="XAUUSD", direction=None):
     """
     Restituisce il trade più recente ancora aperto dal bot.
 
@@ -204,7 +204,7 @@ def get_latest_open_trade(source_chat_id, symbol="XAUUSD-P", direction=None):
         return cur.fetchone()
 
 
-def get_open_trades(source_chat_id, symbol="XAUUSD-P"):
+def get_open_trades(source_chat_id, symbol="XAUUSD"):
     """Restituisce tutte le posizioni del bot ancora aperte nel DB."""
     query = """
         SELECT
@@ -232,7 +232,7 @@ def get_open_trades(source_chat_id, symbol="XAUUSD-P"):
         return cur.fetchall()
 
 
-def get_open_trade_by_ticket_any_source(position_ticket, symbol="XAUUSD-P"):
+def get_open_trade_by_ticket_any_source(position_ticket, symbol="XAUUSD"):
     """Cerca una posizione aperta per ticket indipendentemente dal source_chat_id.
 
     Usata esclusivamente dal recovery: non modifica il database e permette di
@@ -263,7 +263,7 @@ def get_open_trade_by_ticket_any_source(position_ticket, symbol="XAUUSD-P"):
     with get_connection() as conn:
         return conn.execute(query, (int(position_ticket), symbol)).fetchone()
 
-def get_recovery_candidates(direction, symbol="XAUUSD-P", limit=20):
+def get_recovery_candidates(direction, symbol="XAUUSD", limit=20):
     """Trova record DB senza ticket che possono essere associati a una posizione MT5.
 
     Usato solo dal recovery. Non modifica il database.
