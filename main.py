@@ -1690,7 +1690,7 @@ async def daily_close_scheduler(stop_event):
                     # Un solo avviso giornaliero, solo se esistevano posizioni da chiudere.
                     if closed_prices:
                         try:
-                            await send_forced_daily_close_message(closed_prices[-1])
+                            await send_forced_daily_close_message()
                         except Exception:
                             logger.exception("❌ ERRORE MESSAGGIO CHIUSURA GIORNALIERA")
         except asyncio.CancelledError:

@@ -22,7 +22,6 @@ GOOD_MORNING_MESSAGE_TEMPLATE = (
 
 FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE = (
     "🌙 <b>CHIUSURA GIORNALIERA</b>\n"
-    "📍 Prezzo di chiusura: <b>{price:.2f}</b>\n"
     "🕙 Tutte le operazioni vengono chiuse entro le 21:59."
 )
 
@@ -393,10 +392,10 @@ async def send_good_morning_message():
     )
 
 
-async def send_forced_daily_close_message(price):
+async def send_forced_daily_close_message():
     return await client.send_message(
         DESTINATION_CHAT,
-        FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE.format(price=float(price)),
+        FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE,
         parse_mode="html",
         silent=True,
     )
