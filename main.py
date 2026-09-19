@@ -85,6 +85,7 @@ from config import (
     TRADING_ENABLED,
     LOG_DIR,
     MAGIC_NUMBER,
+    MT5_SYMBOL,
 )
 
 
@@ -365,7 +366,7 @@ def get_live_xau_price(direction=None):
     if direction is None:
         # Se esiste una posizione del bot, usiamo il prezzo corrente
         # della posizione (quello coerente con il suo lato).
-        positions = mt5.positions_get(symbol="XAUUSD") or []
+        positions = mt5.positions_get(symbol=MT5_SYMBOL) or []
         bot_positions = [
             p for p in positions
             if getattr(p, "magic", None) == int(MAGIC_NUMBER)
@@ -373,7 +374,7 @@ def get_live_xau_price(direction=None):
         if bot_positions:
             return float(getattr(bot_positions[-1], "price_current", 0.0) or 0.0)
 
-    tick = mt5.symbol_info_tick("XAUUSD")
+    tick = mt5.symbol_info_tick(MT5_SYMBOL)
     if tick is None:
         return None
 
@@ -657,7 +658,7 @@ async def new_message_handler(event):
             # possono aprirsi/essere copiati insieme.
             try:
                 existing_positions = await asyncio.to_thread(
-                    mt5.positions_get, symbol="XAUUSD"
+                    mt5.positions_get, symbol=MT5_SYMBOL
                 ) or []
             except Exception:
                 existing_positions = []
@@ -1307,7 +1308,7 @@ async def process_sl_hit(signal, source_message_id):
 
 def _calculate_position_profit_pips(position):
     """Calcola il profitto live in PIPS di una posizione XAUUSD."""
-    info = mt5.symbol_info("XAUUSD")
+    info = mt5.symbol_info(MT5_SYMBOL)
     if info is None:
         return 0.0
 
@@ -1403,7 +1404,7 @@ def _live_protection_step(profit_pips):
 
 def _calculate_closed_trade_pips(open_price, close_price, direction):
     """Calcola i PIPS reali XAUUSD usando lo stesso pip_size del monitor MT5."""
-    info = mt5.symbol_info("XAUUSD")
+    info = mt5.symbol_info(MT5_SYMBOL)
     if info is None:
         return 0.0
 
@@ -1645,7 +1646,7 @@ async def daily_close_scheduler(stop_event):
                 await asyncio.sleep(residual)
 
             if MT5_READY and TRADING_ENABLED:
-                positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD") or []
+                positions = await asyncio.to_thread(mt5.positions_get, symbol=MT5_SYMBOL) or []
                 bot_positions = [
                     position for position in positions
                     if int(getattr(position, "magic", -1)) == int(MAGIC_NUMBER)
@@ -1876,7 +1877,7 @@ async def recover_open_positions_after_startup():
         return
 
     try:
-        positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD")
+        positions = await asyncio.to_thread(mt5.positions_get, symbol=MT5_SYMBOL)
     except Exception as e:
         logger.exception("❌ RECOVERY AVVIO | Errore lettura posizioni MT5: %s", e)
         return
