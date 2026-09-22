@@ -470,6 +470,13 @@ BOT2_PLAY_MESSAGE_TEMPLATE = (
     "Ascolto segnali e apro nuovi trade normalmente."
 )
 
+BOT2_RESTART_MESSAGE_TEMPLATE = (
+    "🔄 <b>BOT2 (CÉDRIC) RIAVVIATO</b>\n"
+    "Posizioni chiuse: {closed}\n"
+    "{errors_line}"
+    "Di nuovo operativo al 100%: ascolto segnali e apro nuovi trade normalmente."
+)
+
 BOT2_PAUSED_MESSAGE_TEMPLATE = (
     "⏸️ <b>BOT2 (CÉDRIC) IN PAUSA</b>\n"
     "Nessun nuovo trade verrà aperto.\n"
@@ -491,14 +498,19 @@ BOT2_STATUS_MESSAGE_TEMPLATE = (
 
 BOT2_UNKNOWN_COMMAND_MESSAGE = (
     "❓ <b>Comando non riconosciuto.</b>\n"
-    "Comandi disponibili: bot2_play, bot2_pausa, bot2_stop, bot2_status, "
-    "bot2_report, bot2_reportw, bot2_reportm"
+    "Comandi disponibili: bot2_play, bot2_pausa, bot2_stop, bot2_riavvio, "
+    "bot2_status, bot2_report, bot2_reportw, bot2_reportm"
 )
 
 
 def format_bot2_stopped_message(closed, errors):
     errors_line = f"⚠️ Errori chiusura: {errors}\n" if errors else ""
     return BOT2_STOPPED_MESSAGE_TEMPLATE.format(closed=closed, errors_line=errors_line)
+
+
+def format_bot2_restart_message(closed, errors):
+    errors_line = f"⚠️ Errori chiusura: {errors}\n" if errors else ""
+    return BOT2_RESTART_MESSAGE_TEMPLATE.format(closed=closed, errors_line=errors_line)
 
 
 def format_bot2_status_message(state_label, positions_text):

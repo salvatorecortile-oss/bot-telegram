@@ -32,6 +32,7 @@ from telegram_sender import (
     BOT2_PAUSED_MESSAGE_TEMPLATE,
     BOT2_UNKNOWN_COMMAND_MESSAGE,
     format_bot2_stopped_message,
+    format_bot2_restart_message,
     format_bot2_status_message,
 )
 
@@ -2086,7 +2087,7 @@ async def _format_open_positions_status():
 
 # ============================================================
 # COMANDI BOT2 (Messaggi Salvati: bot2_play / bot2_pausa / bot2_stop /
-# bot2_status / bot2_report / bot2_reportw / bot2_reportm)
+# bot2_riavvio / bot2_status / bot2_report / bot2_reportw / bot2_reportm)
 # ============================================================
 
 BOT2_COMMAND_PREFIX = "bot2_"
@@ -2099,6 +2100,21 @@ async def _handle_bot2_command(event, command):
         BOT_STATE = "RUNNING"
         logger.info("✅ BOT2 COMANDO | play -> RUNNING")
         await event.reply(BOT2_PLAY_MESSAGE_TEMPLATE, parse_mode="html")
+
+    elif command == "riavvio":
+        # Come "stop" (chiude subito a mercato tutte le posizioni del bot)
+        # seguito immediatamente da "play" (torna RUNNING al 100%).
+        BOT_STATE = "STOPPED"
+        closed, errors = await _close_all_bot_positions_now()
+        BOT_STATE = "RUNNING"
+        logger.info(
+            "🔄 BOT2 COMANDO | riavvio -> STOP+PLAY | Chiuse=%s | Errori=%s",
+            len(closed), len(errors),
+        )
+        await event.reply(
+            format_bot2_restart_message(len(closed), len(errors)),
+            parse_mode="html",
+        )
 
     elif command == "pausa":
         BOT_STATE = "PAUSED"
@@ -3156,7 +3172,7 @@ async def main():
     logger.info("TAKE PROFIT         : TP3 LOGICO | NON CHIUDE | ATTIVA TRAILING 15%")
     logger.info("")
     logger.info("🕹️ COMANDI (da Messaggi Salvati)")
-    logger.info("bot2_play / bot2_pausa / bot2_stop / bot2_status")
+    logger.info("bot2_play / bot2_pausa / bot2_stop / bot2_riavvio / bot2_status")
     logger.info("bot2_report / bot2_reportw / bot2_reportm")
     logger.info("")
     logger.info("🛡️ MONITOR")
