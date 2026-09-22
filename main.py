@@ -560,6 +560,15 @@ async def new_message_handler(event):
                 source_message_id,
                 float(signal["pips"]),
             )
+            # "TP1 HIT +50pips" di Cedric: forza subito il BE, anche se il
+            # nostro prezzo live di MT5 non ha ancora raggiunto i +50 pips
+            # (vedi process_tp1_be_signal). Non blocca il resto del bot:
+            # gira come task separato.
+            if (
+                signal.get("milestone") == "TP1"
+                and abs(float(signal.get("pips", 0.0)) - 50.0) < 1e-9
+            ):
+                asyncio.create_task(process_tp1_be_signal(source_message_id))
             cleanup_old_timestamp_counters()
             return
 
@@ -1290,6 +1299,113 @@ async def process_modify_sl(signal, source_message_id):
             "SL_MODIFY_ERROR",
             error=str(e),
         )
+
+
+# ============================================================
+# BE FORZATO DA "TP1 HIT +50pips" DI CÉDRIC
+# ============================================================
+# Il BE a +50 pips viene normalmente applicato dal monitor MT5 quando il
+# PREZZO LIVE del nostro broker raggiunge +50 pips di profitto (vedi
+# LIVE_PROTECTION_LEVELS). Se pero' Cedric conferma "TP1 HIT +50pips" nel
+# suo canale mentre il nostro prezzo live e' ancora leggermente sotto
+# (differenze di feed/spread tra broker), applichiamo comunque il BE
+# subito, cosi' la protezione scatta in ogni caso, qualunque dei due
+# arrivi prima. Il meccanismo di deduplica (get_last_pips_notified) evita
+# che poi il monitor mandi un secondo messaggio di BE quando raggiunge
+# anche lui i +50 pips.
+
+async def process_tp1_be_signal(source_message_id):
+    if not MT5_READY:
+        return
+
+    try:
+        positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
+        bot_positions = [
+            p for p in positions if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
+        ]
+        if not bot_positions:
+            return
+
+        symbol_info = mt5.symbol_info("XAUUSD-P")
+        pip_size = float(symbol_info.point) * 10.0 if symbol_info else 0.0
+        if pip_size <= 0:
+            return
+
+        trigger_pips, protected_pips = 50.0, 10.0
+        percentage = protected_pips / trigger_pips
+
+        for position in bot_positions:
+            position_ticket = int(position.ticket)
+            direction = "BUY" if int(getattr(position, "type", -1)) == mt5.POSITION_TYPE_BUY else "SELL"
+            existing_sl_price = float(getattr(position, "sl", 0.0) or 0.0)
+            existing_protected_pips = 0.0
+            if existing_sl_price > 0:
+                if direction == "BUY":
+                    existing_protected_pips = (existing_sl_price - float(position.price_open)) / pip_size
+                else:
+                    existing_protected_pips = (float(position.price_open) - existing_sl_price) / pip_size
+
+            if existing_protected_pips >= protected_pips:
+                # Gia' protetto uguale o meglio (es. il monitor MT5 e' arrivato prima).
+                continue
+
+            try:
+                result = await asyncio.to_thread(
+                    move_position_to_profit_protection,
+                    position_ticket,
+                    trigger_pips,
+                    percentage,
+                )
+            except Exception:
+                logger.exception(
+                    "❌ ERRORE BE DA SEGNALE TP1 +50 | Position=%s", position_ticket
+                )
+                continue
+
+            if not result.get("changed"):
+                continue
+
+            new_sl = float(result["sl"])
+            row = await asyncio.to_thread(
+                get_open_trade_by_ticket_any_source, position_ticket, "XAUUSD"
+            )
+            if row is None:
+                continue
+
+            trade_source_chat = row[12]
+            original_message_id = row[1]
+            destination_message_id = row[2]
+
+            await asyncio.to_thread(
+                mark_automatic_breakeven,
+                position_ticket,
+                trade_source_chat,
+                original_message_id,
+                new_sl,
+            )
+            update_trade_sl(trade_source_chat, original_message_id, new_sl, status="OPENED")
+            await asyncio.to_thread(
+                set_last_pips_notified,
+                position_ticket,
+                trade_source_chat,
+                original_message_id,
+                int(trigger_pips),
+            )
+
+            try:
+                sent = await send_be_applied_message(
+                    pips=int(trigger_pips), reply_to=destination_message_id
+                )
+                logger.info(
+                    "🟢 BE FORZATO DA TP1 +50 (CÉDRIC) | Position=%s | SL=%.2f | Destination #%s",
+                    position_ticket, new_sl, sent.id,
+                )
+            except Exception:
+                logger.exception(
+                    "❌ ERRORE MESSAGGIO BE DA TP1 +50 | Position=%s", position_ticket
+                )
+    except Exception:
+        logger.exception("❌ ERRORE PROCESS_TP1_BE_SIGNAL | #%s", source_message_id)
 
 
 # ============================================================
