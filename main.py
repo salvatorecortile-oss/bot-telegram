@@ -2013,6 +2013,19 @@ async def send_daily_report_now():
         )
 
 
+async def _send_daily_report_manual():
+    """Report giornaliero su richiesta (comando bot2_report): invia sempre,
+    anche se gia' inviato oggi. Non tocca il flag di invio automatico
+    (has_daily_report/mark_daily_report_sent): il report delle 23:00
+    resta indipendente e parte comunque."""
+    report_date = datetime.now(ITALY_TZ).date()
+    stats = await asyncio.to_thread(_build_daily_report, report_date)
+    return await send_daily_report_message(
+        report_date=report_date.strftime("%d/%m/%Y"),
+        **stats,
+    )
+
+
 async def _send_weekly_report_manual():
     """Report settimanale su richiesta (comando bot2_reportw): copre da
     lunedi' della settimana corrente a oggi incluso. Non tocca il flag
@@ -2149,8 +2162,8 @@ async def _handle_bot2_command(event, command):
 
     elif command == "report":
         try:
-            await send_daily_report_now()
-            await event.reply("📊 Report giornaliero inviato (o gia' inviato oggi).")
+            sent = await _send_daily_report_manual()
+            await event.reply(f"📊 Report giornaliero inviato (#{sent.id}).")
         except Exception as e:
             logger.exception("❌ BOT2 COMANDO | report fallito")
             await event.reply(f"❌ Errore invio report giornaliero: {e}")
