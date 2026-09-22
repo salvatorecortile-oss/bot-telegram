@@ -1335,7 +1335,7 @@ def _calculate_position_profit_pips(position):
 # Ogni voce e' (trigger_pips, protected_pips): al raggiungimento di
 # trigger_pips di profitto, lo SL viene spostato a protected_pips.
 LIVE_PROTECTION_LEVELS = (
-    (100.0, 20.0),
+    (50.0, 20.0),
     (125.0, 50.0),
     (150.0, 80.0),
     (175.0, 110.0),
@@ -1361,7 +1361,7 @@ def _live_protection_step(profit_pips):
     """
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
-        +100  -> SL +20 (BE)
+        +50   -> SL +20 (BE)
         +125  -> SL +50
         +150  -> SL +80
         +175  -> SL +110
@@ -2115,22 +2115,43 @@ async def monitor_trailing_sl_closures(stop_event):
                         profit_pips = _calculate_position_profit_pips(position)
 
                         # --------------------------------------------------
-                        # AGGIORNAMENTO NEL CANALE OGNI 100 PIPS DI PROFITTO
+                        # AGGIORNAMENTO NEL CANALE: +50 (BE), POI OGNI 100 PIPS
                         # --------------------------------------------------
                         # Indipendente dagli step fini di protezione SL qui
                         # sotto (che continuano a muovere lo SL su MT5 come
-                        # sempre, silenziosamente): qui contiamo solo i
-                        # multipli di 100 pips di profitto e mandiamo un
-                        # messaggio in risposta al segnale originale, una
-                        # volta sola per multiplo. A +100 e' il messaggio di
-                        # BE, dai +200 in poi il semplice aggiornamento pips.
-                        # Continua anche dopo il TP raggiunto, fino alla
-                        # chiusura del trade.
-                        if profit_pips >= 100.0:
-                            pips_bucket = int(profit_pips // 100) * 100
-                            last_notified = await asyncio.to_thread(
-                                get_last_pips_notified, position_ticket
+                        # sempre, silenziosamente): a +50 pips di profitto
+                        # mandiamo il messaggio di BE (una sola volta), poi
+                        # dai +100 in poi il semplice aggiornamento pips ogni
+                        # multiplo di 100. Continua anche dopo il TP
+                        # raggiunto, fino alla chiusura del trade.
+                        last_notified = await asyncio.to_thread(
+                            get_last_pips_notified, position_ticket
+                        )
+
+                        if profit_pips >= 50.0 and last_notified < 50:
+                            await asyncio.to_thread(
+                                set_last_pips_notified,
+                                position_ticket,
+                                trade_source_chat,
+                                original_message_id,
+                                50,
                             )
+                            try:
+                                sent = await send_be_applied_message(
+                                    pips=50,
+                                    reply_to=destination_message_id,
+                                )
+                                logger.info(
+                                    "📈 AGGIORNAMENTO PIPS | Position=%s | +50 PIPS (BE) | Destination #%s",
+                                    position_ticket, sent.id,
+                                )
+                            except Exception:
+                                logger.exception(
+                                    "❌ ERRORE MESSAGGIO AGGIORNAMENTO PIPS | Position=%s",
+                                    position_ticket,
+                                )
+                        elif profit_pips >= 100.0:
+                            pips_bucket = int(profit_pips // 100) * 100
                             if pips_bucket > last_notified:
                                 await asyncio.to_thread(
                                     set_last_pips_notified,
@@ -2140,16 +2161,10 @@ async def monitor_trailing_sl_closures(stop_event):
                                     pips_bucket,
                                 )
                                 try:
-                                    if pips_bucket == 100:
-                                        sent = await send_be_applied_message(
-                                            pips=pips_bucket,
-                                            reply_to=destination_message_id,
-                                        )
-                                    else:
-                                        sent = await send_pips_progress_message(
-                                            pips=pips_bucket,
-                                            reply_to=destination_message_id,
-                                        )
+                                    sent = await send_pips_progress_message(
+                                        pips=pips_bucket,
+                                        reply_to=destination_message_id,
+                                    )
                                     logger.info(
                                         "📈 AGGIORNAMENTO PIPS | Position=%s | +%s PIPS | Destination #%s",
                                         position_ticket, pips_bucket, sent.id,
@@ -2270,7 +2285,7 @@ async def monitor_trailing_sl_closures(stop_event):
 
                         new_sl = float(result["sl"])
 
-                        if trigger_pips == 100.0:
+                        if trigger_pips == 50.0:
                             await asyncio.to_thread(
                                 mark_automatic_breakeven,
                                 position_ticket,
@@ -2795,7 +2810,7 @@ async def main():
     logger.info("TRAILING TELEGRAM   : DISABILITATO")
     logger.info("")
     logger.info("🛡️ GESTIONE SL LIVE")
-    logger.info("+100 PIPS           : SL +20 (BE) DA MT5")
+    logger.info("+50 PIPS            : SL +20 (BE) DA MT5")
     logger.info("+125 PIPS           : SL +50")
     logger.info("+150 PIPS           : SL +80")
     logger.info("+175 PIPS           : SL +110")
