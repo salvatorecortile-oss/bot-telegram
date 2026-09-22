@@ -11,13 +11,13 @@ from config import DESTINATION_CHAT
 # ============================================================
 
 GOOD_MORNING_MESSAGE_TEMPLATE = (
-    "☀️ **BUONGIORNO RAGAZZI** ☀️\n\n"
+    "☀️ <b>BUONGIORNO RAGAZZI</b> ☀️\n\n"
     "Una nuova giornata di trading sta per iniziare.\n"
-    "📩 **Hai bisogno di assistenza?**\n"
+    "📩 <b>Hai bisogno di assistenza?</b>\n"
     "Scrivimi in privato @yard_fx\n"
     "Restate pronti e soprattutto disciplinati. 📊\n"
     "Ci sentiamo tra poco con le operazioni della giornata.\n"
-    "**- YardFX**"
+    "<b>- YardFX</b>"
 )
 
 FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE = (
@@ -387,7 +387,7 @@ async def send_good_morning_message():
     return await client.send_message(
         DESTINATION_CHAT,
         GOOD_MORNING_MESSAGE_TEMPLATE,
-        parse_mode="md",
+        parse_mode="html",
         silent=True,
     )
 
