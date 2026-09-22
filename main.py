@@ -1335,7 +1335,7 @@ def _calculate_position_profit_pips(position):
 # Ogni voce e' (trigger_pips, protected_pips): al raggiungimento di
 # trigger_pips di profitto, lo SL viene spostato a protected_pips.
 LIVE_PROTECTION_LEVELS = (
-    (50.0, 20.0),
+    (50.0, 10.0),
     (125.0, 50.0),
     (150.0, 80.0),
     (175.0, 110.0),
@@ -1361,7 +1361,7 @@ def _live_protection_step(profit_pips):
     """
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
-        +50   -> SL +20 (BE)
+        +50   -> SL +10 (BE)
         +125  -> SL +50
         +150  -> SL +80
         +175  -> SL +110
@@ -2810,7 +2810,7 @@ async def main():
     logger.info("TRAILING TELEGRAM   : DISABILITATO")
     logger.info("")
     logger.info("🛡️ GESTIONE SL LIVE")
-    logger.info("+50 PIPS            : SL +20 (BE) DA MT5")
+    logger.info("+50 PIPS            : SL +10 (BE) DA MT5")
     logger.info("+125 PIPS           : SL +50")
     logger.info("+150 PIPS           : SL +80")
     logger.info("+175 PIPS           : SL +110")
