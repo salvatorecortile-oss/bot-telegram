@@ -12,9 +12,9 @@ from config import DESTINATION_CHAT
 
 GOOD_MORNING_MESSAGE_TEMPLATE = (
     "☀️ <b>BUONGIORNO RAGAZZI</b> ☀️\n\n"
-    "Una nuova giornata di trading sta per iniziare.\n"
+    "Una nuova giornata di trading sta per iniziare.\n\n"
     "📩 <b>Hai bisogno di assistenza?</b>\n"
-    "Scrivimi in privato @yard_fx\n"
+    "Scrivimi in privato @yard_fx\n\n"
     "Restate pronti e soprattutto disciplinati. 📊\n"
     "Ci sentiamo tra poco con le operazioni della giornata.\n"
     "<b>- YardFX</b>"
@@ -459,3 +459,49 @@ async def edit_destination_message_with_signal(destination_message_id, signal):
 
 async def delete_destination_message(destination_message_id):
     await client.delete_messages(DESTINATION_CHAT, [destination_message_id])
+
+
+# ============================================================
+# COMANDI BOT2 (Messaggi Salvati) - risposte inviate con event.reply()
+# ============================================================
+
+BOT2_PLAY_MESSAGE_TEMPLATE = (
+    "✅ <b>BOT2 (CÉDRIC) ATTIVO AL 100%</b>\n"
+    "Ascolto segnali e apro nuovi trade normalmente."
+)
+
+BOT2_PAUSED_MESSAGE_TEMPLATE = (
+    "⏸️ <b>BOT2 (CÉDRIC) IN PAUSA</b>\n"
+    "Nessun nuovo trade verrà aperto.\n"
+    "Le posizioni già aperte continuano a essere gestite (SL/trailing/chiusure)."
+)
+
+BOT2_STOPPED_MESSAGE_TEMPLATE = (
+    "🛑 <b>BOT2 (CÉDRIC) FERMATO</b>\n"
+    "Posizioni chiuse: {closed}\n"
+    "{errors_line}"
+    "Non ascolto più messaggi e non invio altro nel canale finché non ricevo bot2_play."
+)
+
+BOT2_STATUS_MESSAGE_TEMPLATE = (
+    "📊 <b>BOT2 (CÉDRIC) - STATO</b>\n"
+    "Stato: {state_label}\n\n"
+    "<b>Posizioni aperte:</b>\n{positions}"
+)
+
+BOT2_UNKNOWN_COMMAND_MESSAGE = (
+    "❓ <b>Comando non riconosciuto.</b>\n"
+    "Comandi disponibili: bot2_play, bot2_pausa, bot2_stop, bot2_status, "
+    "bot2_report, bot2_reportw, bot2_reportm"
+)
+
+
+def format_bot2_stopped_message(closed, errors):
+    errors_line = f"⚠️ Errori chiusura: {errors}\n" if errors else ""
+    return BOT2_STOPPED_MESSAGE_TEMPLATE.format(closed=closed, errors_line=errors_line)
+
+
+def format_bot2_status_message(state_label, positions_text):
+    return BOT2_STATUS_MESSAGE_TEMPLATE.format(
+        state_label=state_label, positions=positions_text
+    )

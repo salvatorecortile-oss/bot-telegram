@@ -28,6 +28,11 @@ from telegram_sender import (
     send_monthly_report_message,
     send_good_morning_message,
     send_forced_daily_close_message,
+    BOT2_PLAY_MESSAGE_TEMPLATE,
+    BOT2_PAUSED_MESSAGE_TEMPLATE,
+    BOT2_UNKNOWN_COMMAND_MESSAGE,
+    format_bot2_stopped_message,
+    format_bot2_status_message,
 )
 
 from signal_parser import parse_signal
@@ -176,6 +181,16 @@ logger = setup_logging()
 # ============================================================
 
 MT5_READY = False
+
+
+# ============================================================
+# STATO BOT2 (controllato via comandi bot2_* da Messaggi Salvati)
+# ============================================================
+# RUNNING -> tutto normale (ascolto, apertura trade, messaggi).
+# PAUSED  -> ascolta e gestisce i trade aperti, ma non ne apre di nuovi.
+# STOPPED -> non ascolta piu' nulla e non invia piu' messaggi nel canale
+#            (le posizioni aperte vengono chiuse subito dal comando stesso).
+BOT_STATE = "RUNNING"
 
 
 # ============================================================
@@ -399,6 +414,9 @@ def get_live_xau_price(direction=None):
     )
 )
 async def new_message_handler(event):
+
+    if BOT_STATE == "STOPPED":
+        return
 
     message = event.message
     source_message_id = message.id
@@ -638,6 +656,12 @@ async def new_message_handler(event):
             if not TRADING_ENABLED:
                 logger.warning("🚫 TRADE DISABILITATO DA CONFIG | #%s", source_message_id)
                 update_status(SOURCE_CHAT, source_message_id, "TRADE_DISABLED")
+                cleanup_old_timestamp_counters()
+                return
+
+            if BOT_STATE == "PAUSED":
+                logger.warning("⏸️ BOT2 IN PAUSA | Nuovo trade NON aperto | #%s", source_message_id)
+                update_status(SOURCE_CHAT, source_message_id, "PAUSED_NO_NEW_TRADE")
                 cleanup_old_timestamp_counters()
                 return
 
@@ -1546,6 +1570,10 @@ async def weekly_report_scheduler(stop_event):
             if residual > 0:
                 await asyncio.sleep(residual)
 
+            if BOT_STATE == "STOPPED":
+                logger.info("⏭️ WEEKLY REPORT SALTATO | BOT2 FERMO (bot2_stop)")
+                continue
+
             saturday = datetime.now(ITALY_TZ).date()
             week_end = saturday
             week_start = saturday - timedelta(days=5)  # lunedi della settimana corrente
@@ -1600,6 +1628,10 @@ async def morning_message_scheduler(stop_event):
             if residual > 0:
                 await asyncio.sleep(residual)
 
+            if BOT_STATE == "STOPPED":
+                logger.info("⏭️ BUONGIORNO SALTATO | BOT2 FERMO (bot2_stop)")
+                continue
+
             try:
                 sent = await send_good_morning_message()
                 logger.info("☀️ BUONGIORNO INVIATO | Destination #%s", sent.id)
@@ -1644,7 +1676,7 @@ async def daily_close_scheduler(stop_event):
             if residual > 0:
                 await asyncio.sleep(residual)
 
-            if MT5_READY and TRADING_ENABLED:
+            if MT5_READY and TRADING_ENABLED and BOT_STATE != "STOPPED":
                 positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
                 bot_positions = [
                     position for position in positions
@@ -1731,6 +1763,10 @@ async def daily_report_scheduler(stop_event):
             if residual > 0:
                 await asyncio.sleep(residual)
 
+            if BOT_STATE == "STOPPED":
+                logger.info("⏭️ DAILY REPORT SALTATO | BOT2 FERMO (bot2_stop)")
+                continue
+
             await send_daily_report_now()
         except asyncio.CancelledError:
             raise
@@ -1773,6 +1809,10 @@ async def monthly_report_scheduler(stop_event):
             residual = (target - datetime.now(ITALY_TZ)).total_seconds()
             if residual > 0:
                 await asyncio.sleep(residual)
+
+            if BOT_STATE == "STOPPED":
+                logger.info("⏭️ MONTHLY REPORT SALTATO | BOT2 FERMO (bot2_stop)")
+                continue
 
             month_start = date(target.year, target.month, 1)
             if target.month == 12:
@@ -1853,6 +1893,165 @@ async def send_daily_report_now():
             "❌ ERRORE INVIO YARDFX ELITE REPORT | Date=%s",
             report_date,
         )
+
+
+async def _send_weekly_report_manual():
+    """Report settimanale su richiesta (comando bot2_reportw): copre da
+    lunedi' della settimana corrente a oggi incluso. Non tocca il flag
+    di invio automatico: il report del sabato resta indipendente."""
+    today = datetime.now(ITALY_TZ).date()
+    week_start = today - timedelta(days=today.weekday())
+    week_end_exclusive = today + timedelta(days=1)
+    stats = await asyncio.to_thread(_build_weekly_report, week_start, week_end_exclusive)
+    date_range = _format_date_range_it(week_start, today)
+    return await send_weekly_report_message(date_range=date_range, **stats)
+
+
+async def _send_monthly_report_manual():
+    """Report mensile su richiesta (comando bot2_reportm): copre dal
+    primo del mese a oggi incluso. Non tocca il flag di invio automatico."""
+    today = datetime.now(ITALY_TZ).date()
+    month_start = today.replace(day=1)
+    month_end_exclusive = today + timedelta(days=1)
+    stats = await asyncio.to_thread(_build_monthly_report, month_start, month_end_exclusive)
+    date_range = _format_date_range_it(month_start, today)
+    return await send_monthly_report_message(date_range=date_range, **stats)
+
+
+async def _close_all_bot_positions_now():
+    """Chiude subito a mercato tutte le posizioni del bot (comando bot2_stop)."""
+    if not MT5_READY:
+        return [], []
+
+    positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
+    bot_positions = [
+        p for p in positions if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
+    ]
+
+    closed, errors = [], []
+    for position in bot_positions:
+        ticket = int(position.ticket)
+        try:
+            result = await asyncio.to_thread(close_position, ticket)
+            closed.append((ticket, float(result.price)))
+            logger.info("🛑 BOT2_STOP | Posizione=%s chiusa | Prezzo=%.2f", ticket, float(result.price))
+        except Exception as e:
+            errors.append((ticket, str(e)))
+            logger.exception("❌ BOT2_STOP | Errore chiusura posizione=%s", ticket)
+
+    return closed, errors
+
+
+async def _format_open_positions_status():
+    """Testo per il comando bot2_status: direzione, entry, prezzo attuale
+    e profitto/perdita in valuta di conto per ogni posizione del bot."""
+    if not MT5_READY:
+        return "⚠️ MT5 non connesso."
+
+    positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
+    bot_positions = [
+        p for p in positions if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
+    ]
+
+    if not bot_positions:
+        return "Nessuna posizione aperta."
+
+    lines = []
+    for p in bot_positions:
+        direction = "BUY" if int(getattr(p, "type", -1)) == mt5.POSITION_TYPE_BUY else "SELL"
+        profit = float(getattr(p, "profit", 0.0) or 0.0)
+        lines.append(
+            f"#{p.ticket} {direction} | Entry {float(p.price_open):.2f} | "
+            f"Attuale {float(p.price_current):.2f} | {profit:+.2f}$"
+        )
+
+    return "\n".join(lines)
+
+
+# ============================================================
+# COMANDI BOT2 (Messaggi Salvati: bot2_play / bot2_pausa / bot2_stop /
+# bot2_status / bot2_report / bot2_reportw / bot2_reportm)
+# ============================================================
+
+BOT2_COMMAND_PREFIX = "bot2_"
+
+
+async def _handle_bot2_command(event, command):
+    global BOT_STATE
+
+    if command == "play":
+        BOT_STATE = "RUNNING"
+        logger.info("✅ BOT2 COMANDO | play -> RUNNING")
+        await event.reply(BOT2_PLAY_MESSAGE_TEMPLATE, parse_mode="html")
+
+    elif command == "pausa":
+        BOT_STATE = "PAUSED"
+        logger.info("⏸️ BOT2 COMANDO | pausa -> PAUSED")
+        await event.reply(BOT2_PAUSED_MESSAGE_TEMPLATE, parse_mode="html")
+
+    elif command == "stop":
+        closed, errors = await _close_all_bot_positions_now()
+        BOT_STATE = "STOPPED"
+        logger.info(
+            "🛑 BOT2 COMANDO | stop -> STOPPED | Chiuse=%s | Errori=%s",
+            len(closed), len(errors),
+        )
+        await event.reply(
+            format_bot2_stopped_message(len(closed), len(errors)),
+            parse_mode="html",
+        )
+
+    elif command == "status":
+        state_label = {
+            "RUNNING": "🟢 ATTIVO",
+            "PAUSED": "⏸️ IN PAUSA",
+            "STOPPED": "🛑 FERMO",
+        }.get(BOT_STATE, BOT_STATE)
+        positions_text = await _format_open_positions_status()
+        await event.reply(
+            format_bot2_status_message(state_label, positions_text),
+            parse_mode="html",
+        )
+
+    elif command == "report":
+        try:
+            await send_daily_report_now()
+            await event.reply("📊 Report giornaliero inviato (o gia' inviato oggi).")
+        except Exception as e:
+            logger.exception("❌ BOT2 COMANDO | report fallito")
+            await event.reply(f"❌ Errore invio report giornaliero: {e}")
+
+    elif command == "reportw":
+        try:
+            sent = await _send_weekly_report_manual()
+            await event.reply(f"📊 Report settimanale inviato (#{sent.id}).")
+        except Exception as e:
+            logger.exception("❌ BOT2 COMANDO | reportw fallito")
+            await event.reply(f"❌ Errore invio report settimanale: {e}")
+
+    elif command == "reportm":
+        try:
+            sent = await _send_monthly_report_manual()
+            await event.reply(f"📊 Report mensile inviato (#{sent.id}).")
+        except Exception as e:
+            logger.exception("❌ BOT2 COMANDO | reportm fallito")
+            await event.reply(f"❌ Errore invio report mensile: {e}")
+
+    else:
+        await event.reply(BOT2_UNKNOWN_COMMAND_MESSAGE, parse_mode="html")
+
+
+@client.on(events.NewMessage(chats="me"))
+async def saved_messages_command_handler(event):
+    text = (event.raw_text or "").strip().lower()
+    if not text.startswith(BOT2_COMMAND_PREFIX):
+        return
+
+    command = text[len(BOT2_COMMAND_PREFIX):].strip()
+    try:
+        await _handle_bot2_command(event, command)
+    except Exception:
+        logger.exception("❌ ERRORE GESTIONE COMANDO BOT2 | comando=%s", command)
 
 
 # ============================================================
@@ -2063,7 +2262,7 @@ async def monitor_trailing_sl_closures(stop_event):
 
     while not stop_event.is_set():
         try:
-            if MT5_READY and TRADING_ENABLED:
+            if MT5_READY and TRADING_ENABLED and BOT_STATE != "STOPPED":
                 rows = await asyncio.to_thread(
                     get_open_trades,
                     SOURCE_CHAT,
@@ -2555,6 +2754,9 @@ async def monitor_trailing_sl_closures(stop_event):
 )
 async def edited_message_handler(event):
 
+    if BOT_STATE == "STOPPED":
+        return
+
     message = event.message
 
     source_message_id = message.id
@@ -2836,6 +3038,10 @@ async def main():
     logger.info("RIEPILOGO SETT.     : SABATO | ORE 10:00 IT")
     logger.info("SL HIT              : RILEVATO DA MT5")
     logger.info("TAKE PROFIT         : TP3 LOGICO | NON CHIUDE | ATTIVA TRAILING 15%")
+    logger.info("")
+    logger.info("🕹️ COMANDI (da Messaggi Salvati)")
+    logger.info("bot2_play / bot2_pausa / bot2_stop / bot2_status")
+    logger.info("bot2_report / bot2_reportw / bot2_reportm")
     logger.info("")
     logger.info("🛡️ MONITOR")
     logger.info("PREZZO MT5          : ogni 0.5s")
