@@ -31,6 +31,7 @@ from telegram_sender import (
     BOT2_PLAY_MESSAGE_TEMPLATE,
     BOT2_PAUSED_MESSAGE_TEMPLATE,
     BOT2_UNKNOWN_COMMAND_MESSAGE,
+    BOT2_HELP_MESSAGE_TEMPLATE,
     format_bot2_stopped_message,
     format_bot2_restart_message,
     format_bot2_status_message,
@@ -2087,7 +2088,8 @@ async def _format_open_positions_status():
 
 # ============================================================
 # COMANDI BOT2 (Messaggi Salvati: bot2_play / bot2_pausa / bot2_stop /
-# bot2_riavvio / bot2_status / bot2_report / bot2_reportw / bot2_reportm)
+# bot2_riavvio / bot2_status / bot2_report / bot2_reportw / bot2_reportm /
+# bot2_comandi)
 # ============================================================
 
 BOT2_COMMAND_PREFIX = "bot2_"
@@ -2168,6 +2170,9 @@ async def _handle_bot2_command(event, command):
         except Exception as e:
             logger.exception("❌ BOT2 COMANDO | reportm fallito")
             await event.reply(f"❌ Errore invio report mensile: {e}")
+
+    elif command == "comandi":
+        await event.reply(BOT2_HELP_MESSAGE_TEMPLATE, parse_mode="html")
 
     else:
         await event.reply(BOT2_UNKNOWN_COMMAND_MESSAGE, parse_mode="html")
@@ -3173,7 +3178,7 @@ async def main():
     logger.info("")
     logger.info("🕹️ COMANDI (da Messaggi Salvati)")
     logger.info("bot2_play / bot2_pausa / bot2_stop / bot2_riavvio / bot2_status")
-    logger.info("bot2_report / bot2_reportw / bot2_reportm")
+    logger.info("bot2_report / bot2_reportw / bot2_reportm / bot2_comandi")
     logger.info("")
     logger.info("🛡️ MONITOR")
     logger.info("PREZZO MT5          : ogni 0.5s")

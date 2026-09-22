@@ -75,7 +75,7 @@ TAKE_PROFIT_REACHED_MESSAGE_TEMPLATE = (
 )
 
 WEEKLY_REPORT_MESSAGE_TEMPLATE = (
-    "📊 YARDFX ELITE\n"
+    "📊 YARDFX ELITE REPORT\n"
     "📅 REPORT SETTIMANALE\n\n"
     "📅 {date_range}\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
@@ -93,7 +93,7 @@ WEEKLY_REPORT_MESSAGE_TEMPLATE = (
 )
 
 MONTHLY_REPORT_TEMPLATE = (
-    "📊 <b>YARDFX REPORT</b>\n"
+    "📊 <b>YARDFX ELITE REPORT</b>\n"
     "📅 <b>RISULTATO MENSILE</b>\n\n"
     "📅 {date_range}\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
@@ -119,11 +119,6 @@ DAILY_REPORT_MESSAGE_TEMPLATE = (
     "📈 Win Rate: {win_rate:.0f}%\n"
     "📊 Risultato: {result_pips}\n\n"
     "━━━━━━━━━━━━━━━━━━\n"
-    "🛡️ GESTIONE\n"
-    "━━━━━━━━━━━━━━━━━━\n\n"
-    "🟢 Break Even: {be_activated}\n"
-    "🛡️ SL in profitto: {profit_sl}\n"
-    "🎯 TAKE PROFIT raggiunti: {tp3_reached}\n\n"
     "Grazie per averci seguito!\n"
     "Ci sentiamo domani con altre operazioni.\n"
     "- YardFX"
@@ -480,7 +475,7 @@ BOT2_RESTART_MESSAGE_TEMPLATE = (
 BOT2_PAUSED_MESSAGE_TEMPLATE = (
     "⏸️ <b>BOT2 (CÉDRIC) IN PAUSA</b>\n"
     "Nessun nuovo trade verrà aperto.\n"
-    "Le posizioni già aperte continuano a essere gestite (SL/trailing/chiusure)."
+    "Le posizioni già aperte continuano a essere gestite."
 )
 
 BOT2_STOPPED_MESSAGE_TEMPLATE = (
@@ -491,15 +486,32 @@ BOT2_STOPPED_MESSAGE_TEMPLATE = (
 )
 
 BOT2_STATUS_MESSAGE_TEMPLATE = (
-    "📊 <b>BOT2 (CÉDRIC) - STATO</b>\n"
+    "📊 <b>BOT2 (CÉDRIC)</b>\n"
     "Stato: {state_label}\n\n"
     "<b>Posizioni aperte:</b>\n{positions}"
 )
 
+BOT2_COMMANDS_LIST_TEXT = (
+    "bot2_play, bot2_pausa, bot2_stop, bot2_riavvio, bot2_status, "
+    "bot2_report, bot2_reportw, bot2_reportm, bot2_comandi"
+)
+
 BOT2_UNKNOWN_COMMAND_MESSAGE = (
     "❓ <b>Comando non riconosciuto.</b>\n"
-    "Comandi disponibili: bot2_play, bot2_pausa, bot2_stop, bot2_riavvio, "
-    "bot2_status, bot2_report, bot2_reportw, bot2_reportm"
+    "Comandi disponibili: " + BOT2_COMMANDS_LIST_TEXT
+)
+
+BOT2_HELP_MESSAGE_TEMPLATE = (
+    "📋 <b>COMANDI DISPONIBILI BOT2 (CÉDRIC)</b>\n\n"
+    "bot2_play — attivo al 100%\n"
+    "bot2_pausa — nessun nuovo trade, gestisce quelli aperti\n"
+    "bot2_stop — chiude tutto e non ascolta più nulla\n"
+    "bot2_riavvio — chiude tutto e riparte al 100%\n"
+    "bot2_status — stato attuale e posizioni aperte\n"
+    "bot2_report — report giornaliero ora\n"
+    "bot2_reportw — report settimanale ora\n"
+    "bot2_reportm — report mensile ora\n"
+    "bot2_comandi — questo elenco"
 )
 
 
