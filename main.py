@@ -2757,19 +2757,23 @@ async def monitor_trailing_sl_closures(stop_event):
                         if symbol_info_for_report is not None:
                             pip_size_for_report = float(symbol_info_for_report.point) * 10.0
 
-                        trailing_applied = (
-                            pip_size_for_report > 0
-                            and (
-                                (
-                                    str(direction).upper() == "BUY"
-                                    and last_sl_price >= open_price_for_report + pip_size_for_report
-                                )
-                                or (
-                                    str(direction).upper() == "SELL"
-                                    and last_sl_price <= open_price_for_report - pip_size_for_report
-                                )
-                            )
-                        )
+                        # "Vero" trailing solo se lo SL ha superato il gradino fisso
+                        # del BE (LIVE_PROTECTION_LEVELS[0], +10 pips): un controllo
+                        # che guardava solo "SL sopra l'entry di almeno 1 pip"
+                        # scambiava anche il semplice BE per un trailing, perché
+                        # +10 pips e' gia' tecnicamente sopra l'entry.
+                        be_lock_pips = LIVE_PROTECTION_LEVELS[0][1]
+                        trailing_applied = False
+                        if pip_size_for_report > 0:
+                            if str(direction).upper() == "BUY":
+                                protected_pips_at_close = (
+                                    last_sl_price - open_price_for_report
+                                ) / pip_size_for_report
+                            else:
+                                protected_pips_at_close = (
+                                    open_price_for_report - last_sl_price
+                                ) / pip_size_for_report
+                            trailing_applied = protected_pips_at_close > be_lock_pips + 5.0
 
                         if trailing_applied:
                             close_status = "SL_TRAILING_HIT"
