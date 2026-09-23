@@ -488,7 +488,7 @@ BOT2_STOPPED_MESSAGE_TEMPLATE = (
 )
 
 BOT2_STATUS_MESSAGE_TEMPLATE = (
-    "📊 <b>BOT2 (CÉDRIC)</b>\n"
+    "📊 <b>BOT2 STATUS</b>\n"
     "Stato: {state_label}\n\n"
     "<b>Posizioni aperte:</b>\n{positions}"
 )
