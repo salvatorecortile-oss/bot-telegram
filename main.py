@@ -2781,14 +2781,17 @@ async def monitor_trailing_sl_closures(stop_event):
                                 ) / pip_size_for_report
                             trailing_applied = protected_pips_at_close > be_lock_pips + 5.0
 
-                        # Un BE puo' arrivare anche da una modifica SL generica del
-                        # segnale (process_modify_sl), che non imposta il flag
-                        # breakeven_applied nel DB: se pero' lo SL protegge comunque
-                        # un profitto (ed è sotto la soglia del vero trailing), va
-                        # contato come BE lo stesso, mai come SL iniziale.
+                        # BE = lo SL era esattamente al gradino di breakeven
+                        # (LIVE_PROTECTION_LEVELS[0], +10 pips) ed e' stato preso lì,
+                        # a prescindere da come ci e' arrivato (monitor MT5, segnale
+                        # "TP1 HIT +50pips" o una modifica SL generica del segnale
+                        # che non imposta il flag breakeven_applied nel DB). Un SL
+                        # che protegge un profitto diverso da +10 non e' BE.
+                        is_be_lock = abs(protected_pips_at_close - be_lock_pips) <= 2.0
+
                         if trailing_applied:
                             close_status = "SL_TRAILING_HIT"
-                        elif breakeven_applied or protected_pips_at_close > 0.5:
+                        elif breakeven_applied or is_be_lock:
                             close_status = "SL_BREAKEVEN_HIT"
                             breakeven_applied = True
                         else:
