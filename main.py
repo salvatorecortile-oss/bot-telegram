@@ -2082,10 +2082,10 @@ async def _close_all_bot_positions_now():
 
 
 async def _format_open_positions_status():
-    """Testo per il comando bot2_status: direzione, entry, prezzo attuale
+    """Testo (e conteggio) per il comando bot2_status: simbolo, direzione
     e profitto/perdita in valuta di conto per ogni posizione del bot."""
     if not MT5_READY:
-        return "⚠️ MT5 non connesso."
+        return 0, "⚠️ MT5 non connesso."
 
     positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
     bot_positions = [
@@ -2093,18 +2093,15 @@ async def _format_open_positions_status():
     ]
 
     if not bot_positions:
-        return "Nessuna posizione aperta."
+        return 0, "Nessuna posizione aperta."
 
     lines = []
     for p in bot_positions:
         direction = "BUY" if int(getattr(p, "type", -1)) == mt5.POSITION_TYPE_BUY else "SELL"
         profit = float(getattr(p, "profit", 0.0) or 0.0)
-        lines.append(
-            f"#{p.ticket} {direction} | Entry {float(p.price_open):.2f} | "
-            f"Attuale {float(p.price_current):.2f} | {profit:+.2f}$"
-        )
+        lines.append(f"XAUUSD-P {direction} — {profit:+.2f}$")
 
-    return "\n".join(lines)
+    return len(bot_positions), "\n".join(lines)
 
 
 # ============================================================
@@ -2158,13 +2155,13 @@ async def _handle_bot2_command(event, command):
 
     elif command == "status":
         state_label = {
-            "RUNNING": "🟢 ATTIVO",
+            "RUNNING": "🟢 ATTIVO AL 100%",
             "PAUSED": "⏸️ IN PAUSA",
             "STOPPED": "🛑 FERMO",
         }.get(BOT_STATE, BOT_STATE)
-        positions_text = await _format_open_positions_status()
+        positions_count, positions_text = await _format_open_positions_status()
         await event.reply(
-            format_bot2_status_message(state_label, positions_text),
+            format_bot2_status_message(state_label, positions_count, positions_text),
             parse_mode="html",
         )
 

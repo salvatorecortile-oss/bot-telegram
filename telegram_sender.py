@@ -488,9 +488,8 @@ BOT2_STOPPED_MESSAGE_TEMPLATE = (
 )
 
 BOT2_STATUS_MESSAGE_TEMPLATE = (
-    "📊 <b>BOT2 STATUS</b>\n"
-    "Stato: {state_label}\n\n"
-    "<b>Posizioni aperte:</b>\n{positions}"
+    "<b>STATO BOT:</b> {state_label}\n\n"
+    "<b>Posizioni aperte ({positions_count}):</b>\n{positions}"
 )
 
 BOT2_COMMANDS_LIST_TEXT = (
@@ -527,7 +526,9 @@ def format_bot2_restart_message(closed, errors):
     return BOT2_RESTART_MESSAGE_TEMPLATE.format(closed=closed, errors_line=errors_line)
 
 
-def format_bot2_status_message(state_label, positions_text):
+def format_bot2_status_message(state_label, positions_count, positions_text):
     return BOT2_STATUS_MESSAGE_TEMPLATE.format(
-        state_label=state_label, positions=positions_text
+        state_label=state_label,
+        positions_count=positions_count,
+        positions=positions_text,
     )
