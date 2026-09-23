@@ -1588,8 +1588,10 @@ def _build_daily_report(report_date):
     rows = get_daily_trade_results(report_date, SOURCE_CHAT)
 
     operations = len(rows)
-    wins = sum(1 for row in rows if float(row[6]) > 1.0)
-    losses = sum(1 for row in rows if float(row[6]) < -1.0)
+    # Una chiusura a BE conta come BE, mai come vincita/perdita, anche se
+    # il BE e' a +10 pips (quindi tecnicamente un pips positivo).
+    wins = sum(1 for row in rows if str(row[7]) != "SL_BREAKEVEN_HIT" and float(row[6]) > 1.0)
+    losses = sum(1 for row in rows if str(row[7]) != "SL_BREAKEVEN_HIT" and float(row[6]) < -1.0)
     breakeven = operations - wins - losses
 
     result_pips = sum(float(row[6]) for row in rows)
@@ -1616,8 +1618,10 @@ def _build_weekly_report(week_start, week_end):
     rows = get_weekly_trade_results(week_start, week_end, SOURCE_CHAT)
 
     operations = len(rows)
-    wins = sum(1 for row in rows if float(row[6]) > 1.0)
-    losses = sum(1 for row in rows if float(row[6]) < -1.0)
+    # Una chiusura a BE conta come BE, mai come vincita/perdita (vedi
+    # _build_daily_report).
+    wins = sum(1 for row in rows if str(row[7]) != "SL_BREAKEVEN_HIT" and float(row[6]) > 1.0)
+    losses = sum(1 for row in rows if str(row[7]) != "SL_BREAKEVEN_HIT" and float(row[6]) < -1.0)
     breakeven = operations - wins - losses
     result_pips = sum(float(row[6]) for row in rows)
     win_rate = (wins / operations * 100.0) if operations else 0.0
@@ -1637,8 +1641,12 @@ def _build_monthly_report(month_start, month_end_exclusive):
     rows = get_monthly_trade_results(month_start, month_end_exclusive, SOURCE_CHAT)
 
     operations = len(rows)
-    wins = sum(1 for row in rows if float(row[6]) > 1.0)
-    losses = sum(1 for row in rows if float(row[6]) < -1.0)
+    # Una chiusura a BE conta come BE, mai come vincita/perdita (vedi
+    # _build_daily_report): qui non c'e' un bucket "breakeven" visibile,
+    # ma resta comunque esclusa da wins/losses e i suoi pips restano nel
+    # totale.
+    wins = sum(1 for row in rows if str(row[7]) != "SL_BREAKEVEN_HIT" and float(row[6]) > 1.0)
+    losses = sum(1 for row in rows if str(row[7]) != "SL_BREAKEVEN_HIT" and float(row[6]) < -1.0)
     result_pips = sum(float(row[6]) for row in rows)
     win_rate = (wins / operations * 100.0) if operations else 0.0
 
