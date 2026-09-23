@@ -2768,6 +2768,7 @@ async def monitor_trailing_sl_closures(stop_event):
                         # scambiava anche il semplice BE per un trailing, perché
                         # +10 pips e' gia' tecnicamente sopra l'entry.
                         be_lock_pips = LIVE_PROTECTION_LEVELS[0][1]
+                        protected_pips_at_close = 0.0
                         trailing_applied = False
                         if pip_size_for_report > 0:
                             if str(direction).upper() == "BUY":
@@ -2780,10 +2781,16 @@ async def monitor_trailing_sl_closures(stop_event):
                                 ) / pip_size_for_report
                             trailing_applied = protected_pips_at_close > be_lock_pips + 5.0
 
+                        # Un BE puo' arrivare anche da una modifica SL generica del
+                        # segnale (process_modify_sl), che non imposta il flag
+                        # breakeven_applied nel DB: se pero' lo SL protegge comunque
+                        # un profitto (ed è sotto la soglia del vero trailing), va
+                        # contato come BE lo stesso, mai come SL iniziale.
                         if trailing_applied:
                             close_status = "SL_TRAILING_HIT"
-                        elif breakeven_applied:
+                        elif breakeven_applied or protected_pips_at_close > 0.5:
                             close_status = "SL_BREAKEVEN_HIT"
+                            breakeven_applied = True
                         else:
                             close_status = "SL_INITIAL_HIT"
 
