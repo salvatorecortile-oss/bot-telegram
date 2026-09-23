@@ -39,6 +39,8 @@ BE_APPLIED_MESSAGE_TEMPLATE = (
 
 PIPS_PROGRESS_MESSAGE_TEMPLATE = (
     "📈 <b>+{pips} PIPS</b>\n"
+    "💰 Parzializzate o chiudete l'operazione.\n"
+    "Se volete potete lasciare aperto e puntare al TP!"
 )
 
 # Copia informativa quando Cédric scrive "STOP LOSS" in chat (nessuna
