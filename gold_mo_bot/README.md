@@ -42,6 +42,44 @@ Il segnale e' composto da **2 messaggi**:
 4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5 e
    riportata nel messaggio destinazione.
 
+## Comandi remoti (da "Messaggi Salvati")
+
+Scrivendo a te stesso su Telegram (chat "Messaggi Salvati") con l'account
+usato dal bot, sono disponibili questi comandi (prefisso configurabile,
+default `goldmo_`):
+
+- `goldmo_play` — il bot riparte al 100%
+- `goldmo_stop` — chiude tutte le posizioni (entrambi i conti) e ferma
+  completamente il bot (niente ascolto ne' messaggi nel canale)
+- `goldmo_riavvio` — come `goldmo_stop` e subito dopo come `goldmo_play`
+- `goldmo_pausa` — non copia ne' apre nuovi trade, ma i trade gia' aperti
+  restano gestiti normalmente (BE/chiusura continuano)
+- `goldmo_status` — stato attuale + posizioni aperte con il profitto
+  flottante
+- `goldmo_report` / `goldmo_reportw` / `goldmo_reportm` — invia subito il
+  report giornaliero / settimanale / mensile
+- `goldmo_comandi` — mostra l'elenco comandi
+
+## Automatismi giornalieri (orario Europe/Rome)
+
+- ☀️ 06:00 (lun-ven): messaggio di buongiorno
+- 🔒 22:45 (lun-ven): chiusura a mercato di tutte le posizioni aperte
+  (entrambi i conti)
+- 📊 23:00 (lun-ven): report giornaliero (letto direttamente dallo storico
+  MT5 del conto principale)
+- 📅 Sabato 10:00: report settimanale
+- 🗓️ Ultimo giorno del mese, 23:59: report mensile
+
+Orari personalizzabili nel `.env` (`DAILY_CLOSE_HOUR`, `DAILY_REPORT_HOUR`,
+`GOOD_MORNING_HOUR`, `WEEKLY_REPORT_HOUR`, ecc.).
+
+## Recovery automatico all'avvio
+
+Se il bot si riavvia mentre una posizione e' aperta sul conto principale,
+al successivo avvio la ritrova sempre: se manca la riga nel database (es.
+crash tra apertura e scrittura), la "adotta" e pubblica un nuovo messaggio
+nel canale, riprendendo la gestione (BE/chiusura) da li'.
+
 ## Secondo conto MT5 (opzionale)
 
 Il bot puo' aprire la stessa operazione anche su un secondo conto MT5, in
@@ -67,9 +105,13 @@ conto principale, senza bloccarsi.
    ```
 3. Copia `.env.example` in `.env` e compila i valori (API Telegram, MT5
    conto principale, eventualmente secondo conto).
-4. Login Telegram (una tantum, via QR code):
+4. Login Telegram (una tantum), via QR code:
    ```bat
    python telegram_login.py
+   ```
+   oppure, se preferisci numero di telefono + codice:
+   ```bat
+   python telegram_login_phone.py
    ```
 5. Avvia il bot:
    ```bat

@@ -56,3 +56,15 @@ def position_is_open(position_ticket):
 
 def get_closed_position_info(position_ticket):
     return engine.get_closed_position_info(position_ticket)
+
+
+def list_open_positions():
+    return engine.list_open_positions(MT5_SYMBOL, MAGIC_NUMBER)
+
+
+def close_all_positions():
+    return engine.close_all_positions(MT5_SYMBOL, MAGIC_NUMBER, ORDER_COMMENT, DEVIATION)
+
+
+def get_closed_trades_for_period(start_utc, end_utc):
+    return engine.get_closed_trades_for_period(MT5_SYMBOL, MAGIC_NUMBER, start_utc, end_utc)

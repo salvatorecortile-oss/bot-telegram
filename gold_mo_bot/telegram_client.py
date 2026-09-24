@@ -16,3 +16,5 @@ client = TelegramClient(
     retry_delay=1,
     auto_reconnect=True,
 )
+
+client.parse_mode = "html"

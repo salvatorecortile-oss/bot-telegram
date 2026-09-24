@@ -80,6 +80,27 @@ ORDER_COMMENT = os.getenv("ORDER_COMMENT", "Gold MO Copier")
 MONITOR_INTERVAL_SECONDS = float(os.getenv("MONITOR_INTERVAL_SECONDS", "0.5"))
 
 # =========================
+# COMANDI REMOTI (da "Messaggi Salvati")
+# =========================
+# Prefisso distinto da altri eventuali bot sullo stesso account Telegram.
+COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "goldmo_")
+
+# =========================
+# CHIUSURA AUTOMATICA DI FINE GIORNATA + REPORT
+# =========================
+DAILY_CLOSE_HOUR = int(os.getenv("DAILY_CLOSE_HOUR", "22"))
+DAILY_CLOSE_MINUTE = int(os.getenv("DAILY_CLOSE_MINUTE", "45"))
+DAILY_REPORT_HOUR = int(os.getenv("DAILY_REPORT_HOUR", "23"))
+DAILY_REPORT_MINUTE = int(os.getenv("DAILY_REPORT_MINUTE", "0"))
+GOOD_MORNING_HOUR = int(os.getenv("GOOD_MORNING_HOUR", "6"))
+GOOD_MORNING_MINUTE = int(os.getenv("GOOD_MORNING_MINUTE", "0"))
+WEEKLY_REPORT_HOUR = int(os.getenv("WEEKLY_REPORT_HOUR", "10"))
+WEEKLY_REPORT_MINUTE = int(os.getenv("WEEKLY_REPORT_MINUTE", "0"))
+
+# Branding usato nei messaggi di report/buongiorno.
+BRAND_NAME = os.getenv("BRAND_NAME", "GOLD MO")
+
+# =========================
 # LOGGING / DEBUG
 # =========================
 DEBUG = os.getenv("DEBUG", "true").lower() in {"1", "true", "yes", "on"}

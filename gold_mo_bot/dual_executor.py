@@ -200,6 +200,44 @@ def primary_closed_position_info(ticket):
     return mt5_executor.get_closed_position_info(ticket)
 
 
+async def secondary_open_positions():
+    if not (secondary_enabled() and _secondary_ready):
+        return None
+    try:
+        response = await _call_secondary("list_open_positions", MT5_SYMBOL, MAGIC_NUMBER_2)
+        if response["ok"]:
+            return response["result"]
+        logger.error("❌ Lettura posizioni FALLITA sul secondo conto: %s", response["error"])
+    except Exception:
+        logger.exception("❌ Errore comunicazione con il secondo conto (lista posizioni).")
+    return None
+
+
+async def close_all_dual():
+    """
+    Chiude a mercato TUTTE le posizioni del bot su entrambi i conti
+    (usata dai comandi remoti stop/riavvio e dalla chiusura automatica
+    di fine giornata). Ritorna (primary_closed, primary_errors,
+    secondary_closed, secondary_errors).
+    """
+    primary_closed, primary_errors = await asyncio.to_thread(mt5_executor.close_all_positions)
+
+    secondary_closed, secondary_errors = [], []
+    if secondary_enabled() and _secondary_ready:
+        try:
+            response = await _call_secondary(
+                "close_all_positions", MT5_SYMBOL, MAGIC_NUMBER_2, ORDER_COMMENT, DEVIATION,
+            )
+            if response["ok"]:
+                secondary_closed, secondary_errors = response["result"]
+            else:
+                logger.error("❌ Chiusura totale FALLITA sul secondo conto: %s", response["error"])
+        except Exception:
+            logger.exception("❌ Errore comunicazione con il secondo conto (chiusura totale).")
+
+    return primary_closed, primary_errors, secondary_closed, secondary_errors
+
+
 async def secondary_closed_position_info(ticket):
     if not (secondary_enabled() and _secondary_ready and ticket):
         return None

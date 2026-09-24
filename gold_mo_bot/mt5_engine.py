@@ -9,7 +9,7 @@ processo, per questo il secondo conto gira sempre in un processo a parte.
 """
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import MetaTrader5 as mt5
 
@@ -474,6 +474,152 @@ def close_position(symbol, magic, comment, position_ticket, deviation):
 
 def position_is_open(position_ticket):
     return bool(mt5.positions_get(ticket=int(position_ticket)))
+
+
+def list_open_positions(symbol, magic):
+    """Elenco delle posizioni aperte del bot (usato dal comando *_status)."""
+    positions = mt5.positions_get(symbol=symbol) or []
+    summary = []
+    for position in positions:
+        if int(getattr(position, "magic", 0) or 0) != int(magic):
+            continue
+        is_buy = int(position.type) == mt5.POSITION_TYPE_BUY
+        summary.append({
+            "ticket": int(position.ticket),
+            "direction": "BUY" if is_buy else "SELL",
+            "volume": float(position.volume),
+            "price_open": float(position.price_open),
+            "price_current": float(position.price_current),
+            "profit": float(position.profit),
+            "sl": float(position.sl),
+            "tp": float(position.tp),
+        })
+    return sorted(summary, key=lambda item: item["ticket"])
+
+
+def close_all_positions(symbol, magic, comment, deviation):
+    """
+    Chiude a mercato tutte le posizioni del bot su symbol/magic.
+    Ritorna (closed_tickets, errors) dove errors e' una lista di tuple
+    (ticket, messaggio_errore).
+    """
+    closed = []
+    errors = []
+
+    positions = mt5.positions_get(symbol=symbol) or []
+    for position in positions:
+        if int(getattr(position, "magic", 0) or 0) != int(magic):
+            continue
+        ticket = int(position.ticket)
+        try:
+            close_position(symbol, magic, comment, ticket, deviation)
+            closed.append(ticket)
+        except Exception as e:
+            errors.append((ticket, str(e)))
+
+    return closed, errors
+
+
+REPORT_PIP_SIZE = 0.10
+REPORT_BE_TOLERANCE_PIPS = 0.5
+
+
+def _deal_attr(deal, name, default=None):
+    return getattr(deal, name, default)
+
+
+def get_closed_trades_for_period(symbol, magic, start_local_utc, end_local_utc):
+    """
+    Legge dallo storico MT5 le posizioni chiuse nel periodo [start, end)
+    (datetime timezone-aware, gia' convertiti in UTC dal chiamante),
+    filtrando per symbol/magic. Una voce per posizione chiusa.
+    """
+    start_utc = start_local_utc - timedelta(days=7)
+    deals = mt5.history_deals_get(start_utc, end_local_utc)
+    if deals is None:
+        logger.warning("⚠️ MT5 history_deals_get vuoto/errore: %s", mt5.last_error())
+        return []
+
+    grouped = {}
+    for deal in deals:
+        if str(_deal_attr(deal, "symbol", "")).upper() != str(symbol).upper():
+            continue
+        if int(_deal_attr(deal, "magic", 0) or 0) != int(magic):
+            continue
+        position_id = int(_deal_attr(deal, "position_id", 0) or 0)
+        if position_id <= 0:
+            continue
+        grouped.setdefault(position_id, []).append(deal)
+
+    entry_in = getattr(mt5, "DEAL_ENTRY_IN", 0)
+    entry_out = getattr(mt5, "DEAL_ENTRY_OUT", 1)
+    entry_out_by = getattr(mt5, "DEAL_ENTRY_OUT_BY", 3)
+    reason_tp = getattr(mt5, "DEAL_REASON_TP", 6)
+    reason_sl = getattr(mt5, "DEAL_REASON_SL", 4)
+    buy_type = getattr(mt5, "DEAL_TYPE_BUY", 0)
+
+    closed = []
+    for position_id, position_deals in grouped.items():
+        entries = [d for d in position_deals if int(_deal_attr(d, "entry", -1)) == int(entry_in)]
+        exits = [d for d in position_deals if int(_deal_attr(d, "entry", -1)) in {int(entry_out), int(entry_out_by)}]
+        if not entries or not exits:
+            continue
+
+        exits = sorted(exits, key=lambda d: float(_deal_attr(d, "time", 0) or 0))
+        last_exit_time = float(_deal_attr(exits[-1], "time", 0) or 0)
+        if not (start_local_utc.timestamp() <= last_exit_time < end_local_utc.timestamp()):
+            continue
+
+        entries = sorted(entries, key=lambda d: float(_deal_attr(d, "time", 0) or 0))
+        entry_deal = entries[0]
+        direction_type = int(_deal_attr(entry_deal, "type", 0) or 0)
+        direction = "BUY" if direction_type == buy_type else "SELL"
+        entry_price = float(_deal_attr(entry_deal, "price", 0.0) or 0.0)
+
+        total_exit_volume = 0.0
+        weighted_pips = 0.0
+        total_profit = 0.0
+        hit_tp = False
+        hit_sl = False
+
+        for exit_deal in exits:
+            volume = float(_deal_attr(exit_deal, "volume", 0.0) or 0.0)
+            close_price = float(_deal_attr(exit_deal, "price", 0.0) or 0.0)
+            pips = (
+                (close_price - entry_price) if direction == "BUY" else (entry_price - close_price)
+            ) / REPORT_PIP_SIZE
+
+            total_exit_volume += volume
+            weighted_pips += pips * volume
+            total_profit += float(_deal_attr(exit_deal, "profit", 0.0) or 0.0)
+
+            reason = int(_deal_attr(exit_deal, "reason", -1))
+            hit_tp = hit_tp or reason == reason_tp
+            hit_sl = hit_sl or reason == reason_sl
+
+        if total_exit_volume <= 0:
+            continue
+
+        pips_total = weighted_pips / total_exit_volume
+        if abs(pips_total) <= REPORT_BE_TOLERANCE_PIPS:
+            result = "BE"
+        elif pips_total > 0:
+            result = "WIN"
+        else:
+            result = "LOSS"
+
+        closed.append({
+            "position_id": position_id,
+            "direction": direction,
+            "entry": entry_price,
+            "pips": pips_total,
+            "profit": total_profit,
+            "result": result,
+            "hit_tp": hit_tp,
+            "hit_sl": hit_sl,
+        })
+
+    return sorted(closed, key=lambda item: item["position_id"])
 
 
 def get_closed_position_info(position_ticket):

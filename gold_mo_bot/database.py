@@ -60,6 +60,39 @@ def init_database():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_messages_open ON messages(source_chat_id, symbol, is_closed)"
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sent_reports (
+                report_type TEXT NOT NULL,
+                report_key TEXT NOT NULL,
+                sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (report_type, report_key)
+            )
+            """
+        )
+
+
+def report_was_sent(report_type, report_key):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM sent_reports WHERE report_type = ? AND report_key = ?",
+            (str(report_type), str(report_key)),
+        ).fetchone()
+        return row is not None
+
+
+def mark_report_sent(report_type, report_key):
+    """Ritorna True solo alla prima registrazione (evita invii duplicati)."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO sent_reports (report_type, report_key)
+            VALUES (?, ?)
+            ON CONFLICT(report_type, report_key) DO NOTHING
+            """,
+            (str(report_type), str(report_key)),
+        )
+        return cur.rowcount == 1
 
 
 def get_message(source_chat_id, source_message_id):
@@ -251,6 +284,55 @@ def mark_breakeven_applied(source_chat_id, source_message_id, new_sl):
             """,
             (float(new_sl), source_chat_id, source_message_id),
         )
+
+
+def get_trade_by_primary_ticket(mt5_ticket):
+    """Riga (source_chat_id, source_message_id, destination_message_id,
+    breakeven_applied) del trade associato a un ticket del conto
+    principale. Usata dal recovery all'avvio e dai report (per sapere
+    se una posizione chiusa aveva ricevuto il Break Even)."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            SELECT source_chat_id, source_message_id, destination_message_id, breakeven_applied
+            FROM messages
+            WHERE mt5_ticket = ?
+            ORDER BY source_message_id DESC
+            LIMIT 1
+            """,
+            (int(mt5_ticket),),
+        )
+        return cur.fetchone()
+
+
+def adopt_orphan_position(
+    source_chat_id, source_message_id, *, direction, entry, sl, tp3,
+    mt5_ticket, mt5_volume, mt5_price, status,
+):
+    """
+    Crea una riga DB sintetica per una posizione MT5 trovata aperta al
+    recovery senza alcuna riga corrispondente (es. crash tra l'apertura
+    dell'ordine e la scrittura su DB). source_message_id e' negativo
+    (-ticket) per non entrare mai in conflitto con id reali di Telegram.
+    """
+    with get_connection() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO messages (
+                source_chat_id, source_message_id, symbol, direction,
+                entry, sl, tp3, sltp_applied, status,
+                mt5_ticket, mt5_volume, mt5_price,
+                created_at, updated_at
+            )
+            VALUES (?, ?, 'XAUUSD', ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ON CONFLICT(source_chat_id, source_message_id) DO NOTHING
+            """,
+            (
+                source_chat_id, source_message_id, direction, entry, sl, tp3,
+                1 if tp3 else 0, status, mt5_ticket, mt5_volume, mt5_price,
+            ),
+        )
+        return cur.rowcount == 1
 
 
 def mark_closed(source_chat_id, source_message_id):
