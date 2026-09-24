@@ -3,6 +3,30 @@ from signal_parser import parse_signal
 
 TESTS = [
     (
+        # Caso reale Gold MO: apertura + SL/TP in UN SOLO messaggio.
+        """Gold buy now 4379.8 - 4376
+SL: 4372
+TP: 4382
+TP: 4384
+TP. 4386
+TP: 4388
+TP: open""",
+        {
+            "action": "OPEN_WITH_PARAMS",
+            "symbol": "XAUUSD",
+            "direction": "BUY",
+            "entry_zone_high": 4379.8,
+            "entry_zone_low": 4376.0,
+            "entry": 4377.9,
+            "sl": 4372.0,
+            "tp1": 4382.0,
+            "tp2": 4384.0,
+            "tp3": 4386.0,
+            "tp4": 4388.0,
+            "tp_open_runner": True,
+        },
+    ),
+    (
         "Gold buy now 4379.8 - 4376",
         {
             "action": "OPEN",

@@ -12,37 +12,42 @@ a un secondo conto MT5 in parallelo.
 
 ## Regole trading
 
-Il segnale e' composto da **2 messaggi**:
+Il segnale arriva in un **unico messaggio**:
 
-1. `Gold buy now 4379.8 - 4376` (o `Gold sell now ...`)
-   Apre **immediatamente e silenziosamente** a mercato (BUY -> ASK, SELL ->
-   BID): nessun messaggio viene ancora pubblicato nel canale destinazione.
-   La zona di prezzo indicata e' solo di riferimento: NON viene usata per
-   aspettare o validare il prezzo di ingresso.
+```
+Gold buy now 4379.8 - 4376
+SL: 4372
+TP: 4382
+TP: 4384
+TP. 4386
+TP: 4388
+TP: open
+```
 
-2. Messaggio successivo con SL e take profit multipli:
-   ```
-   SL: 4372
+1. Il bot apre **immediatamente** a mercato (BUY -> ASK, SELL -> BID) **con
+   SL e TP3 gia' impostati nello stesso ordine**: la zona di prezzo indicata
+   ("4379.8 - 4376") e' solo di riferimento, NON viene usata per
+   aspettare o validare il prezzo di ingresso — l'entry reale e' sempre
+   il prezzo live MT5 al momento dell'apertura.
+   I TP vengono letti in ordine di comparsa (TP1, TP2, TP3, TP4);
+   **TP3 e' l'UNICO take profit impostato realmente su MT5**. TP1 resta
+   memorizzato solo per il trigger interno del Break Even (punto 3),
+   TP2/TP4/"open" sono ignorati.
 
-   TP: 4382
-   TP: 4384
-   TP. 4386
-   TP: 4388
-   TP: open
-   ```
-   Applica subito SL/TP alla posizione aperta al punto 1 **su MT5**, e
-   **solo a questo punto** pubblica il segnale completo (entry reale, SL,
-   TP1-TP4) nel canale destinazione. I TP vengono letti in ordine di
-   comparsa (TP1, TP2, TP3, TP4); **TP3 e' l'unico take profit impostato
-   realmente su MT5**. TP1/TP2/TP4/"open" restano informativi.
+2. Solo ora, con l'operazione gia' aperta su MT5, il bot pubblica **un
+   messaggio** nel canale destinazione con entry reale, SL e un **unico
+   TP** (quello operativo, cioe' TP3) — non compare la lista TP1-TP4.
 
 3. Quando il prezzo live raggiunge **TP1**, il bot sposta lo Stop Loss al
-   prezzo di apertura (**Break Even**). Il messaggio nel canale destinazione
-   viene aggiornato in automatico ad ogni passaggio (SL/TP applicati, BE,
-   chiusura).
+   prezzo di apertura (**Break Even**) e aggiorna il messaggio nel canale.
 
 4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5 e
    riportata nel messaggio destinazione.
+
+Per robustezza il bot accetta anche gli stessi dati divisi in due
+messaggi separati (apertura senza parametri, poi SL/TP in un messaggio
+successivo): in quel caso il flusso e' identico ma il messaggio nel
+canale parte solo quando arrivano SL/TP.
 
 ## Comandi remoti (da "Messaggi Salvati")
 

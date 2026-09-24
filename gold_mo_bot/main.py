@@ -215,14 +215,97 @@ async def new_message_handler(event):
             logger.info("↩️ MESSAGGIO #%s GIA' INSERITO. Ignoro.", source_message_id)
             return
 
-        if action == "OPEN":
+        if action == "OPEN_WITH_PARAMS":
+            await process_open_with_params(signal, source_message_id, telegram_datetime)
+        elif action == "OPEN":
             await process_open(signal, source_message_id, telegram_datetime)
         elif action == "SET_SLTP":
             await process_sltp(signal, source_message_id)
 
 
 # ============================================================
-# APERTURA IMMEDIATA A MERCATO
+# APERTURA + SL/TP NELLO STESSO MESSAGGIO (caso normale Gold MO)
+# ============================================================
+
+async def process_open_with_params(signal, source_message_id, telegram_datetime):
+    direction = signal["direction"]
+    sl = float(signal["sl"])
+    tp3 = signal.get("tp3")
+
+    logger.info(
+        "🎯 SEGNALE GOLD MO | %s | Zona indicativa=%s-%s | SL=%.2f | TP1=%s TP2=%s TP3(operativo)=%s TP4=%s open=%s",
+        direction, signal.get("entry_zone_low"), signal.get("entry_zone_high"), sl,
+        signal.get("tp1"), signal.get("tp2"), tp3, signal.get("tp4"), signal.get("tp_open_runner"),
+    )
+
+    if not TRADING_ENABLED:
+        logger.warning("🚫 TRADING DISABILITATO | #%s", source_message_id)
+        update_status(SOURCE_CHAT, source_message_id, "TRADE_DISABLED")
+        return
+
+    if not MT5_READY:
+        logger.warning("🚫 MT5 NON PRONTO | #%s", source_message_id)
+        update_status(SOURCE_CHAT, source_message_id, "MT5_NOT_READY")
+        return
+
+    signal_age = calculate_signal_age_seconds(telegram_datetime)
+    if signal_age > MAX_SIGNAL_AGE_SECONDS:
+        logger.warning("🚫 SEGNALE TROPPO VECCHIO | #%s | Eta'=%.2fs", source_message_id, signal_age)
+        update_status(SOURCE_CHAT, source_message_id, "SIGNAL_TOO_OLD")
+        return
+
+    # Apertura con SL + TP3 gia' impostati nello stesso ordine: la
+    # posizione non resta mai scoperta, nemmeno per un istante.
+    try:
+        primary, secondary = await dual_executor.open_market_order_dual(direction, sl=sl, tp=tp3 or 0.0)
+    except Exception as e:
+        logger.exception("❌ ERRORE APERTURA TRADE #%s", source_message_id)
+        update_status(SOURCE_CHAT, source_message_id, "ERROR", error=str(e))
+        return
+
+    logger.info(
+        "✅ TRADE APERTO | Conto1 ticket=%s prezzo=%.2f | SL=%.2f | TP=%s%s",
+        primary.position_ticket, primary.price, sl, tp3,
+        f" | Conto2 ticket={secondary.position_ticket} prezzo={secondary.price:.2f}" if secondary else " | Conto2: n/d",
+    )
+
+    update_status(
+        SOURCE_CHAT, source_message_id, "OPENED",
+        mt5_ticket=primary.position_ticket, mt5_deal=primary.deal,
+        mt5_volume=primary.volume, mt5_price=primary.price,
+        mt5_ticket_2=secondary.position_ticket if secondary else None,
+        mt5_deal_2=secondary.deal if secondary else None,
+        mt5_volume_2=secondary.volume if secondary else None,
+        mt5_price_2=secondary.price if secondary else None,
+        trade_datetime=datetime.now(timezone.utc).isoformat(),
+    )
+    update_trade_sltp(
+        SOURCE_CHAT, source_message_id, sl,
+        signal.get("tp1"), signal.get("tp2"), tp3, signal.get("tp4"),
+        bool(signal.get("tp_open_runner")),
+    )
+
+    # Un solo messaggio pubblicato, gia' completo: entry reale, SL, e
+    # l'unico TP mostrato (quello operativo, TP3).
+    state = {
+        "direction": direction,
+        "entry": primary.price,
+        "sl": sl,
+        "tp1": signal.get("tp1"), "tp2": signal.get("tp2"), "tp3": tp3, "tp4": signal.get("tp4"),
+        "tp_open_runner": bool(signal.get("tp_open_runner")),
+        "breakeven_applied": False,
+        "closed": False,
+    }
+    try:
+        destination_message = await copy_message_to_destination(state)
+        update_copy(SOURCE_CHAT, source_message_id, destination_message.id, datetime.now(timezone.utc).isoformat())
+    except Exception:
+        logger.exception("❌ ERRORE PUBBLICAZIONE DESTINATION #%s", source_message_id)
+
+
+# ============================================================
+# APERTURA IMMEDIATA A MERCATO (fallback: solo "Gold buy/sell now ...",
+# senza SL/TP nello stesso messaggio)
 # ============================================================
 
 async def process_open(signal, source_message_id, telegram_datetime):
@@ -278,7 +361,8 @@ async def process_open(signal, source_message_id, telegram_datetime):
 
 
 # ============================================================
-# APPLICAZIONE SL / TP (secondo messaggio)
+# APPLICAZIONE SL / TP (fallback: messaggio separato senza "Gold buy/sell
+# now" nello stesso testo, applicato al trade aperto in attesa)
 # ============================================================
 
 async def process_sltp(signal, source_message_id):

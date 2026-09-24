@@ -127,21 +127,21 @@ async def _call_secondary(fn_name, *args, timeout=15, **kwargs):
     return await asyncio.to_thread(_call_secondary_sync, fn_name, args, kwargs, timeout)
 
 
-async def open_market_order_dual(direction, sl=0.0):
+async def open_market_order_dual(direction, sl=0.0, tp=0.0):
     """
     Apre a mercato sul conto principale (sempre) e, se attivo e connesso,
     anche sul secondo conto. Un errore sul secondo conto NON blocca ne'
     annulla l'apertura gia' avvenuta sul conto principale: viene solo
     loggato, cosi' il segnale resta comunque operativo.
     """
-    primary = await asyncio.to_thread(mt5_executor.open_market_order, direction, sl)
+    primary = await asyncio.to_thread(mt5_executor.open_market_order, direction, sl, tp)
 
     secondary = None
     if secondary_enabled() and _secondary_ready:
         try:
             response = await _call_secondary(
                 "open_market_order", MT5_SYMBOL, direction, LOT_SIZE, MAGIC_NUMBER_2,
-                ORDER_COMMENT, DEVIATION, sl,
+                ORDER_COMMENT, DEVIATION, sl, tp,
             )
             if response["ok"]:
                 secondary = response["result"]

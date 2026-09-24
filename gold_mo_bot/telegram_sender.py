@@ -12,8 +12,8 @@ ENTRY_LINE_TEMPLATE = "🟢 <b>ENTRY:</b> {entry:.2f}\n"
 SL_LINE_TEMPLATE = "🛑 <b>STOP LOSS:</b> {sl:.2f}\n"
 SL_PENDING_LINE = "🛑 <b>STOP LOSS:</b> in attesa...\n"
 
-TP_LINE_TEMPLATE = "🎯 <b>TP{n}:</b> {value:.2f}{op_tag}\n"
-TP_OPERATIVE_TAG = " ⬅️ operativo su MT5"
+TP_LINE_TEMPLATE = "🎯 <b>TP:</b> {value:.2f}\n"
+TP_PENDING_LINE = "🎯 <b>TP:</b> in attesa...\n"
 
 BE_LINE = "\n🟢 <b>BREAK EVEN ATTIVATO</b> (SL spostato all'entry)\n"
 
@@ -22,22 +22,12 @@ CLOSED_SL_LINE_TEMPLATE = "\n🛑 <b>STOP LOSS PRESO</b>\n📍 Chiusura: <b>{pri
 CLOSED_GENERIC_LINE_TEMPLATE = "\n⚪ <b>OPERAZIONE CHIUSA</b>\n📍 Chiusura: <b>{price:.2f}</b>\n"
 
 
-def _format_tp_lines(state):
-    lines = []
-    for n, key in ((1, "tp1"), (2, "tp2"), (3, "tp3"), (4, "tp4")):
-        value = state.get(key)
-        if value is None:
-            continue
-        op_tag = TP_OPERATIVE_TAG if n == 3 else ""
-        lines.append(TP_LINE_TEMPLATE.format(n=n, value=float(value), op_tag=op_tag))
-    if state.get("tp_open_runner"):
-        lines.append("🎯 <b>TP oltre TP3:</b> open (informativo)\n")
-    return "".join(lines)
-
-
 def format_trade_card(state):
     """
     Ricostruisce l'intero messaggio dallo stato corrente del trade.
+    Nel canale compaiono SOLO entry, SL e un unico TP (quello operativo
+    su MT5, cioe' TP3): TP1/TP2/TP4/"open" restano interni al bot (usati
+    solo per il trigger del Break Even su TP1), non vengono mostrati.
     state = {
         direction, entry, sl, tp1, tp2, tp3, tp4, tp_open_runner,
         sltp_applied, breakeven_applied, closed, close_reason, close_price,
@@ -51,7 +41,10 @@ def format_trade_card(state):
     else:
         text += SL_PENDING_LINE
 
-    text += _format_tp_lines(state)
+    if state.get("tp3") is not None:
+        text += TP_LINE_TEMPLATE.format(value=float(state["tp3"]))
+    else:
+        text += TP_PENDING_LINE
 
     if state.get("breakeven_applied") and not state.get("closed"):
         text += BE_LINE

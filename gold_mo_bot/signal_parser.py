@@ -122,42 +122,48 @@ def _parse_sl_tp(clean):
 
 def parse_signal(text):
     """
-    BOT Gold MO.
+    BOT Gold MO. Il segnale arriva in un UNICO messaggio:
 
-    Messaggio 1 (apre subito a mercato):
         Gold buy now 4379.8 - 4376
-
-    Messaggio 2 (arriva pochi istanti dopo, aggiorna la posizione appena
-    aperta con SL e take profit multipli; NON apre un nuovo trade):
         SL: 4372
-
         TP: 4382
         TP: 4384
         TP. 4386
         TP: 4388
         TP: open
 
-    Regole:
-    - SL viene applicato subito sulla posizione aperta dal messaggio 1.
-    - TP3 e' l'UNICO take profit impostato realmente su MT5.
-    - TP1/TP2/TP4/"open" sono informativi e vengono mostrati nel canale
-      destinazione, ma non modificano il TP su MT5.
-    - Quando il prezzo live raggiunge TP1, il bot sposta lo SL a
-      breakeven (gestito nel monitor di main.py, non nel parser).
+    -> action "OPEN_WITH_PARAMS": apre SUBITO a mercato (la zona di prezzo
+       e' solo indicativa, NON viene aspettata/validata: si usa sempre il
+       prezzo live MT5) e applica SL + TP3 nello stesso momento.
+       TP3 e' l'UNICO take profit impostato realmente su MT5; TP1 resta
+       memorizzato solo per il trigger interno del Break Even (vedi
+       monitor in main.py), TP2/TP4/"open" sono puramente informativi e
+       NON compaiono nel messaggio pubblicato nel canale: li' si vede
+       solo SL ed un unico TP (quello operativo, cioe' TP3).
+
+    Per robustezza il parser accetta anche i due blocchi separati in
+    messaggi diversi (fallback):
+    - solo "Gold buy now ..." -> action "OPEN" (apre, in attesa dei
+      parametri in un messaggio successivo).
+    - solo "SL: ... TP: ..." -> action "SET_SLTP" (applica i parametri
+      all'ultimo trade aperto in attesa).
     """
     clean = _clean(text)
     if not clean:
         return None
 
     open_signal = _parse_open_now(clean)
+    sltp_signal = _parse_sl_tp(clean)
+
+    if open_signal is not None and sltp_signal is not None:
+        merged = dict(open_signal)
+        merged.update(sltp_signal)
+        merged["action"] = "OPEN_WITH_PARAMS"
+        return merged
+
     if open_signal is not None:
         return open_signal
 
-    # Il messaggio di SL/TP non ripete quasi mai "GOLD"/"XAUUSD": il bot lo
-    # interpreta comunque perche' SOURCE_CHAT e' dedicato esclusivamente al
-    # canale Gold MO (stessa scelta gia' fatta nel bot ELITE per i suoi
-    # messaggi di aggiornamento).
-    sltp_signal = _parse_sl_tp(clean)
     if sltp_signal is not None:
         return sltp_signal
 

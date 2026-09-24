@@ -202,11 +202,13 @@ def _find_position_ticket(symbol, magic, direction, volume, open_price):
     return int(candidates[0].ticket)
 
 
-def open_market_order(symbol, direction, volume, magic, comment, deviation, sl=0.0):
+def open_market_order(symbol, direction, volume, magic, comment, deviation, sl=0.0, tp=0.0):
     """
     Apre immediatamente a mercato. BUY usa ASK, SELL usa BID.
-    Lo SL e' opzionale: il segnale Gold MO apre senza SL (arriva col
-    messaggio successivo), il TP non viene mai impostato in apertura.
+    SL e TP sono opzionali (default 0.0 = nessuno): quando gia' noti al
+    momento dell'apertura (es. segnale Gold MO con SL/TP nello stesso
+    messaggio) vengono impostati nello stesso ordine, cosi' la posizione
+    non resta mai scoperta nemmeno per un istante.
     """
     direction = direction.upper()
     if direction not in {"BUY", "SELL"}:
@@ -223,6 +225,7 @@ def open_market_order(symbol, direction, volume, magic, comment, deviation, sl=0
     valid_price = _normalize_price(valid_price, digits)
 
     sl_price = _normalize_price(sl, digits) if sl else 0.0
+    tp_price = _normalize_price(tp, digits) if tp else 0.0
 
     order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
     filling_mode = _get_filling_mode(info)
@@ -234,7 +237,7 @@ def open_market_order(symbol, direction, volume, magic, comment, deviation, sl=0
         "type": order_type,
         "price": valid_price,
         "sl": sl_price,
-        "tp": 0.0,
+        "tp": tp_price,
         "deviation": int(deviation),
         "magic": int(magic),
         "comment": comment,

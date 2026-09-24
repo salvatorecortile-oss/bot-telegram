@@ -30,9 +30,9 @@ def current_price(direction=None):
     return engine.current_price(MT5_SYMBOL, direction)
 
 
-def open_market_order(direction, sl=0.0):
+def open_market_order(direction, sl=0.0, tp=0.0):
     return engine.open_market_order(
-        MT5_SYMBOL, direction, LOT_SIZE, MAGIC_NUMBER, ORDER_COMMENT, DEVIATION, sl
+        MT5_SYMBOL, direction, LOT_SIZE, MAGIC_NUMBER, ORDER_COMMENT, DEVIATION, sl, tp
     )
 
 
