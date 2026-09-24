@@ -122,49 +122,44 @@ def _parse_sl_tp(clean):
 
 def parse_signal(text):
     """
-    BOT Gold MO. Il segnale arriva in un UNICO messaggio:
+    BOT Gold MO. Il segnale arriva in DUE messaggi separati:
 
-        Gold buy now 4379.8 - 4376
-        SL: 4372
-        TP: 4382
-        TP: 4384
-        TP. 4386
-        TP: 4388
-        TP: open
+    1. `Gold buy now 4379.8 - 4376` (o `Gold sell now ...`)
+       -> action "OPEN": apre SUBITO a mercato (la zona di prezzo e' solo
+       indicativa, NON viene aspettata/validata: si usa sempre il prezzo
+       live MT5). Nessun SL/TP ancora: il trade resta "in attesa" dei
+       parametri.
 
-    -> action "OPEN_WITH_PARAMS": apre SUBITO a mercato (la zona di prezzo
-       e' solo indicativa, NON viene aspettata/validata: si usa sempre il
-       prezzo live MT5) e applica SL + TP3 nello stesso momento.
-       TP3 e' l'UNICO take profit impostato realmente su MT5; TP1 resta
-       memorizzato solo per il trigger interno del Break Even (vedi
-       monitor in main.py), TP2/TP4/"open" sono puramente informativi e
-       NON compaiono nel messaggio pubblicato nel canale: li' si vede
-       solo SL ed un unico TP (quello operativo, cioe' TP3).
+    2. Messaggio successivo che porta SL e i take profit:
+           SL: 4372
+           TP: 4382
+           TP: 4384
+           TP. 4386
+           TP: 4388
+           TP: open
+       -> action "SET_SLTP": applica SL e TP3 (l'UNICO TP realmente
+       impostato su MT5) al trade aperto al punto 1 e pubblica il
+       messaggio nel canale (solo ora, completo di entry/SL/TP).
+       TP1 resta memorizzato solo per il trigger interno del Break Even,
+       TP2/TP4/"open" sono ignorati.
 
-    Per robustezza il parser accetta anche i due blocchi separati in
-    messaggi diversi (fallback):
-    - solo "Gold buy now ..." -> action "OPEN" (apre, in attesa dei
-      parametri in un messaggio successivo).
-    - solo "SL: ... TP: ..." -> action "SET_SLTP" (applica i parametri
-      all'ultimo trade aperto in attesa).
+    IMPORTANTE: questo messaggio a volte ripete anche la riga
+    "Gold buy/sell now ..." insieme a SL/TP (un "rilancio" del segnale
+    ormai completo). La presenza di SL/TP ha SEMPRE la priorita': se un
+    messaggio contiene SL/TP viene trattato come SET_SLTP anche se
+    ripete la riga di apertura, per non aprire un secondo trade
+    duplicato quando il primo e' gia' stato aperto dal messaggio 1.
     """
     clean = _clean(text)
     if not clean:
         return None
 
-    open_signal = _parse_open_now(clean)
     sltp_signal = _parse_sl_tp(clean)
-
-    if open_signal is not None and sltp_signal is not None:
-        merged = dict(open_signal)
-        merged.update(sltp_signal)
-        merged["action"] = "OPEN_WITH_PARAMS"
-        return merged
-
-    if open_signal is not None:
-        return open_signal
-
     if sltp_signal is not None:
         return sltp_signal
+
+    open_signal = _parse_open_now(clean)
+    if open_signal is not None:
+        return open_signal
 
     return None

@@ -12,42 +12,43 @@ a un secondo conto MT5 in parallelo.
 
 ## Regole trading
 
-Il segnale arriva in un **unico messaggio**:
+Il segnale arriva in **due messaggi separati**:
 
-```
-Gold buy now 4379.8 - 4376
-SL: 4372
-TP: 4382
-TP: 4384
-TP. 4386
-TP: 4388
-TP: open
-```
+1. `Gold buy now 4379.8 - 4376` (o `Gold sell now ...`)
+   Il bot apre **immediatamente e silenziosamente** a mercato (BUY -> ASK,
+   SELL -> BID): nessun messaggio viene ancora pubblicato nel canale
+   destinazione. La zona di prezzo indicata e' solo di riferimento, NON
+   viene usata per aspettare o validare il prezzo di ingresso — l'entry
+   reale e' sempre il prezzo live MT5 al momento dell'apertura.
 
-1. Il bot apre **immediatamente** a mercato (BUY -> ASK, SELL -> BID) **con
-   SL e TP3 gia' impostati nello stesso ordine**: la zona di prezzo indicata
-   ("4379.8 - 4376") e' solo di riferimento, NON viene usata per
-   aspettare o validare il prezzo di ingresso — l'entry reale e' sempre
-   il prezzo live MT5 al momento dell'apertura.
-   I TP vengono letti in ordine di comparsa (TP1, TP2, TP3, TP4);
-   **TP3 e' l'UNICO take profit impostato realmente su MT5**. TP1 resta
-   memorizzato solo per il trigger interno del Break Even (punto 3),
+2. Un messaggio successivo con SL e i take profit:
+   ```
+   SL: 4372
+   TP: 4382
+   TP: 4384
+   TP. 4386
+   TP: 4388
+   TP: open
+   ```
+   Applica subito SL e **TP3** (l'UNICO take profit impostato realmente su
+   MT5) alla posizione aperta al punto 1, e **solo ora** pubblica **un
+   messaggio** nel canale destinazione con entry reale, SL e un **unico
+   TP** (il valore di TP3) — non compare la lista TP1-TP4. TP1 resta
+   memorizzato solo internamente per il trigger del Break Even (punto 3);
    TP2/TP4/"open" sono ignorati.
 
-2. Solo ora, con l'operazione gia' aperta su MT5, il bot pubblica **un
-   messaggio** nel canale destinazione con entry reale, SL e un **unico
-   TP** (quello operativo, cioe' TP3) — non compare la lista TP1-TP4.
+   **Importante**: questo secondo messaggio a volte ripete anche la riga
+   "Gold buy/sell now ..." insieme a SL/TP (un "rilancio" del segnale
+   completo). Il bot lo riconosce comunque come completamento del trade
+   gia' aperto al punto 1 — la presenza di SL/TP ha sempre la priorita' e
+   NON viene mai aperta una seconda posizione duplicata.
 
-3. Quando il prezzo live raggiunge **TP1**, il bot sposta lo Stop Loss al
-   prezzo di apertura (**Break Even**) e aggiorna il messaggio nel canale.
+3. Quando il prezzo live raggiunge **TP1** (mai mostrato nel canale, solo
+   interno), il bot sposta lo Stop Loss al prezzo di apertura
+   (**Break Even**) e aggiorna il messaggio nel canale.
 
 4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5 e
    riportata nel messaggio destinazione.
-
-Per robustezza il bot accetta anche gli stessi dati divisi in due
-messaggi separati (apertura senza parametri, poi SL/TP in un messaggio
-successivo): in quel caso il flusso e' identico ma il messaggio nel
-canale parte solo quando arrivano SL/TP.
 
 ## Comandi remoti (da "Messaggi Salvati")
 

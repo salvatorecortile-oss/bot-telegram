@@ -3,7 +3,10 @@ from signal_parser import parse_signal
 
 TESTS = [
     (
-        # Caso reale Gold MO: apertura + SL/TP in UN SOLO messaggio.
+        # Il messaggio 2 a volte "rilancia" anche la riga di apertura
+        # insieme a SL/TP: deve comunque essere trattato come SET_SLTP
+        # (completa il trade gia' aperto dal messaggio 1), MAI come una
+        # nuova apertura duplicata.
         """Gold buy now 4379.8 - 4376
 SL: 4372
 TP: 4382
@@ -12,12 +15,8 @@ TP. 4386
 TP: 4388
 TP: open""",
         {
-            "action": "OPEN_WITH_PARAMS",
+            "action": "SET_SLTP",
             "symbol": "XAUUSD",
-            "direction": "BUY",
-            "entry_zone_high": 4379.8,
-            "entry_zone_low": 4376.0,
-            "entry": 4377.9,
             "sl": 4372.0,
             "tp1": 4382.0,
             "tp2": 4384.0,
