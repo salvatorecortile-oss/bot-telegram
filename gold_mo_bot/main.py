@@ -262,22 +262,9 @@ async def process_open(signal, source_message_id, telegram_datetime):
         f" | Conto2 ticket={secondary.position_ticket} prezzo={secondary.price:.2f}" if secondary else " | Conto2: n/d",
     )
 
-    state = {
-        "direction": direction,
-        "entry": primary.price,
-        "sl": None,
-        "tp1": None, "tp2": None, "tp3": None, "tp4": None,
-        "tp_open_runner": False,
-        "breakeven_applied": False,
-        "closed": False,
-    }
-
-    try:
-        destination_message = await copy_message_to_destination(state)
-        update_copy(SOURCE_CHAT, source_message_id, destination_message.id, datetime.now(timezone.utc).isoformat())
-    except Exception:
-        logger.exception("❌ ERRORE COPIA DESTINATION #%s", source_message_id)
-
+    # Apertura silenziosa: NON pubblichiamo ancora nulla nel canale.
+    # Il messaggio parte solo quando arrivano SL/TP (vedi process_sltp),
+    # gia' completo di tutti i dati reali.
     update_status(
         SOURCE_CHAT, source_message_id, "OPENED",
         mt5_ticket=primary.position_ticket, mt5_deal=primary.deal,
@@ -348,7 +335,18 @@ async def process_sltp(signal, source_message_id):
         "tp_open_runner": bool(signal.get("tp_open_runner")),
     })
 
-    if state["destination_message_id"] is not None:
+    # Il messaggio nel canale parte SOLO ora, completo di entry reale +
+    # SL + TP: prima dell'arrivo di questo messaggio non era stato
+    # pubblicato nulla (vedi process_open).
+    if state["destination_message_id"] is None:
+        try:
+            destination_message = await copy_message_to_destination(state)
+            update_copy(SOURCE_CHAT, original_message_id, destination_message.id, datetime.now(timezone.utc).isoformat())
+        except Exception:
+            logger.exception("❌ ERRORE PUBBLICAZIONE DESTINATION #%s", original_message_id)
+    else:
+        # Messaggio di correzione arrivato dopo che il segnale era gia'
+        # stato pubblicato: aggiorna quello esistente.
         try:
             await edit_destination_message(state["destination_message_id"], state)
         except Exception:
@@ -497,16 +495,22 @@ async def recover_orphan_positions():
             logger.exception("❌ Errore adozione posizione orfana ticket %s.", ticket)
             continue
 
-        state = {
-            "direction": direction, "entry": position["price_open"], "sl": sl,
-            "tp1": None, "tp2": None, "tp3": tp3, "tp4": None, "tp_open_runner": False,
-            "breakeven_applied": False, "closed": False,
-        }
-        try:
-            destination_message = await copy_message_to_destination(state)
-            update_copy(SOURCE_CHAT, synthetic_id, destination_message.id, datetime.now(timezone.utc).isoformat())
-        except Exception:
-            logger.exception("❌ Errore pubblicazione messaggio di recovery ticket %s.", ticket)
+        # Se SL/TP non erano ancora stati applicati prima del crash, NON
+        # pubblichiamo nulla ora: sara' il prossimo messaggio SL/TP in
+        # arrivo dal canale sorgente a farlo (process_sltp trova questa
+        # riga tramite get_latest_trade_awaiting_sltp), stessa regola
+        # usata per l'apertura normale.
+        if tp3:
+            state = {
+                "direction": direction, "entry": position["price_open"], "sl": sl,
+                "tp1": None, "tp2": None, "tp3": tp3, "tp4": None, "tp_open_runner": False,
+                "breakeven_applied": False, "closed": False,
+            }
+            try:
+                destination_message = await copy_message_to_destination(state)
+                update_copy(SOURCE_CHAT, synthetic_id, destination_message.id, datetime.now(timezone.utc).isoformat())
+            except Exception:
+                logger.exception("❌ Errore pubblicazione messaggio di recovery ticket %s.", ticket)
 
         adopted += 1
         logger.warning("♻️ POSIZIONE ORFANA ADOTTATA | Ticket=%s | %s", ticket, direction)
@@ -519,18 +523,18 @@ async def recover_orphan_positions():
 # COMANDI DA "MESSAGGI SALVATI"
 # ============================================================
 #
-# goldmo_play    -> il bot riparte al 100%
-# goldmo_stop    -> chiude tutte le posizioni (entrambi i conti) e ferma
-#                   completamente il bot (niente ascolto ne' messaggi)
-# goldmo_riavvio -> come goldmo_stop e subito dopo come goldmo_play
-# goldmo_pausa   -> non copia ne' apre nuovi trade, ma i trade gia'
-#                   aperti restano gestiti normalmente (BE/chiusura)
-# goldmo_status  -> stato attuale + posizioni aperte con il profitto
-#                   flottante di ciascuna (conto principale + secondo)
-# goldmo_report  -> invia subito il report giornaliero
-# goldmo_reportw -> invia subito il report settimanale
-# goldmo_reportm -> invia subito il report mensile
-# goldmo_comandi -> mostra l'elenco comandi
+# bot5_play    -> il bot riparte al 100%
+# bot5_stop    -> chiude tutte le posizioni (entrambi i conti) e ferma
+#                 completamente il bot (niente ascolto ne' messaggi)
+# bot5_riavvio -> come bot5_stop e subito dopo come bot5_play
+# bot5_pausa   -> non copia ne' apre nuovi trade, ma i trade gia'
+#                 aperti restano gestiti normalmente (BE/chiusura)
+# bot5_status  -> stato attuale + posizioni aperte con il profitto
+#                 flottante di ciascuna (conto principale + secondo)
+# bot5_report  -> invia subito il report giornaliero
+# bot5_reportw -> invia subito il report settimanale
+# bot5_reportm -> invia subito il report mensile
+# bot5_comandi -> mostra l'elenco comandi
 # ============================================================
 
 COMMANDS_HELP_TEXT = (

@@ -83,7 +83,7 @@ MONITOR_INTERVAL_SECONDS = float(os.getenv("MONITOR_INTERVAL_SECONDS", "0.5"))
 # COMANDI REMOTI (da "Messaggi Salvati")
 # =========================
 # Prefisso distinto da altri eventuali bot sullo stesso account Telegram.
-COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "goldmo_")
+COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "bot5_")
 
 # =========================
 # CHIUSURA AUTOMATICA DI FINE GIORNATA + REPORT

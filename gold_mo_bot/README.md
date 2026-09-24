@@ -15,9 +15,10 @@ a un secondo conto MT5 in parallelo.
 Il segnale e' composto da **2 messaggi**:
 
 1. `Gold buy now 4379.8 - 4376` (o `Gold sell now ...`)
-   Apre **immediatamente** a mercato (BUY -> ASK, SELL -> BID). La zona di
-   prezzo indicata e' solo di riferimento: NON viene usata per aspettare o
-   validare il prezzo di ingresso.
+   Apre **immediatamente e silenziosamente** a mercato (BUY -> ASK, SELL ->
+   BID): nessun messaggio viene ancora pubblicato nel canale destinazione.
+   La zona di prezzo indicata e' solo di riferimento: NON viene usata per
+   aspettare o validare il prezzo di ingresso.
 
 2. Messaggio successivo con SL e take profit multipli:
    ```
@@ -29,10 +30,11 @@ Il segnale e' composto da **2 messaggi**:
    TP: 4388
    TP: open
    ```
-   Applica subito lo SL alla posizione aperta al punto 1. I TP vengono letti
-   in ordine di comparsa (TP1, TP2, TP3, TP4); **TP3 e' l'unico take profit
-   impostato realmente su MT5**. TP1/TP2/TP4/"open" restano informativi e
-   vengono mostrati nel messaggio copiato nel canale destinazione.
+   Applica subito SL/TP alla posizione aperta al punto 1 **su MT5**, e
+   **solo a questo punto** pubblica il segnale completo (entry reale, SL,
+   TP1-TP4) nel canale destinazione. I TP vengono letti in ordine di
+   comparsa (TP1, TP2, TP3, TP4); **TP3 e' l'unico take profit impostato
+   realmente su MT5**. TP1/TP2/TP4/"open" restano informativi.
 
 3. Quando il prezzo live raggiunge **TP1**, il bot sposta lo Stop Loss al
    prezzo di apertura (**Break Even**). Il messaggio nel canale destinazione
@@ -46,19 +48,19 @@ Il segnale e' composto da **2 messaggi**:
 
 Scrivendo a te stesso su Telegram (chat "Messaggi Salvati") con l'account
 usato dal bot, sono disponibili questi comandi (prefisso configurabile,
-default `goldmo_`):
+default `bot5_`):
 
-- `goldmo_play` — il bot riparte al 100%
-- `goldmo_stop` — chiude tutte le posizioni (entrambi i conti) e ferma
+- `bot5_play` — il bot riparte al 100%
+- `bot5_stop` — chiude tutte le posizioni (entrambi i conti) e ferma
   completamente il bot (niente ascolto ne' messaggi nel canale)
-- `goldmo_riavvio` — come `goldmo_stop` e subito dopo come `goldmo_play`
-- `goldmo_pausa` — non copia ne' apre nuovi trade, ma i trade gia' aperti
+- `bot5_riavvio` — come `bot5_stop` e subito dopo come `bot5_play`
+- `bot5_pausa` — non copia ne' apre nuovi trade, ma i trade gia' aperti
   restano gestiti normalmente (BE/chiusura continuano)
-- `goldmo_status` — stato attuale + posizioni aperte con il profitto
+- `bot5_status` — stato attuale + posizioni aperte con il profitto
   flottante
-- `goldmo_report` / `goldmo_reportw` / `goldmo_reportm` — invia subito il
+- `bot5_report` / `bot5_reportw` / `bot5_reportm` — invia subito il
   report giornaliero / settimanale / mensile
-- `goldmo_comandi` — mostra l'elenco comandi
+- `bot5_comandi` — mostra l'elenco comandi
 
 ## Automatismi giornalieri (orario Europe/Rome)
 
