@@ -1362,18 +1362,18 @@ def _calculate_position_profit_pips(position):
 # trigger_pips di profitto, lo SL viene spostato a protected_pips.
 LIVE_PROTECTION_LEVELS = (
     (90.0, 10.0),
-    (125.0, 50.0),
-    (150.0, 80.0),
-    (175.0, 110.0),
-    (200.0, 128.0),
-    (225.0, 157.0),
-    (250.0, 186.0),
-    (275.0, 215.0),
-    (300.0, 244.0),
-    (325.0, 273.0),
-    (350.0, 302.0),
-    (375.0, 331.0),
-    (400.0, 360.0),
+    (125.0, 45.0),
+    (150.0, 70.0),
+    (175.0, 95.0),
+    (200.0, 130.0),
+    (225.0, 160.0),
+    (250.0, 190.0),
+    (275.0, 220.0),
+    (300.0, 250.0),
+    (325.0, 280.0),
+    (350.0, 310.0),
+    (375.0, 340.0),
+    (400.0, 370.0),
 )
 
 # Oltre i 400 pips di profitto il trade resta aperto e passa a un
@@ -1388,18 +1388,18 @@ def _live_protection_step(profit_pips):
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
         +90   -> SL +10 (BE)
-        +125  -> SL +50
-        +150  -> SL +80
-        +175  -> SL +110
-        +200  -> SL +128
-        +225  -> SL +157
-        +250  -> SL +186
-        +275  -> SL +215
-        +300  -> SL +244
-        +325  -> SL +273
-        +350  -> SL +302
-        +375  -> SL +331
-        +400  -> SL +360 (trade resta aperto)
+        +125  -> SL +45
+        +150  -> SL +70
+        +175  -> SL +95
+        +200  -> SL +130
+        +225  -> SL +160
+        +250  -> SL +190
+        +275  -> SL +220
+        +300  -> SL +250
+        +325  -> SL +280
+        +350  -> SL +310
+        +375  -> SL +340
+        +400  -> SL +370 (trade resta aperto)
         >400  -> trailing dinamico: protezione = 85% del profitto corrente
 
     Ritorna una tupla (trigger_pips, protected_pips, protection_mode),
@@ -3066,18 +3066,18 @@ async def main():
     logger.info("")
     logger.info("🛡️ GESTIONE SL LIVE")
     logger.info("+90 PIPS            : SL +10 (BE) DA MT5")
-    logger.info("+125 PIPS           : SL +50")
-    logger.info("+150 PIPS           : SL +80")
-    logger.info("+175 PIPS           : SL +110")
-    logger.info("+200 PIPS           : SL +128")
-    logger.info("+225 PIPS           : SL +157")
-    logger.info("+250 PIPS           : SL +186")
-    logger.info("+275 PIPS           : SL +215")
-    logger.info("+300 PIPS           : SL +244")
-    logger.info("+325 PIPS           : SL +273")
-    logger.info("+350 PIPS           : SL +302")
-    logger.info("+375 PIPS           : SL +331")
-    logger.info("+400 PIPS           : SL +360 | TRADE RESTA APERTO")
+    logger.info("+125 PIPS           : SL +45")
+    logger.info("+150 PIPS           : SL +70")
+    logger.info("+175 PIPS           : SL +95")
+    logger.info("+200 PIPS           : SL +130")
+    logger.info("+225 PIPS           : SL +160")
+    logger.info("+250 PIPS           : SL +190")
+    logger.info("+275 PIPS           : SL +220")
+    logger.info("+300 PIPS           : SL +250")
+    logger.info("+325 PIPS           : SL +280")
+    logger.info("+350 PIPS           : SL +310")
+    logger.info("+375 PIPS           : SL +340")
+    logger.info("+400 PIPS           : SL +370 | TRADE RESTA APERTO")
     logger.info(">+400 PIPS          : TRAILING DINAMICO 15%%")
     logger.info("SL                  : NON ARRETRA MAI")
     logger.info("")
