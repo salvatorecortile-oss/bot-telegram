@@ -562,15 +562,6 @@ async def new_message_handler(event):
                 source_message_id,
                 float(signal["pips"]),
             )
-            # "TP1 HIT +50pips" di Cedric: forza subito il BE, anche se il
-            # nostro prezzo live di MT5 non ha ancora raggiunto i +50 pips
-            # (vedi process_tp1_be_signal). Non blocca il resto del bot:
-            # gira come task separato.
-            if (
-                signal.get("milestone") == "TP1"
-                and abs(float(signal.get("pips", 0.0)) - 50.0) < 1e-9
-            ):
-                asyncio.create_task(process_tp1_be_signal(source_message_id))
             cleanup_old_timestamp_counters()
             return
 
@@ -1304,113 +1295,6 @@ async def process_modify_sl(signal, source_message_id):
 
 
 # ============================================================
-# BE FORZATO DA "TP1 HIT +50pips" DI CÉDRIC
-# ============================================================
-# Il BE a +50 pips viene normalmente applicato dal monitor MT5 quando il
-# PREZZO LIVE del nostro broker raggiunge +50 pips di profitto (vedi
-# LIVE_PROTECTION_LEVELS). Se pero' Cedric conferma "TP1 HIT +50pips" nel
-# suo canale mentre il nostro prezzo live e' ancora leggermente sotto
-# (differenze di feed/spread tra broker), applichiamo comunque il BE
-# subito, cosi' la protezione scatta in ogni caso, qualunque dei due
-# arrivi prima. Il meccanismo di deduplica (get_last_pips_notified) evita
-# che poi il monitor mandi un secondo messaggio di BE quando raggiunge
-# anche lui i +50 pips.
-
-async def process_tp1_be_signal(source_message_id):
-    if not MT5_READY:
-        return
-
-    try:
-        positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
-        bot_positions = [
-            p for p in positions if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
-        ]
-        if not bot_positions:
-            return
-
-        symbol_info = mt5.symbol_info("XAUUSD-P")
-        pip_size = float(symbol_info.point) * 10.0 if symbol_info else 0.0
-        if pip_size <= 0:
-            return
-
-        trigger_pips, protected_pips = 50.0, 10.0
-        percentage = protected_pips / trigger_pips
-
-        for position in bot_positions:
-            position_ticket = int(position.ticket)
-            direction = "BUY" if int(getattr(position, "type", -1)) == mt5.POSITION_TYPE_BUY else "SELL"
-            existing_sl_price = float(getattr(position, "sl", 0.0) or 0.0)
-            existing_protected_pips = 0.0
-            if existing_sl_price > 0:
-                if direction == "BUY":
-                    existing_protected_pips = (existing_sl_price - float(position.price_open)) / pip_size
-                else:
-                    existing_protected_pips = (float(position.price_open) - existing_sl_price) / pip_size
-
-            if existing_protected_pips >= protected_pips:
-                # Gia' protetto uguale o meglio (es. il monitor MT5 e' arrivato prima).
-                continue
-
-            try:
-                result = await asyncio.to_thread(
-                    move_position_to_profit_protection,
-                    position_ticket,
-                    trigger_pips,
-                    percentage,
-                )
-            except Exception:
-                logger.exception(
-                    "❌ ERRORE BE DA SEGNALE TP1 +50 | Position=%s", position_ticket
-                )
-                continue
-
-            if not result.get("changed"):
-                continue
-
-            new_sl = float(result["sl"])
-            row = await asyncio.to_thread(
-                get_open_trade_by_ticket_any_source, position_ticket, "XAUUSD"
-            )
-            if row is None:
-                continue
-
-            trade_source_chat = row[12]
-            original_message_id = row[1]
-            destination_message_id = row[2]
-
-            await asyncio.to_thread(
-                mark_automatic_breakeven,
-                position_ticket,
-                trade_source_chat,
-                original_message_id,
-                new_sl,
-            )
-            update_trade_sl(trade_source_chat, original_message_id, new_sl, status="OPENED")
-            await asyncio.to_thread(
-                set_last_pips_notified,
-                position_ticket,
-                trade_source_chat,
-                original_message_id,
-                int(trigger_pips),
-            )
-
-            try:
-                sent = await send_be_applied_message(
-                    pips=int(trigger_pips), reply_to=destination_message_id
-                )
-                logger.info(
-                    "🟢 BE FORZATO DA TP1 +50 (CÉDRIC) | Position=%s | SL=%.2f | Destination #%s",
-                    position_ticket, new_sl, sent.id,
-                )
-            except Exception:
-                logger.exception(
-                    "❌ ERRORE MESSAGGIO BE DA TP1 +50 | Position=%s", position_ticket
-                )
-    except Exception:
-        logger.exception("❌ ERRORE PROCESS_TP1_BE_SIGNAL | #%s", source_message_id)
-
-
-# ============================================================
 # STOP LOSS PRESO
 # ============================================================
 
@@ -1477,7 +1361,7 @@ def _calculate_position_profit_pips(position):
 # Ogni voce e' (trigger_pips, protected_pips): al raggiungimento di
 # trigger_pips di profitto, lo SL viene spostato a protected_pips.
 LIVE_PROTECTION_LEVELS = (
-    (50.0, 10.0),
+    (90.0, 10.0),
     (125.0, 50.0),
     (150.0, 80.0),
     (175.0, 110.0),
@@ -1503,7 +1387,7 @@ def _live_protection_step(profit_pips):
     """
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
-        +50   -> SL +10 (BE)
+        +90   -> SL +10 (BE)
         +125  -> SL +50
         +150  -> SL +80
         +175  -> SL +110
@@ -1520,7 +1404,7 @@ def _live_protection_step(profit_pips):
 
     Ritorna una tupla (trigger_pips, protected_pips, protection_mode),
     oppure None se il profitto non ha ancora raggiunto la prima soglia
-    (+50 pips). Lo SL non arretra mai: e' compito del chiamante non
+    (+90 pips). Lo SL non arretra mai: e' compito del chiamante non
     peggiorare mai la protezione gia' applicata.
     """
     if profit_pips is None:
@@ -2408,7 +2292,7 @@ async def monitor_trailing_sl_closures(stop_event):
     Gestione autonoma dello SL basata sul prezzo LIVE di MT5.
 
     Il prezzo live di MT5 governa tutta la gestione dello SL.
-    A +50 PIPS scatta la prima protezione (+10 PIPS).
+    A +90 PIPS scatta la prima protezione (+10 PIPS).
     Quando il livello TAKE PROFIT (TP3 del segnale) viene raggiunto,
     l'operazione NON viene chiusa: viene notificato il raggiungimento e
     si attiva il trailing dinamico al 15% di ritracciamento.
@@ -2461,7 +2345,7 @@ async def monitor_trailing_sl_closures(stop_event):
                         position = positions[0]
 
                         # La protezione parte direttamente dal prezzo LIVE di MT5.
-                        # A +50 PIPS il primo step porta lo SL a +10 PIPS
+                        # A +90 PIPS il primo step porta lo SL a +10 PIPS
                         # rispetto all'entry; non aspettiamo più alcun messaggio Telegram.
                         current_price = float(
                             getattr(position, "price_current", 0.0) or 0.0
@@ -2469,11 +2353,11 @@ async def monitor_trailing_sl_closures(stop_event):
                         profit_pips = _calculate_position_profit_pips(position)
 
                         # --------------------------------------------------
-                        # AGGIORNAMENTO NEL CANALE: +50 (BE), POI OGNI 100 PIPS
+                        # AGGIORNAMENTO NEL CANALE: +90 (BE), POI OGNI 100 PIPS
                         # --------------------------------------------------
                         # Indipendente dagli step fini di protezione SL qui
                         # sotto (che continuano a muovere lo SL su MT5 come
-                        # sempre, silenziosamente): a +50 pips di profitto
+                        # sempre, silenziosamente): a +90 pips di profitto
                         # mandiamo il messaggio di BE (una sola volta), poi
                         # dai +100 in poi il semplice aggiornamento pips ogni
                         # multiplo di 100. Continua anche dopo il TP
@@ -2482,21 +2366,21 @@ async def monitor_trailing_sl_closures(stop_event):
                             get_last_pips_notified, position_ticket
                         )
 
-                        if profit_pips >= 50.0 and last_notified < 50:
+                        if profit_pips >= 90.0 and last_notified < 90:
                             await asyncio.to_thread(
                                 set_last_pips_notified,
                                 position_ticket,
                                 trade_source_chat,
                                 original_message_id,
-                                50,
+                                90,
                             )
                             try:
                                 sent = await send_be_applied_message(
-                                    pips=50,
+                                    pips=90,
                                     reply_to=destination_message_id,
                                 )
                                 logger.info(
-                                    "📈 AGGIORNAMENTO PIPS | Position=%s | +50 PIPS (BE) | Destination #%s",
+                                    "📈 AGGIORNAMENTO PIPS | Position=%s | +90 PIPS (BE) | Destination #%s",
                                     position_ticket, sent.id,
                                 )
                             except Exception:
@@ -2639,7 +2523,7 @@ async def monitor_trailing_sl_closures(stop_event):
 
                         new_sl = float(result["sl"])
 
-                        if trigger_pips == 50.0:
+                        if trigger_pips == 90.0:
                             await asyncio.to_thread(
                                 mark_automatic_breakeven,
                                 position_ticket,
@@ -2783,10 +2667,10 @@ async def monitor_trailing_sl_closures(stop_event):
 
                         # BE = lo SL era esattamente al gradino di breakeven
                         # (LIVE_PROTECTION_LEVELS[0], +10 pips) ed e' stato preso lì,
-                        # a prescindere da come ci e' arrivato (monitor MT5, segnale
-                        # "TP1 HIT +50pips" o una modifica SL generica del segnale
-                        # che non imposta il flag breakeven_applied nel DB). Un SL
-                        # che protegge un profitto diverso da +10 non e' BE.
+                        # a prescindere da come ci e' arrivato (monitor MT5 o una
+                        # modifica SL generica del segnale che non imposta il flag
+                        # breakeven_applied nel DB). Un SL che protegge un profitto
+                        # diverso da +10 non e' BE.
                         is_be_lock = abs(protected_pips_at_close - be_lock_pips) <= 2.0
 
                         if trailing_applied:
@@ -3181,7 +3065,7 @@ async def main():
     logger.info("TRAILING TELEGRAM   : DISABILITATO")
     logger.info("")
     logger.info("🛡️ GESTIONE SL LIVE")
-    logger.info("+50 PIPS            : SL +10 (BE) DA MT5")
+    logger.info("+90 PIPS            : SL +10 (BE) DA MT5")
     logger.info("+125 PIPS           : SL +50")
     logger.info("+150 PIPS           : SL +80")
     logger.info("+175 PIPS           : SL +110")
