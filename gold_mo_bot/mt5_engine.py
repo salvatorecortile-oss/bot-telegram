@@ -159,6 +159,28 @@ def current_price(symbol, direction=None):
     return bid or ask or None
 
 
+def pip_size(symbol):
+    """1 pip = 10 * point del simbolo (letto da MT5, dipende dal broker)."""
+    info = _symbol_info(symbol)
+    return float(info.point) * 10.0
+
+
+def calculate_pips(symbol, direction, entry_price, price):
+    """
+    PIPS live/di chiusura calcolati con il pip_size REALE del broker
+    (letto da MT5, non un valore fisso), coerente sia per il calcolo del
+    Break Even (+N pips dall'entry) sia per il risultato mostrato alla
+    chiusura (TP/SL).
+    """
+    size = pip_size(symbol)
+    if size <= 0:
+        return 0.0
+    entry_price = float(entry_price)
+    price = float(price)
+    diff = (price - entry_price) if direction == "BUY" else (entry_price - price)
+    return diff / size
+
+
 def _send_order(request):
     result = mt5.order_send(request)
     if result is None:

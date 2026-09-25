@@ -17,20 +17,20 @@ TP_PENDING_LINE = "🎯 <b>TP:</b> in attesa...\n"
 
 BE_LINE = "\n🟢 <b>BREAK EVEN ATTIVATO</b> (SL spostato all'entry)\n"
 
-CLOSED_TP_LINE_TEMPLATE = "\n✅ <b>TAKE PROFIT RAGGIUNTO</b>\n📍 Chiusura: <b>{price:.2f}</b>\n"
-CLOSED_SL_LINE_TEMPLATE = "\n🛑 <b>STOP LOSS PRESO</b>\n📍 Chiusura: <b>{price:.2f}</b>\n"
-CLOSED_GENERIC_LINE_TEMPLATE = "\n⚪ <b>OPERAZIONE CHIUSA</b>\n📍 Chiusura: <b>{price:.2f}</b>\n"
+CLOSED_TP_LINE_TEMPLATE = "\n✅ <b>TAKE PROFIT RAGGIUNTO</b>\n📈 <b>{pips:+.0f} PIPS</b>\n"
+CLOSED_SL_LINE_TEMPLATE = "\n🛑 <b>STOP LOSS</b>\n📉 <b>{pips:+.0f} PIPS</b>\n"
+CLOSED_GENERIC_LINE_TEMPLATE = "\n⚪ <b>OPERAZIONE CHIUSA</b>\n📊 <b>{pips:+.0f} PIPS</b>\n"
 
 
 def format_trade_card(state):
     """
     Ricostruisce l'intero messaggio dallo stato corrente del trade.
     Nel canale compaiono SOLO entry, SL e un unico TP (quello operativo
-    su MT5, cioe' TP3): TP1/TP2/TP4/"open" restano interni al bot (usati
-    solo per il trigger del Break Even su TP1), non vengono mostrati.
+    su MT5, cioe' TP3): TP1/TP2/TP4/"open" restano interni al bot, non
+    vengono mostrati. Alla chiusura si mostrano i PIPS, non il prezzo.
     state = {
         direction, entry, sl, tp1, tp2, tp3, tp4, tp_open_runner,
-        sltp_applied, breakeven_applied, closed, close_reason, close_price,
+        sltp_applied, breakeven_applied, closed, close_reason, close_pips,
     }
     """
     text = HEADER_TEMPLATE.format(direction=state["direction"])
@@ -50,14 +50,14 @@ def format_trade_card(state):
         text += BE_LINE
 
     if state.get("closed"):
-        price = float(state.get("close_price") or 0.0)
+        pips = float(state.get("close_pips") or 0.0)
         reason = state.get("close_reason")
         if reason == "TP":
-            text += CLOSED_TP_LINE_TEMPLATE.format(price=price)
+            text += CLOSED_TP_LINE_TEMPLATE.format(pips=pips)
         elif reason == "SL":
-            text += CLOSED_SL_LINE_TEMPLATE.format(price=price)
+            text += CLOSED_SL_LINE_TEMPLATE.format(pips=pips)
         else:
-            text += CLOSED_GENERIC_LINE_TEMPLATE.format(price=price)
+            text += CLOSED_GENERIC_LINE_TEMPLATE.format(pips=pips)
 
     return text
 

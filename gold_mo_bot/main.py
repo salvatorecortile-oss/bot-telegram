@@ -46,6 +46,7 @@ from config import (
     TRADING_ENABLED,
     LOG_DIR,
     MONITOR_INTERVAL_SECONDS,
+    BE_TRIGGER_PIPS,
     COMMAND_PREFIX,
     DAILY_CLOSE_HOUR,
     DAILY_CLOSE_MINUTE,
@@ -127,7 +128,7 @@ def calculate_signal_age_seconds(telegram_datetime):
     return max(0.0, age)
 
 
-def _row_to_state(row, *, closed=False, close_reason=None, close_price=None):
+def _row_to_state(row, *, closed=False, close_reason=None, close_pips=None):
     (
         source_message_id, destination_message_id, direction, entry,
         sl, tp1, tp2, tp3, tp4, tp_open_runner,
@@ -152,7 +153,7 @@ def _row_to_state(row, *, closed=False, close_reason=None, close_price=None):
         "breakeven_applied": bool(breakeven_applied),
         "closed": closed,
         "close_reason": close_reason,
-        "close_price": close_price,
+        "close_pips": close_pips,
     }
 
 
@@ -398,7 +399,10 @@ async def _monitor_single_trade(row):
         close_reason = "TP" if info["is_tp"] else ("SL" if info["is_sl"] else None)
         mark_closed(SOURCE_CHAT, source_message_id)
 
-        state.update({"closed": True, "close_reason": close_reason, "close_price": info["price"]})
+        close_pips = await asyncio.to_thread(
+            mt5_executor.calculate_pips, direction, state["entry"], info["price"]
+        )
+        state.update({"closed": True, "close_reason": close_reason, "close_pips": close_pips})
         if state["destination_message_id"] is not None:
             try:
                 await edit_destination_message(state["destination_message_id"], state)
@@ -406,24 +410,23 @@ async def _monitor_single_trade(row):
                 logger.exception("❌ ERRORE MODIFICA DESTINATION (chiusura) #%s", state["destination_message_id"])
 
         logger.info(
-            "🏁 TRADE CHIUSO | Position=%s | Motivo=%s | Prezzo=%.2f",
-            primary_ticket, close_reason or "N/D", info["price"],
+            "🏁 TRADE CHIUSO | Position=%s | Motivo=%s | Prezzo=%.2f | Pips=%+.1f",
+            primary_ticket, close_reason or "N/D", info["price"], close_pips,
         )
         return
 
     # --------------------------------------------------------
-    # TP1 -> BREAK EVEN
+    # BREAK EVEN a +BE_TRIGGER_PIPS dall'entry (letto live da MT5)
     # --------------------------------------------------------
-    if not state["sltp_applied"] or state["breakeven_applied"] or state["tp1"] is None:
+    if not state["sltp_applied"] or state["breakeven_applied"]:
         return
 
     price = await asyncio.to_thread(mt5_executor.current_price, direction)
     if price is None:
         return
 
-    tp1 = float(state["tp1"])
-    reached = (direction == "BUY" and price >= tp1) or (direction == "SELL" and price <= tp1)
-    if not reached:
+    profit_pips = await asyncio.to_thread(mt5_executor.calculate_pips, direction, state["entry"], price)
+    if profit_pips < BE_TRIGGER_PIPS:
         return
 
     try:
@@ -441,7 +444,10 @@ async def _monitor_single_trade(row):
         except Exception:
             logger.exception("❌ ERRORE MODIFICA DESTINATION (BE) #%s", state["destination_message_id"])
 
-    logger.info("🟢 BREAK EVEN APPLICATO | Position=%s | Nuovo SL=%.2f | TP1 raggiunto=%.2f", primary_ticket, new_sl, tp1)
+    logger.info(
+        "🟢 BREAK EVEN APPLICATO | Position=%s | Nuovo SL=%.2f | Profitto=%+.1f pips (soglia %.0f)",
+        primary_ticket, new_sl, profit_pips, BE_TRIGGER_PIPS,
+    )
 
 
 # ============================================================

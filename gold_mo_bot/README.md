@@ -33,9 +33,8 @@ Il segnale arriva in **due messaggi separati**:
    Applica subito SL e **TP3** (l'UNICO take profit impostato realmente su
    MT5) alla posizione aperta al punto 1, e **solo ora** pubblica **un
    messaggio** nel canale destinazione con entry reale, SL e un **unico
-   TP** (il valore di TP3) — non compare la lista TP1-TP4. TP1 resta
-   memorizzato solo internamente per il trigger del Break Even (punto 3);
-   TP2/TP4/"open" sono ignorati.
+   TP** (il valore di TP3) — non compare la lista TP1-TP4. TP2/TP4/"open"
+   sono ignorati.
 
    **Importante**: questo secondo messaggio a volte ripete anche la riga
    "Gold buy/sell now ..." insieme a SL/TP (un "rilancio" del segnale
@@ -43,12 +42,17 @@ Il segnale arriva in **due messaggi separati**:
    gia' aperto al punto 1 — la presenza di SL/TP ha sempre la priorita' e
    NON viene mai aperta una seconda posizione duplicata.
 
-3. Quando il prezzo live raggiunge **TP1** (mai mostrato nel canale, solo
-   interno), il bot sposta lo Stop Loss al prezzo di apertura
-   (**Break Even**) e aggiorna il messaggio nel canale.
+3. Quando il profitto live raggiunge **+50 PIPS dall'entry** (soglia
+   configurabile con `BE_TRIGGER_PIPS` nel `.env`, calcolati con il
+   pip_size reale del simbolo letto da MT5, non un valore fisso), il bot
+   sposta lo Stop Loss al prezzo di apertura (**Break Even**) e aggiorna
+   il messaggio nel canale.
 
-4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5 e
-   riportata nel messaggio destinazione.
+4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5.
+   Il messaggio nel canale viene aggiornato con **"TAKE PROFIT
+   RAGGIUNTO"** o **"STOP LOSS"** seguito dai **PIPS** realizzati
+   (calcolati con lo stesso pip_size reale) — non viene mostrato il
+   prezzo di chiusura.
 
 ## Comandi remoti (da "Messaggi Salvati")
 

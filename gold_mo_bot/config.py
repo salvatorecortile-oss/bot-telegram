@@ -87,8 +87,12 @@ MAGIC_NUMBER = int(_env("MAGIC_NUMBER", "26090201"))
 ORDER_COMMENT = _env("ORDER_COMMENT", "Gold MO Copier")
 
 # Intervallo (secondi) del ciclo che controlla il prezzo live per
-# TP1 -> Break Even e la chiusura reale delle posizioni.
+# Break Even e la chiusura reale delle posizioni.
 MONITOR_INTERVAL_SECONDS = float(_env("MONITOR_INTERVAL_SECONDS", "0.5"))
+
+# Profitto (in PIPS, calcolati con il pip_size reale letto da MT5) al
+# quale lo Stop Loss viene spostato al prezzo di apertura (Break Even).
+BE_TRIGGER_PIPS = float(_env("BE_TRIGGER_PIPS", "50"))
 
 # =========================
 # COMANDI REMOTI (da "Messaggi Salvati")
