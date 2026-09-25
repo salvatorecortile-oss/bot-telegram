@@ -1388,18 +1388,18 @@ def _live_protection_step(profit_pips):
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
         +90   -> SL +10 (BE)
-        +125  -> SL +45
-        +150  -> SL +70
-        +175  -> SL +95
-        +200  -> SL +130
-        +225  -> SL +160
-        +250  -> SL +190
-        +275  -> SL +220
-        +300  -> SL +250
-        +325  -> SL +280
-        +350  -> SL +310
-        +375  -> SL +340
-        +400  -> SL +370 (trade resta aperto)
+        +125  -> SL +50
+        +150  -> SL +80
+        +175  -> SL +110
+        +200  -> SL +128
+        +225  -> SL +157
+        +250  -> SL +186
+        +275  -> SL +215
+        +300  -> SL +244
+        +325  -> SL +273
+        +350  -> SL +302
+        +375  -> SL +331
+        +400  -> SL +360 (trade resta aperto)
         >400  -> trailing dinamico: protezione = 85% del profitto corrente
 
     Ritorna una tupla (trigger_pips, protected_pips, protection_mode),
@@ -1669,7 +1669,7 @@ async def daily_close_scheduler(stop_event):
     while not stop_event.is_set():
         try:
             now_local = datetime.now(ITALY_TZ)
-            target = now_local.replace(hour=22, minute=59, second=0, microsecond=0)
+            target = now_local.replace(hour=22, minute=45, second=0, microsecond=0)
             if target <= now_local:
                 target += timedelta(days=1)
 
@@ -1746,7 +1746,7 @@ async def daily_report_scheduler(stop_event):
     """
     Invia il report giornaliero YARDFX alle 23:00 Europe/Rome, lun-ven.
 
-    Orario separato da daily_close_scheduler (22:59) apposta: sul conto
+    Orario separato da daily_close_scheduler (22:45) apposta: sul conto
     reale il mercato chiude alle 23:00, quindi il report parte un minuto
     DOPO la chiusura forzata, quando il mercato è già chiuso e la
     posizione (se c'era) risulta già chiusa.
@@ -3296,7 +3296,7 @@ async def main():
     logger.info("📊 YARDFX Monthly Report avviato | Ultimo giorno del mese 23:59 Europe/Rome.")
     logger.info("📊 YARDFX Weekly Report avviato | Sabato 10:00 Europe/Rome.")
     logger.info("☀️ YARDFX Buongiorno avviato | Lun-Ven 06:00 Europe/Rome.")
-    logger.info("🌙 YARDFX Daily Close avviato | Tutte le posizioni chiuse alle 22:59 Europe/Rome.")
+    logger.info("🌙 YARDFX Daily Close avviato | Tutte le posizioni chiuse alle 22:45 Europe/Rome.")
 
     # ========================================================
     # TELEGRAM LOOP
