@@ -17,7 +17,7 @@ except ImportError:
 
 def _env(name, default=""):
     """Come os.getenv, ma tratta una variabile presente e VUOTA (es.
-    'MT5_LOGIN_2=' senza valore nel .env) come se non fosse impostata,
+    'MT5_SERVER=' senza valore nel .env) come se non fosse impostata,
     usando comunque il default invece di far fallire int()/float()."""
     value = os.getenv(name)
     if value is None or value.strip() == "":
@@ -53,29 +53,10 @@ MT5_PASSWORD = _env("MT5_PASSWORD", "")
 MT5_SERVER = _env("MT5_SERVER", "")
 
 # =========================
-# MT5 - SECONDO CONTO (copia in parallelo)
-# =========================
-# Disattivato finche' non vengono fornite le credenziali reali. Quando
-# SECOND_ACCOUNT_ENABLED=true il bot avvia un secondo processo che si
-# collega a un secondo terminale MT5 installato sulla stessa macchina
-# (es. C:\MT5_Account2\terminal64.exe) e apre la stessa operazione anche
-# li'.
-SECOND_ACCOUNT_ENABLED = _env("SECOND_ACCOUNT_ENABLED", "false").lower() in {
-    "1", "true", "yes", "on"
-}
-MT5_PATH_2 = _env("MT5_PATH_2", "")
-MT5_LOGIN_2 = int(_env("MT5_LOGIN_2", "0"))
-MT5_PASSWORD_2 = _env("MT5_PASSWORD_2", "")
-MT5_SERVER_2 = _env("MT5_SERVER_2", "")
-
-MAGIC_NUMBER_2 = int(_env("MAGIC_NUMBER_2", "26090202"))
-
-# =========================
 # TRADING
 # =========================
 MT5_SYMBOL = _env("MT5_SYMBOL", "XAUUSD")
 
-# Lotto usato su ENTRAMBI i conti (stesso valore su conto 1 e conto 2).
 LOT_SIZE = float(_env("LOT_SIZE", "0.01"))
 
 MAX_SIGNAL_AGE_SECONDS = float(_env("MAX_SIGNAL_AGE_SECONDS", "60"))

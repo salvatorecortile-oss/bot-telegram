@@ -155,7 +155,6 @@ def update_copy(source_chat_id, source_message_id, destination_message_id, desti
 def update_status(
     source_chat_id, source_message_id, status, *,
     mt5_ticket=None, mt5_deal=None, mt5_volume=None, mt5_price=None,
-    mt5_ticket_2=None, mt5_deal_2=None, mt5_volume_2=None, mt5_price_2=None,
     trade_datetime=None, error=None,
 ):
     fields = ["status = ?", "updated_at = CURRENT_TIMESTAMP"]
@@ -166,10 +165,6 @@ def update_status(
         ("mt5_deal", mt5_deal, int),
         ("mt5_volume", mt5_volume, float),
         ("mt5_price", mt5_price, float),
-        ("mt5_ticket_2", mt5_ticket_2, int),
-        ("mt5_deal_2", mt5_deal_2, int),
-        ("mt5_volume_2", mt5_volume_2, float),
-        ("mt5_price_2", mt5_price_2, float),
     ):
         if value is not None:
             fields.append(f"{column} = ?")
@@ -202,7 +197,7 @@ def get_latest_open_trade(source_chat_id, symbol="XAUUSD"):
         SELECT
             source_message_id, destination_message_id, direction, entry,
             sl, tp1, tp2, tp3, tp4, tp_open_runner,
-            mt5_ticket, mt5_price, mt5_ticket_2, mt5_price_2,
+            mt5_ticket, mt5_price,
             sltp_applied, breakeven_applied
         FROM messages
         WHERE source_chat_id = ? AND symbol = ?
@@ -227,7 +222,7 @@ def get_latest_trade_awaiting_sltp(source_chat_id, symbol="XAUUSD"):
         SELECT
             source_message_id, destination_message_id, direction, entry,
             sl, tp1, tp2, tp3, tp4, tp_open_runner,
-            mt5_ticket, mt5_price, mt5_ticket_2, mt5_price_2,
+            mt5_ticket, mt5_price,
             sltp_applied, breakeven_applied
         FROM messages
         WHERE source_chat_id = ? AND symbol = ?
@@ -248,7 +243,7 @@ def get_open_trades(source_chat_id, symbol="XAUUSD"):
         SELECT
             source_message_id, destination_message_id, direction, entry,
             sl, tp1, tp2, tp3, tp4, tp_open_runner,
-            mt5_ticket, mt5_price, mt5_ticket_2, mt5_price_2,
+            mt5_ticket, mt5_price,
             sltp_applied, breakeven_applied
         FROM messages
         WHERE source_chat_id = ? AND symbol = ?

@@ -2,8 +2,7 @@
 
 Bot Telegram -> MetaTrader 5 per il canale **Gold MO**. Stessa architettura
 del bot esistente in questo repository (Telethon + MetaTrader5 + sqlite),
-adattata al formato dei segnali di questo provider e con supporto opzionale
-a un secondo conto MT5 in parallelo.
+adattata al formato dei segnali di questo provider. Un solo conto MT5.
 
 ## Canali
 
@@ -32,9 +31,9 @@ Il segnale arriva in **due messaggi separati**:
    ```
    Applica subito SL e **TP3** (l'UNICO take profit impostato realmente su
    MT5) alla posizione aperta al punto 1, e **solo ora** pubblica **un
-   messaggio** nel canale destinazione con entry reale, SL e un **unico
-   TP** (il valore di TP3) — non compare la lista TP1-TP4. TP2/TP4/"open"
-   sono ignorati.
+   messaggio principale** nel canale destinazione con entry reale, SL e
+   un **unico TP** (il valore di TP3) — non compare la lista TP1-TP4.
+   TP2/TP4/"open" sono ignorati.
 
    **Importante**: questo secondo messaggio a volte ripete anche la riga
    "Gold buy/sell now ..." insieme a SL/TP (un "rilancio" del segnale
@@ -45,14 +44,21 @@ Il segnale arriva in **due messaggi separati**:
 3. Quando il profitto live raggiunge **+50 PIPS dall'entry** (soglia
    configurabile con `BE_TRIGGER_PIPS` nel `.env`, calcolati con il
    pip_size reale del simbolo letto da MT5, non un valore fisso), il bot
-   sposta lo Stop Loss al prezzo di apertura (**Break Even**) e aggiorna
-   il messaggio nel canale.
+   sposta lo Stop Loss al prezzo di apertura (**Break Even**) e invia un
+   **messaggio separato** (in risposta al messaggio principale) — il
+   messaggio principale NON viene mai modificato dopo la pubblicazione.
 
-4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5.
-   Il messaggio nel canale viene aggiornato con **"TAKE PROFIT
-   RAGGIUNTO"** o **"STOP LOSS"** seguito dai **PIPS** realizzati
-   (calcolati con lo stesso pip_size reale) — non viene mostrato il
-   prezzo di chiusura.
+4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5 e
+   notificata anch'essa con un **messaggio separato** (in risposta al
+   messaggio principale): **"TAKE PROFIT RAGGIUNTO"** o **"STOP LOSS"**
+   seguito dai **PIPS** realizzati (calcolati con lo stesso pip_size
+   reale) — non viene mostrato il prezzo di chiusura.
+
+In sintesi, per ogni trade il canale riceve fino a 3 messaggi distinti:
+quello principale (entry/SL/TP), un eventuale messaggio di Break Even, e
+il messaggio finale di chiusura. Nessuno di questi viene mai editato
+dopo l'invio (l'unica eccezione e' una correzione dei parametri iniziali
+prima che il trade tocchi BE o si chiuda).
 
 ## Comandi remoti (da "Messaggi Salvati")
 
@@ -61,8 +67,8 @@ usato dal bot, sono disponibili questi comandi (prefisso configurabile,
 default `bot5_`):
 
 - `bot5_play` — il bot riparte al 100%
-- `bot5_stop` — chiude tutte le posizioni (entrambi i conti) e ferma
-  completamente il bot (niente ascolto ne' messaggi nel canale)
+- `bot5_stop` — chiude tutte le posizioni e ferma completamente il bot
+  (niente ascolto ne' messaggi nel canale)
 - `bot5_riavvio` — come `bot5_stop` e subito dopo come `bot5_play`
 - `bot5_pausa` — non copia ne' apre nuovi trade, ma i trade gia' aperti
   restano gestiti normalmente (BE/chiusura continuano)
@@ -76,9 +82,8 @@ default `bot5_`):
 
 - ☀️ 06:00 (lun-ven): messaggio di buongiorno
 - 🔒 22:45 (lun-ven): chiusura a mercato di tutte le posizioni aperte
-  (entrambi i conti)
 - 📊 23:00 (lun-ven): report giornaliero (letto direttamente dallo storico
-  MT5 del conto principale)
+  MT5)
 - 📅 Sabato 10:00: report settimanale
 - 🗓️ Ultimo giorno del mese, 23:59: report mensile
 
@@ -87,26 +92,10 @@ Orari personalizzabili nel `.env` (`DAILY_CLOSE_HOUR`, `DAILY_REPORT_HOUR`,
 
 ## Recovery automatico all'avvio
 
-Se il bot si riavvia mentre una posizione e' aperta sul conto principale,
-al successivo avvio la ritrova sempre: se manca la riga nel database (es.
-crash tra apertura e scrittura), la "adotta" e pubblica un nuovo messaggio
-nel canale, riprendendo la gestione (BE/chiusura) da li'.
-
-## Secondo conto MT5 (opzionale)
-
-Il bot puo' aprire la stessa operazione anche su un secondo conto MT5, in
-parallelo al conto principale, con lo stesso lotto configurato
-(`LOT_SIZE`). Per attivarlo:
-
-1. Installa un secondo terminale MetaTrader 5 sulla stessa macchina, in un
-   percorso diverso da quello del conto principale.
-2. Nel `.env`, imposta `SECOND_ACCOUNT_ENABLED=true` e compila
-   `MT5_PATH_2`, `MT5_LOGIN_2`, `MT5_PASSWORD_2`, `MT5_SERVER_2`.
-
-Il secondo conto gira in un processo separato (il modulo Python di MT5
-regge una sola connessione attiva per processo): se non e' raggiungibile o
-non e' configurato, il bot continua a funzionare normalmente sul solo
-conto principale, senza bloccarsi.
+Se il bot si riavvia mentre una posizione e' aperta, al successivo avvio
+la ritrova sempre: se manca la riga nel database (es. crash tra apertura
+e scrittura), la "adotta" e pubblica un nuovo messaggio nel canale,
+riprendendo la gestione (BE/chiusura) da li'.
 
 ## Prima esecuzione
 
@@ -115,8 +104,7 @@ conto principale, senza bloccarsi.
    ```bat
    pip install -r requirements.txt
    ```
-3. Copia `.env.example` in `.env` e compila i valori (API Telegram, MT5
-   conto principale, eventualmente secondo conto).
+3. Copia `.env.example` in `.env` e compila i valori (API Telegram, MT5).
 4. Login Telegram (una tantum), via QR code:
    ```bat
    python telegram_login.py

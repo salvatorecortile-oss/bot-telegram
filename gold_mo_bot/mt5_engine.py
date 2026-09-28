@@ -1,11 +1,6 @@
 """
 Motore MT5 generico e parametrizzato per simbolo/lotto/magic/commento.
-
-Usato sia dal conto principale (import diretto in main.py/mt5_executor.py,
-stesso processo) sia dal conto secondario (dentro il processo separato
-avviato da mt5_worker.py). Ogni processo ha una propria connessione MT5
-indipendente: il modulo MetaTrader5 tiene una sola connessione attiva per
-processo, per questo il secondo conto gira sempre in un processo a parte.
+Usato da mt5_executor.py (unico conto).
 """
 import logging
 from dataclasses import dataclass

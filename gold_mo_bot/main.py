@@ -11,6 +11,8 @@ from telegram_client import client
 from telegram_sender import (
     copy_message_to_destination,
     edit_destination_message,
+    send_breakeven_message,
+    send_closure_message,
     send_good_morning_message,
     send_daily_report_message,
     send_weekly_report_message,
@@ -19,7 +21,6 @@ from telegram_sender import (
 from signal_parser import parse_signal
 
 import mt5_executor
-import dual_executor
 
 from database import (
     init_database,
@@ -128,11 +129,11 @@ def calculate_signal_age_seconds(telegram_datetime):
     return max(0.0, age)
 
 
-def _row_to_state(row, *, closed=False, close_reason=None, close_pips=None):
+def _row_to_state(row):
     (
         source_message_id, destination_message_id, direction, entry,
         sl, tp1, tp2, tp3, tp4, tp_open_runner,
-        mt5_ticket, mt5_price, mt5_ticket_2, mt5_price_2,
+        mt5_ticket, mt5_price,
         sltp_applied, breakeven_applied,
     ) = row
 
@@ -147,13 +148,9 @@ def _row_to_state(row, *, closed=False, close_reason=None, close_pips=None):
         "tp3": tp3,
         "tp4": tp4,
         "tp_open_runner": bool(tp_open_runner),
-        "primary_ticket": mt5_ticket,
-        "secondary_ticket": mt5_ticket_2,
+        "ticket": mt5_ticket,
         "sltp_applied": bool(sltp_applied),
         "breakeven_applied": bool(breakeven_applied),
-        "closed": closed,
-        "close_reason": close_reason,
-        "close_pips": close_pips,
     }
 
 
@@ -251,16 +248,14 @@ async def process_open(signal, source_message_id, telegram_datetime):
         return
 
     try:
-        primary, secondary = await dual_executor.open_market_order_dual(direction, sl=0.0)
+        result = await asyncio.to_thread(mt5_executor.open_market_order, direction, 0.0)
     except Exception as e:
         logger.exception("❌ ERRORE APERTURA TRADE #%s", source_message_id)
         update_status(SOURCE_CHAT, source_message_id, "ERROR", error=str(e))
         return
 
     logger.info(
-        "✅ TRADE APERTO | Conto1 ticket=%s prezzo=%.2f%s",
-        primary.position_ticket, primary.price,
-        f" | Conto2 ticket={secondary.position_ticket} prezzo={secondary.price:.2f}" if secondary else " | Conto2: n/d",
+        "✅ TRADE APERTO | ticket=%s prezzo=%.2f", result.position_ticket, result.price,
     )
 
     # Apertura silenziosa: NON pubblichiamo ancora nulla nel canale.
@@ -268,12 +263,8 @@ async def process_open(signal, source_message_id, telegram_datetime):
     # gia' completo di tutti i dati reali.
     update_status(
         SOURCE_CHAT, source_message_id, "OPENED",
-        mt5_ticket=primary.position_ticket, mt5_deal=primary.deal,
-        mt5_volume=primary.volume, mt5_price=primary.price,
-        mt5_ticket_2=secondary.position_ticket if secondary else None,
-        mt5_deal_2=secondary.deal if secondary else None,
-        mt5_volume_2=secondary.volume if secondary else None,
-        mt5_price_2=secondary.price if secondary else None,
+        mt5_ticket=result.position_ticket, mt5_deal=result.deal,
+        mt5_volume=result.volume, mt5_price=result.price,
         trade_datetime=datetime.now(timezone.utc).isoformat(),
     )
 
@@ -313,12 +304,11 @@ async def process_sltp(signal, source_message_id):
         return
 
     state = _row_to_state(row)
-    primary_ticket = state["primary_ticket"]
-    secondary_ticket = state["secondary_ticket"]
+    ticket = state["ticket"]
     original_message_id = state["source_message_id"]
 
     try:
-        await dual_executor.apply_sltp_dual(primary_ticket, secondary_ticket, sl, tp3 or 0.0)
+        await asyncio.to_thread(mt5_executor.modify_position_sl_tp, ticket, sl, tp3 or 0.0)
     except Exception as e:
         logger.exception("❌ ERRORE APPLICAZIONE SL/TP #%s", source_message_id)
         update_status(SOURCE_CHAT, source_message_id, "SLTP_ERROR", error=str(e))
@@ -348,17 +338,19 @@ async def process_sltp(signal, source_message_id):
             logger.exception("❌ ERRORE PUBBLICAZIONE DESTINATION #%s", original_message_id)
     else:
         # Messaggio di correzione arrivato dopo che il segnale era gia'
-        # stato pubblicato: aggiorna quello esistente.
+        # stato pubblicato: aggiorna quello esistente (non e' un
+        # aggiornamento di stato del trade, e' una correzione dei
+        # parametri iniziali).
         try:
             await edit_destination_message(state["destination_message_id"], state)
         except Exception:
             logger.exception("❌ ERRORE MODIFICA DESTINATION #%s", state["destination_message_id"])
 
-    logger.info("✅ SL/TP APPLICATI | Position=%s | SL=%.2f | TP operativo(TP3)=%s", primary_ticket, sl, tp3)
+    logger.info("✅ SL/TP APPLICATI | Position=%s | SL=%.2f | TP operativo(TP3)=%s", ticket, sl, tp3)
 
 
 # ============================================================
-# MONITOR: TP1 -> BREAK EVEN, RILEVAMENTO CHIUSURE
+# MONITOR: BREAK EVEN, RILEVAMENTO CHIUSURE
 # ============================================================
 
 async def monitor_loop(stop_event):
@@ -381,17 +373,17 @@ async def monitor_loop(stop_event):
 async def _monitor_single_trade(row):
     state = _row_to_state(row)
     source_message_id = state["source_message_id"]
-    primary_ticket = state["primary_ticket"]
-    secondary_ticket = state["secondary_ticket"]
+    ticket = state["ticket"]
     direction = state["direction"]
 
     # --------------------------------------------------------
     # CHIUSURA (TP3 o SL): controlliamo prima, se e' gia' chiusa
-    # non ha senso proseguire con BE.
+    # non ha senso proseguire con BE. Notifica come messaggio SEPARATO
+    # (in risposta al messaggio principale), che non viene mai toccato.
     # --------------------------------------------------------
-    is_open = await asyncio.to_thread(dual_executor.primary_position_is_open, primary_ticket)
+    is_open = await asyncio.to_thread(mt5_executor.position_is_open, ticket)
     if not is_open:
-        info = await asyncio.to_thread(dual_executor.primary_closed_position_info, primary_ticket)
+        info = await asyncio.to_thread(mt5_executor.get_closed_position_info, ticket)
         if info is None:
             # Storico non ancora disponibile: riprovare al prossimo giro.
             return
@@ -402,21 +394,21 @@ async def _monitor_single_trade(row):
         close_pips = await asyncio.to_thread(
             mt5_executor.calculate_pips, direction, state["entry"], info["price"]
         )
-        state.update({"closed": True, "close_reason": close_reason, "close_pips": close_pips})
         if state["destination_message_id"] is not None:
             try:
-                await edit_destination_message(state["destination_message_id"], state)
+                await send_closure_message(state["destination_message_id"], close_reason, close_pips)
             except Exception:
-                logger.exception("❌ ERRORE MODIFICA DESTINATION (chiusura) #%s", state["destination_message_id"])
+                logger.exception("❌ ERRORE INVIO MESSAGGIO CHIUSURA #%s", state["destination_message_id"])
 
         logger.info(
             "🏁 TRADE CHIUSO | Position=%s | Motivo=%s | Prezzo=%.2f | Pips=%+.1f",
-            primary_ticket, close_reason or "N/D", info["price"], close_pips,
+            ticket, close_reason or "N/D", info["price"], close_pips,
         )
         return
 
     # --------------------------------------------------------
-    # BREAK EVEN a +BE_TRIGGER_PIPS dall'entry (letto live da MT5)
+    # BREAK EVEN a +BE_TRIGGER_PIPS dall'entry (letto live da MT5).
+    # Notifica come messaggio SEPARATO, il principale non viene toccato.
     # --------------------------------------------------------
     if not state["sltp_applied"] or state["breakeven_applied"]:
         return
@@ -430,23 +422,22 @@ async def _monitor_single_trade(row):
         return
 
     try:
-        new_sl, _ = await dual_executor.move_to_breakeven_dual(primary_ticket, secondary_ticket)
+        new_sl = await asyncio.to_thread(mt5_executor.move_position_to_breakeven, ticket)
     except Exception:
-        logger.exception("❌ ERRORE BREAK EVEN | Position=%s", primary_ticket)
+        logger.exception("❌ ERRORE BREAK EVEN | Position=%s", ticket)
         return
 
     mark_breakeven_applied(SOURCE_CHAT, source_message_id, new_sl)
-    state.update({"sl": new_sl, "breakeven_applied": True})
 
     if state["destination_message_id"] is not None:
         try:
-            await edit_destination_message(state["destination_message_id"], state)
+            await send_breakeven_message(state["destination_message_id"], new_sl)
         except Exception:
-            logger.exception("❌ ERRORE MODIFICA DESTINATION (BE) #%s", state["destination_message_id"])
+            logger.exception("❌ ERRORE INVIO MESSAGGIO BE #%s", state["destination_message_id"])
 
     logger.info(
         "🟢 BREAK EVEN APPLICATO | Position=%s | Nuovo SL=%.2f | Profitto=%+.1f pips (soglia %.0f)",
-        primary_ticket, new_sl, profit_pips, BE_TRIGGER_PIPS,
+        ticket, new_sl, profit_pips, BE_TRIGGER_PIPS,
     )
 
 
@@ -456,11 +447,11 @@ async def _monitor_single_trade(row):
 
 async def recover_orphan_positions():
     """
-    Non salta mai una posizione aperta sul conto principale: se una
-    posizione con il nostro MAGIC risulta aperta su MT5 ma non ha
-    nessuna riga nel DB (es. crash tra l'apertura e la scrittura),
-    la "adotta" creando una riga sintetica e pubblicando un messaggio
-    nel canale, cosi' il monitor riprende a gestirla (BE/chiusura).
+    Non salta mai una posizione aperta: se una posizione con il nostro
+    MAGIC risulta aperta su MT5 ma non ha nessuna riga nel DB (es. crash
+    tra l'apertura e la scrittura), la "adotta" creando una riga
+    sintetica e pubblicando un messaggio nel canale, cosi' il monitor
+    riprende a gestirla (BE/chiusura).
     """
     try:
         positions = await asyncio.to_thread(mt5_executor.list_open_positions)
@@ -508,11 +499,7 @@ async def recover_orphan_positions():
         # riga tramite get_latest_trade_awaiting_sltp), stessa regola
         # usata per l'apertura normale.
         if tp3:
-            state = {
-                "direction": direction, "entry": position["price_open"], "sl": sl,
-                "tp1": None, "tp2": None, "tp3": tp3, "tp4": None, "tp_open_runner": False,
-                "breakeven_applied": False, "closed": False,
-            }
+            state = {"direction": direction, "entry": position["price_open"], "sl": sl, "tp3": tp3}
             try:
                 destination_message = await copy_message_to_destination(state)
                 update_copy(SOURCE_CHAT, synthetic_id, destination_message.id, datetime.now(timezone.utc).isoformat())
@@ -531,13 +518,13 @@ async def recover_orphan_positions():
 # ============================================================
 #
 # bot5_play    -> il bot riparte al 100%
-# bot5_stop    -> chiude tutte le posizioni (entrambi i conti) e ferma
-#                 completamente il bot (niente ascolto ne' messaggi)
+# bot5_stop    -> chiude tutte le posizioni e ferma completamente il bot
+#                 (niente ascolto ne' messaggi)
 # bot5_riavvio -> come bot5_stop e subito dopo come bot5_play
 # bot5_pausa   -> non copia ne' apre nuovi trade, ma i trade gia'
 #                 aperti restano gestiti normalmente (BE/chiusura)
 # bot5_status  -> stato attuale + posizioni aperte con il profitto
-#                 flottante di ciascuna (conto principale + secondo)
+#                 flottante di ciascuna
 # bot5_report  -> invia subito il report giornaliero
 # bot5_reportw -> invia subito il report settimanale
 # bot5_reportm -> invia subito il report mensile
@@ -547,7 +534,7 @@ async def recover_orphan_positions():
 COMMANDS_HELP_TEXT = (
     "📋 COMANDI DISPONIBILI\n\n"
     f"▶️ {COMMAND_PREFIX}play — il bot riparte al 100%\n"
-    f"🛑 {COMMAND_PREFIX}stop — chiude tutte le posizioni (entrambi i conti) e ferma il bot\n"
+    f"🛑 {COMMAND_PREFIX}stop — chiude tutte le posizioni e ferma il bot\n"
     f"🔄 {COMMAND_PREFIX}riavvio — come stop e subito dopo come play\n"
     f"⏸️ {COMMAND_PREFIX}pausa — non copia ne' apre nuovi trade, lascia gestiti quelli aperti\n"
     f"📊 {COMMAND_PREFIX}status — stato del bot + posizioni aperte\n"
@@ -567,14 +554,14 @@ def _format_status_message():
     lines = [f"<b>STATO BOT:</b> {state_labels.get(BOT_STATE, BOT_STATE)}", ""]
 
     if not MT5_READY:
-        lines.append("⚠️ Impossibile leggere le posizioni: MT5 conto principale non connesso.")
+        lines.append("⚠️ Impossibile leggere le posizioni: MT5 non connesso.")
         return "\n".join(lines)
 
     positions = mt5_executor.list_open_positions()
     if not positions:
-        lines.append("Nessuna posizione aperta (conto principale).")
+        lines.append("Nessuna posizione aperta.")
     else:
-        lines.append(f"<b>Conto principale ({len(positions)}):</b>")
+        lines.append(f"<b>Posizioni aperte ({len(positions)}):</b>")
         for position in positions:
             lines.append(f"XAUUSD {position['direction']} — {position['profit']:+.2f}$")
 
@@ -609,7 +596,7 @@ async def command_handler(event):
 
     elif command in ("stop", "riavvio"):
         try:
-            p_closed, p_errors, s_closed, s_errors = await dual_executor.close_all_dual()
+            closed, errors = await asyncio.to_thread(mt5_executor.close_all_positions)
         except Exception as e:
             logger.exception("❌ Errore chiusura posizioni durante %s: %s", command, e)
             await event.reply(f"❌ Errore durante la chiusura delle posizioni ({e}). Comando NON eseguito.")
@@ -618,14 +605,11 @@ async def command_handler(event):
 
         BOT_STATE = "STOPPED" if command == "stop" else "RUNNING"
         logger.info(
-            "%s BOT_STATE -> %s | Conto1 chiuse=%s errori=%s | Conto2 chiuse=%s errori=%s",
-            "🛑" if command == "stop" else "🔄", BOT_STATE, len(p_closed), len(p_errors), len(s_closed), len(s_errors),
+            "%s BOT_STATE -> %s | Chiuse=%s errori=%s",
+            "🛑" if command == "stop" else "🔄", BOT_STATE, len(closed), len(errors),
         )
 
-        summary = (
-            f"🛑 Posizioni chiuse — Conto1: {len(p_closed)} (errori {len(p_errors)}) | "
-            f"Conto2: {len(s_closed)} (errori {len(s_errors)})."
-        )
+        summary = f"🛑 Posizioni chiuse: {len(closed)} (errori {len(errors)})."
         if command == "stop":
             await event.reply(f"✅ Comando eseguito.\n{summary}\n🛑 Bot FERMATO finché non ricevo {COMMAND_PREFIX}play.")
         else:
@@ -692,7 +676,7 @@ async def command_handler(event):
 
 
 # ============================================================
-# REPORT: LETTURA DIRETTA DALLO STORICO MT5 (conto principale)
+# REPORT: LETTURA DIRETTA DALLO STORICO MT5
 # ============================================================
 
 _ITALIAN_MONTH_ABBR = {
@@ -711,7 +695,7 @@ def _build_report_stats(trades):
     losses = sum(1 for t in trades if t["result"] == "LOSS")
     breakeven_result = sum(1 for t in trades if t["result"] == "BE")
 
-    # BE "gestito dal bot" (SL spostato a breakeven per TP1) e' diverso dal
+    # BE "gestito dal bot" (SL spostato a breakeven) e' diverso dal
     # risultato "BE" per pips quasi nulli: lo leggiamo dal nostro DB.
     breakeven_managed = 0
     for trade in trades:
@@ -855,12 +839,9 @@ async def automatic_scheduler(stop_event):
                 close_key = event_date.isoformat()
                 if report_was_sent("close_positions", close_key):
                     continue
-                p_closed, p_errors, s_closed, s_errors = await dual_executor.close_all_dual()
+                closed, errors = await asyncio.to_thread(mt5_executor.close_all_positions)
                 mark_report_sent("close_positions", close_key)
-                logger.info(
-                    "🔒 CHIUSURA FINE GIORNATA | Conto1 chiuse=%s errori=%s | Conto2 chiuse=%s errori=%s",
-                    len(p_closed), len(p_errors), len(s_closed), len(s_errors),
-                )
+                logger.info("🔒 CHIUSURA FINE GIORNATA | Chiuse=%s errori=%s", len(closed), len(errors))
 
             elif event_type == "daily":
                 report_key = event_date.isoformat()
@@ -909,12 +890,9 @@ async def main():
 
     MT5_READY = mt5_executor.connect_mt5()
     if not MT5_READY:
-        logger.error("❌ Connessione MT5 conto principale fallita. Il bot copia i messaggi ma NON tradera'.")
+        logger.error("❌ Connessione MT5 fallita. Il bot copia i messaggi ma NON tradera'.")
     else:
         await recover_orphan_positions()
-
-    if dual_executor.secondary_enabled():
-        dual_executor.start_secondary_worker()
 
     stop_event = asyncio.Event()
     monitor_task = asyncio.create_task(monitor_loop(stop_event))
@@ -936,7 +914,6 @@ async def main():
         stop_event.set()
         await monitor_task
         await scheduler_task
-        dual_executor.stop_secondary_worker()
 
 
 if __name__ == "__main__":

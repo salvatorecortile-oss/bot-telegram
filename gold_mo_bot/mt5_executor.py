@@ -1,7 +1,5 @@
 """
-Esecutore MT5 per il CONTO PRINCIPALE, agganciato direttamente al
-processo del bot (stessa logica del vecchio bot ELITE, vedi mt5_engine.py
-per l'implementazione generica condivisa con il secondo conto).
+Esecutore MT5, agganciato direttamente al processo del bot.
 """
 import mt5_engine as engine
 
