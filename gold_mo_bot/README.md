@@ -41,24 +41,19 @@ Il segnale arriva in **due messaggi separati**:
    gia' aperto al punto 1 — la presenza di SL/TP ha sempre la priorita' e
    NON viene mai aperta una seconda posizione duplicata.
 
-3. Quando il profitto live raggiunge **+50 PIPS dall'entry** (soglia
-   configurabile con `BE_TRIGGER_PIPS` nel `.env`, calcolati con il
-   pip_size reale del simbolo letto da MT5, non un valore fisso), il bot
-   sposta lo Stop Loss al prezzo di apertura (**Break Even**) e invia un
-   **messaggio separato** (in risposta al messaggio principale) — il
-   messaggio principale NON viene mai modificato dopo la pubblicazione.
+3. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5 e
+   notificata con un **messaggio separato** (in risposta al messaggio
+   principale, che non viene mai modificato): **"TAKE PROFIT
+   RAGGIUNTO"** o **"STOP LOSS PRESO"** seguito dai **PIPS** realizzati
+   (calcolati con il pip_size reale del simbolo letto da MT5) — non
+   viene mostrato il prezzo di chiusura.
 
-4. La chiusura (a TP3 o a SL) viene rilevata leggendo lo storico MT5 e
-   notificata anch'essa con un **messaggio separato** (in risposta al
-   messaggio principale): **"TAKE PROFIT RAGGIUNTO"** o **"STOP LOSS"**
-   seguito dai **PIPS** realizzati (calcolati con lo stesso pip_size
-   reale) — non viene mostrato il prezzo di chiusura.
-
-In sintesi, per ogni trade il canale riceve fino a 3 messaggi distinti:
-quello principale (entry/SL/TP), un eventuale messaggio di Break Even, e
-il messaggio finale di chiusura. Nessuno di questi viene mai editato
-dopo l'invio (l'unica eccezione e' una correzione dei parametri iniziali
-prima che il trade tocchi BE o si chiuda).
+Nessun Break Even: SL e TP restano esattamente quelli inviati da Gold MO
+per tutta la durata del trade, senza alcuna gestione automatica
+intermedia. Per ogni trade il canale riceve quindi solo 2 messaggi: quello
+principale (entry/SL/TP) e quello finale di chiusura. Nessuno dei due
+viene mai editato dopo l'invio (l'unica eccezione e' una correzione dei
+parametri iniziali arrivata prima della chiusura del trade).
 
 ## Comandi remoti (da "Messaggi Salvati")
 
@@ -71,7 +66,7 @@ default `bot5_`):
   (niente ascolto ne' messaggi nel canale)
 - `bot5_riavvio` — come `bot5_stop` e subito dopo come `bot5_play`
 - `bot5_pausa` — non copia ne' apre nuovi trade, ma i trade gia' aperti
-  restano gestiti normalmente (BE/chiusura continuano)
+  restano monitorati (la chiusura continua a essere rilevata e notificata)
 - `bot5_status` — stato attuale + posizioni aperte con il profitto
   flottante
 - `bot5_report` / `bot5_reportw` / `bot5_reportm` — invia subito il
@@ -95,7 +90,7 @@ Orari personalizzabili nel `.env` (`DAILY_CLOSE_HOUR`, `DAILY_REPORT_HOUR`,
 Se il bot si riavvia mentre una posizione e' aperta, al successivo avvio
 la ritrova sempre: se manca la riga nel database (es. crash tra apertura
 e scrittura), la "adotta" e pubblica un nuovo messaggio nel canale,
-riprendendo la gestione (BE/chiusura) da li'.
+riprendendo il monitoraggio (rilevamento chiusura) da li'.
 
 ## Prima esecuzione
 

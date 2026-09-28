@@ -11,7 +11,6 @@ from telegram_client import client
 from telegram_sender import (
     copy_message_to_destination,
     edit_destination_message,
-    send_breakeven_message,
     send_closure_message,
     send_good_morning_message,
     send_daily_report_message,
@@ -34,7 +33,6 @@ from database import (
     update_copy,
     update_status,
     update_trade_sltp,
-    mark_breakeven_applied,
     mark_closed,
     report_was_sent,
     mark_report_sent,
@@ -47,7 +45,6 @@ from config import (
     TRADING_ENABLED,
     LOG_DIR,
     MONITOR_INTERVAL_SECONDS,
-    BE_TRIGGER_PIPS,
     COMMAND_PREFIX,
     DAILY_CLOSE_HOUR,
     DAILY_CLOSE_MINUTE,
@@ -134,7 +131,7 @@ def _row_to_state(row):
         source_message_id, destination_message_id, direction, entry,
         sl, tp1, tp2, tp3, tp4, tp_open_runner,
         mt5_ticket, mt5_price,
-        sltp_applied, breakeven_applied,
+        sltp_applied,
     ) = row
 
     return {
@@ -150,7 +147,6 @@ def _row_to_state(row):
         "tp_open_runner": bool(tp_open_runner),
         "ticket": mt5_ticket,
         "sltp_applied": bool(sltp_applied),
-        "breakeven_applied": bool(breakeven_applied),
     }
 
 
@@ -350,7 +346,7 @@ async def process_sltp(signal, source_message_id):
 
 
 # ============================================================
-# MONITOR: BREAK EVEN, RILEVAMENTO CHIUSURE
+# MONITOR: RILEVAMENTO CHIUSURE (TP/SL)
 # ============================================================
 
 async def monitor_loop(stop_event):
@@ -377,9 +373,8 @@ async def _monitor_single_trade(row):
     direction = state["direction"]
 
     # --------------------------------------------------------
-    # CHIUSURA (TP3 o SL): controlliamo prima, se e' gia' chiusa
-    # non ha senso proseguire con BE. Notifica come messaggio SEPARATO
-    # (in risposta al messaggio principale), che non viene mai toccato.
+    # CHIUSURA (TP3 o SL): notificata come messaggio SEPARATO (in
+    # risposta al messaggio principale), che non viene mai toccato.
     # --------------------------------------------------------
     is_open = await asyncio.to_thread(mt5_executor.position_is_open, ticket)
     if not is_open:
@@ -404,41 +399,6 @@ async def _monitor_single_trade(row):
             "🏁 TRADE CHIUSO | Position=%s | Motivo=%s | Prezzo=%.2f | Pips=%+.1f",
             ticket, close_reason or "N/D", info["price"], close_pips,
         )
-        return
-
-    # --------------------------------------------------------
-    # BREAK EVEN a +BE_TRIGGER_PIPS dall'entry (letto live da MT5).
-    # Notifica come messaggio SEPARATO, il principale non viene toccato.
-    # --------------------------------------------------------
-    if not state["sltp_applied"] or state["breakeven_applied"]:
-        return
-
-    price = await asyncio.to_thread(mt5_executor.current_price, direction)
-    if price is None:
-        return
-
-    profit_pips = await asyncio.to_thread(mt5_executor.calculate_pips, direction, state["entry"], price)
-    if profit_pips < BE_TRIGGER_PIPS:
-        return
-
-    try:
-        new_sl = await asyncio.to_thread(mt5_executor.move_position_to_breakeven, ticket)
-    except Exception:
-        logger.exception("❌ ERRORE BREAK EVEN | Position=%s", ticket)
-        return
-
-    mark_breakeven_applied(SOURCE_CHAT, source_message_id, new_sl)
-
-    if state["destination_message_id"] is not None:
-        try:
-            await send_breakeven_message(state["destination_message_id"], new_sl)
-        except Exception:
-            logger.exception("❌ ERRORE INVIO MESSAGGIO BE #%s", state["destination_message_id"])
-
-    logger.info(
-        "🟢 BREAK EVEN APPLICATO | Position=%s | Nuovo SL=%.2f | Profitto=%+.1f pips (soglia %.0f)",
-        ticket, new_sl, profit_pips, BE_TRIGGER_PIPS,
-    )
 
 
 # ============================================================
@@ -693,16 +653,6 @@ def _build_report_stats(trades):
     operations = len(trades)
     wins = sum(1 for t in trades if t["result"] == "WIN")
     losses = sum(1 for t in trades if t["result"] == "LOSS")
-    breakeven_result = sum(1 for t in trades if t["result"] == "BE")
-
-    # BE "gestito dal bot" (SL spostato a breakeven) e' diverso dal
-    # risultato "BE" per pips quasi nulli: lo leggiamo dal nostro DB.
-    breakeven_managed = 0
-    for trade in trades:
-        row = get_trade_by_primary_ticket(trade["position_id"])
-        if row is not None and bool(row[3]):
-            breakeven_managed += 1
-
     pips = sum(float(t["pips"]) for t in trades)
     win_rate = (wins / operations * 100.0) if operations else 0.0
 
@@ -710,7 +660,6 @@ def _build_report_stats(trades):
         "operations": operations,
         "wins": wins,
         "losses": losses,
-        "breakeven": breakeven_managed or breakeven_result,
         "pips": pips,
         "win_rate": win_rate,
     }

@@ -198,7 +198,7 @@ def get_latest_open_trade(source_chat_id, symbol="XAUUSD"):
             source_message_id, destination_message_id, direction, entry,
             sl, tp1, tp2, tp3, tp4, tp_open_runner,
             mt5_ticket, mt5_price,
-            sltp_applied, breakeven_applied
+            sltp_applied
         FROM messages
         WHERE source_chat_id = ? AND symbol = ?
           AND status IN ('OPENED', 'SLTP_APPLIED')
@@ -223,7 +223,7 @@ def get_latest_trade_awaiting_sltp(source_chat_id, symbol="XAUUSD"):
             source_message_id, destination_message_id, direction, entry,
             sl, tp1, tp2, tp3, tp4, tp_open_runner,
             mt5_ticket, mt5_price,
-            sltp_applied, breakeven_applied
+            sltp_applied
         FROM messages
         WHERE source_chat_id = ? AND symbol = ?
           AND status = 'OPENED'
@@ -244,7 +244,7 @@ def get_open_trades(source_chat_id, symbol="XAUUSD"):
             source_message_id, destination_message_id, direction, entry,
             sl, tp1, tp2, tp3, tp4, tp_open_runner,
             mt5_ticket, mt5_price,
-            sltp_applied, breakeven_applied
+            sltp_applied
         FROM messages
         WHERE source_chat_id = ? AND symbol = ?
           AND status IN ('OPENED', 'SLTP_APPLIED')
@@ -269,27 +269,14 @@ def update_trade_sltp(source_chat_id, source_message_id, sl, tp1, tp2, tp3, tp4,
         )
 
 
-def mark_breakeven_applied(source_chat_id, source_message_id, new_sl):
-    with get_connection() as conn:
-        conn.execute(
-            """
-            UPDATE messages
-            SET sl = ?, breakeven_applied = 1, updated_at = CURRENT_TIMESTAMP
-            WHERE source_chat_id = ? AND source_message_id = ?
-            """,
-            (float(new_sl), source_chat_id, source_message_id),
-        )
-
-
 def get_trade_by_primary_ticket(mt5_ticket):
-    """Riga (source_chat_id, source_message_id, destination_message_id,
-    breakeven_applied) del trade associato a un ticket del conto
-    principale. Usata dal recovery all'avvio e dai report (per sapere
-    se una posizione chiusa aveva ricevuto il Break Even)."""
+    """Riga (source_chat_id, source_message_id, destination_message_id)
+    del trade associato a un ticket MT5. Usata dal recovery all'avvio
+    per capire se una posizione aperta e' gia' tracciata nel DB."""
     with get_connection() as conn:
         cur = conn.execute(
             """
-            SELECT source_chat_id, source_message_id, destination_message_id, breakeven_applied
+            SELECT source_chat_id, source_message_id, destination_message_id
             FROM messages
             WHERE mt5_ticket = ?
             ORDER BY source_message_id DESC

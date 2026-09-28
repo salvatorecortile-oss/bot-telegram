@@ -15,10 +15,8 @@ SL_PENDING_LINE = "🛑 <b>STOP LOSS:</b> in attesa...\n"
 TP_LINE_TEMPLATE = "🎯 <b>TP:</b> {value:.2f}\n"
 TP_PENDING_LINE = "🎯 <b>TP:</b> in attesa...\n"
 
-BE_MESSAGE_TEMPLATE = "🟢 <b>BREAK EVEN ATTIVATO</b>\n🛑 Nuovo SL: <b>{sl:.2f}</b>"
-
 CLOSED_TP_MESSAGE_TEMPLATE = "✅ <b>TAKE PROFIT RAGGIUNTO</b>\n📈 <b>{pips:+.0f} PIPS</b>"
-CLOSED_SL_MESSAGE_TEMPLATE = "🛑 <b>STOP LOSS</b>\n📉 <b>{pips:+.0f} PIPS</b>"
+CLOSED_SL_MESSAGE_TEMPLATE = "🛑 <b>STOP LOSS PRESO</b>\n📉 <b>{pips:+.0f} PIPS</b>"
 CLOSED_GENERIC_MESSAGE_TEMPLATE = "⚪ <b>OPERAZIONE CHIUSA</b>\n📊 <b>{pips:+.0f} PIPS</b>"
 
 
@@ -26,11 +24,10 @@ def format_trade_card(state):
     """
     Messaggio principale pubblicato quando arrivano SL/TP: entry, SL e
     un unico TP (quello operativo su MT5, cioe' TP3). TP1/TP2/TP4/"open"
-    restano interni al bot, non vengono mostrati. Gli aggiornamenti
-    successivi (Break Even, chiusura) NON modificano piu' questo
-    messaggio: vengono inviati come messaggi separati (vedi
-    send_breakeven_message / send_closure_message), in risposta a
-    questo.
+    restano interni al bot, non vengono mostrati. La chiusura (unico
+    aggiornamento previsto) NON modifica questo messaggio: viene
+    inviata come messaggio separato (vedi send_closure_message), in
+    risposta a questo.
     state = {direction, entry, sl, tp3, ...}
     """
     text = HEADER_TEMPLATE.format(direction=state["direction"])
@@ -76,16 +73,6 @@ async def edit_destination_message(destination_message_id, state):
     return True
 
 
-async def send_breakeven_message(destination_message_id, new_sl):
-    return await client.send_message(
-        DESTINATION_CHAT,
-        BE_MESSAGE_TEMPLATE.format(sl=float(new_sl)),
-        parse_mode="html",
-        silent=True,
-        reply_to=destination_message_id,
-    )
-
-
 async def send_closure_message(destination_message_id, reason, pips):
     pips = float(pips)
     if reason == "TP":
@@ -123,7 +110,6 @@ DAILY_REPORT_TEMPLATE = (
     "Operazioni chiuse: {operations}\n"
     "✅ Vincenti: {wins}\n"
     "❌ Perse: {losses}\n"
-    "🟢 BE: {breakeven}\n\n"
     "📈 Win Rate: {win_rate:.1f}%\n"
     "📊 TOT {pips:+.0f} PIPS\n\n"
     "━━━━━━━━━━━━━━━━━━\n"
@@ -140,7 +126,6 @@ WEEKLY_REPORT_TEMPLATE = (
     "Operazioni chiuse: {operations}\n"
     "✅ Vincenti: {wins}\n"
     "❌ Perse: {losses}\n"
-    "🟢 BE: {breakeven}\n\n"
     "📈 Win Rate: {win_rate:.1f}%\n"
     "📊 TOT {pips:+.0f} PIPS\n\n"
     "━━━━━━━━━━━━━━━━━━\n"
@@ -158,7 +143,6 @@ MONTHLY_REPORT_TEMPLATE = (
     "Operazioni chiuse: {operations}\n"
     "✅ Vincenti: {wins}\n"
     "❌ Perse: {losses}\n"
-    "🟢 BE: {breakeven}\n\n"
     "📈 Win Rate: {win_rate:.1f}%\n"
     "📊 TOT {pips:+.0f} PIPS\n\n"
     "━━━━━━━━━━━━━━━━━━\n"
