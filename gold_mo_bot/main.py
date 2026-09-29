@@ -464,17 +464,25 @@ async def recover_orphan_positions():
     sintetica e pubblicando un messaggio nel canale, cosi' il monitor
     riprende a gestirla (BE/chiusura).
     """
+    print_separator()
+    logger.info("♻️ RECOVERY ALL'AVVIO | Controllo posizioni aperte su MT5...")
+
     try:
         positions = await asyncio.to_thread(mt5_executor.list_open_positions)
     except Exception:
         logger.exception("❌ Errore lettura posizioni aperte per il recovery all'avvio.")
+        print_separator()
         return
 
     if not positions:
-        logger.info("ℹ️ Nessuna posizione aperta da recuperare all'avvio.")
+        logger.info("♻️ RECOVERY: nessuna posizione aperta su MT5.")
+        print_separator()
         return
 
+    logger.info("♻️ RECOVERY: %s posizione/i aperta/e su MT5, verifico il database...", len(positions))
+
     adopted = 0
+    already_tracked = 0
     for position in positions:
         ticket = position["ticket"]
 
@@ -485,6 +493,8 @@ async def recover_orphan_positions():
             continue
 
         if row is not None:
+            already_tracked += 1
+            logger.info("♻️ Ticket %s già tracciato nel database, nessuna azione.", ticket)
             continue  # gia' tracciata, il monitor la gestisce normalmente
 
         synthetic_id = -abs(int(ticket))
@@ -520,8 +530,11 @@ async def recover_orphan_positions():
         adopted += 1
         logger.warning("♻️ POSIZIONE ORFANA ADOTTATA | Ticket=%s | %s", ticket, direction)
 
-    if adopted:
-        logger.warning("♻️ RECOVERY COMPLETATO | %s posizioni adottate.", adopted)
+    logger.info(
+        "♻️ RECOVERY COMPLETATO | Trovate=%s | Già tracciate=%s | Adottate=%s",
+        len(positions), already_tracked, adopted,
+    )
+    print_separator()
 
 
 # ============================================================
