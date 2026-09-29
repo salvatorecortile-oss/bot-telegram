@@ -12,6 +12,7 @@ from telegram_sender import (
     copy_message_to_destination,
     edit_destination_message,
     send_closure_message,
+    send_sl_moved_message,
     send_good_morning_message,
     send_daily_report_message,
     send_weekly_report_message,
@@ -33,6 +34,7 @@ from database import (
     update_copy,
     update_status,
     update_trade_sltp,
+    update_trade_sl,
     mark_closed,
     report_was_sent,
     mark_report_sent,
@@ -213,6 +215,8 @@ async def new_message_handler(event):
             await process_open(signal, source_message_id, telegram_datetime)
         elif action == "SET_SLTP":
             await process_sltp(signal, source_message_id)
+        elif action == "MOVE_SL":
+            await process_move_sl(signal, source_message_id)
 
 
 # ============================================================
@@ -343,6 +347,53 @@ async def process_sltp(signal, source_message_id):
             logger.exception("❌ ERRORE MODIFICA DESTINATION #%s", state["destination_message_id"])
 
     logger.info("✅ SL/TP APPLICATI | Position=%s | SL=%.2f | TP operativo(TP3)=%s", ticket, sl, tp3)
+
+
+# ============================================================
+# SPOSTAMENTO SL ("Move SL to <prezzo>", in qualsiasi momento dopo
+# l'apertura): aggiorna solo lo Stop Loss, il TP operativo non cambia.
+# ============================================================
+
+async def process_move_sl(signal, source_message_id):
+    new_sl = float(signal["sl"])
+
+    logger.info("🔄 SPOSTAMENTO SL RICHIESTO #%s | Nuovo SL=%.2f", source_message_id, new_sl)
+
+    if not TRADING_ENABLED:
+        update_status(SOURCE_CHAT, source_message_id, "TRADE_DISABLED")
+        return
+    if not MT5_READY:
+        update_status(SOURCE_CHAT, source_message_id, "MT5_NOT_READY")
+        return
+
+    row = get_latest_open_trade(SOURCE_CHAT)
+    if row is None:
+        logger.warning("⚠️ NESSUN TRADE APERTO A CUI SPOSTARE LO SL | #%s", source_message_id)
+        update_status(SOURCE_CHAT, source_message_id, "NO_OPEN_TRADE")
+        return
+
+    state = _row_to_state(row)
+    ticket = state["ticket"]
+    original_message_id = state["source_message_id"]
+
+    try:
+        # tp=0.0 lascia il TP esistente invariato: viene toccato solo lo SL.
+        await asyncio.to_thread(mt5_executor.modify_position_sl_tp, ticket, new_sl, 0.0)
+    except Exception as e:
+        logger.exception("❌ ERRORE SPOSTAMENTO SL #%s", source_message_id)
+        update_status(SOURCE_CHAT, source_message_id, "SL_MOVE_ERROR", error=str(e))
+        return
+
+    update_trade_sl(SOURCE_CHAT, original_message_id, new_sl)
+    update_status(SOURCE_CHAT, source_message_id, "SL_MOVED", trade_datetime=datetime.now(timezone.utc).isoformat())
+
+    if state["destination_message_id"] is not None:
+        try:
+            await send_sl_moved_message(state["destination_message_id"], new_sl)
+        except Exception:
+            logger.exception("❌ ERRORE INVIO MESSAGGIO SL SPOSTATO #%s", state["destination_message_id"])
+
+    logger.info("✅ SL SPOSTATO | Position=%s | Nuovo SL=%.2f", ticket, new_sl)
 
 
 # ============================================================

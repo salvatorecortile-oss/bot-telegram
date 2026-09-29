@@ -120,6 +120,26 @@ def _parse_sl_tp(clean):
     return result
 
 
+# ------------------------------------------------------------
+# "Move SL to 4149.4" -> sposta lo SL del trade gia' aperto
+# ------------------------------------------------------------
+_MOVE_SL_PATTERN = re.compile(
+    rf"\bMOVE\s+(?:SL|STOP\s*LOSS)\s+TO\b\s*{_NUMBER}",
+    re.IGNORECASE,
+)
+
+
+def _parse_move_sl(clean):
+    match = _MOVE_SL_PATTERN.search(clean)
+    if not match:
+        return None
+    return {
+        "action": "MOVE_SL",
+        "symbol": "XAUUSD",
+        "sl": _float(match.group(1)),
+    }
+
+
 def parse_signal(text):
     """
     BOT Gold MO. Il segnale arriva in DUE messaggi separati:
@@ -149,10 +169,19 @@ def parse_signal(text):
     messaggio contiene SL/TP viene trattato come SET_SLTP anche se
     ripete la riga di apertura, per non aprire un secondo trade
     duplicato quando il primo e' gia' stato aperto dal messaggio 1.
+
+    Messaggio di aggiustamento, in qualsiasi momento dopo l'apertura:
+        Move SL to 4149.4
+    -> action "MOVE_SL": sposta lo Stop Loss del trade aperto al prezzo
+    indicato (il TP operativo resta invariato).
     """
     clean = _clean(text)
     if not clean:
         return None
+
+    move_sl_signal = _parse_move_sl(clean)
+    if move_sl_signal is not None:
+        return move_sl_signal
 
     sltp_signal = _parse_sl_tp(clean)
     if sltp_signal is not None:

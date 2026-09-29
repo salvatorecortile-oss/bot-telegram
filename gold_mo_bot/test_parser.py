@@ -83,6 +83,14 @@ TP: 4386""",
             "tp_open_runner": False,
         },
     ),
+    (
+        "Move SL to 4149.4",
+        {"action": "MOVE_SL", "symbol": "XAUUSD", "sl": 4149.4},
+    ),
+    (
+        "move sl to 4149,4",
+        {"action": "MOVE_SL", "symbol": "XAUUSD", "sl": 4149.4},
+    ),
     ("good morning everyone", None),
     ("SL: 4372", None),  # SL senza alcun TP: ignorato, non associabile.
     (

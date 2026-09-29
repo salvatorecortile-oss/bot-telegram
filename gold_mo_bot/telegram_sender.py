@@ -19,6 +19,8 @@ CLOSED_TP_MESSAGE_TEMPLATE = "✅ <b>TAKE PROFIT RAGGIUNTO</b>\n📈 <b>{pips:+.
 CLOSED_SL_MESSAGE_TEMPLATE = "🛑 <b>STOP LOSS PRESO</b>\n📉 <b>{pips:+.0f} PIPS</b>"
 CLOSED_GENERIC_MESSAGE_TEMPLATE = "⚪ <b>OPERAZIONE CHIUSA</b>\n📊 <b>{pips:+.0f} PIPS</b>"
 
+SL_MOVED_MESSAGE_TEMPLATE = "🔄 <b>STOP LOSS SPOSTATO</b>\n🛑 Nuovo SL: <b>{sl:.2f}</b>"
+
 
 def format_trade_card(state):
     """
@@ -71,6 +73,16 @@ async def edit_destination_message(destination_message_id, state):
     except MessageNotModifiedError:
         return False
     return True
+
+
+async def send_sl_moved_message(destination_message_id, new_sl):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        SL_MOVED_MESSAGE_TEMPLATE.format(sl=float(new_sl)),
+        parse_mode="html",
+        silent=True,
+        reply_to=destination_message_id,
+    )
 
 
 async def send_closure_message(destination_message_id, reason, pips):

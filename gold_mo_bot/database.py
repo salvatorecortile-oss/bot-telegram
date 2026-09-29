@@ -269,6 +269,19 @@ def update_trade_sltp(source_chat_id, source_message_id, sl, tp1, tp2, tp3, tp4,
         )
 
 
+def update_trade_sl(source_chat_id, source_message_id, new_sl):
+    """Aggiorna solo lo SL (es. messaggio 'Move SL to ...'), TP invariato."""
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE messages
+            SET sl = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE source_chat_id = ? AND source_message_id = ?
+            """,
+            (float(new_sl), source_chat_id, source_message_id),
+        )
+
+
 def get_trade_by_primary_ticket(mt5_ticket):
     """Riga (source_chat_id, source_message_id, destination_message_id)
     del trade associato a un ticket MT5. Usata dal recovery all'avvio

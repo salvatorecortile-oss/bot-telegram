@@ -50,10 +50,22 @@ Il segnale arriva in **due messaggi separati**:
 
 Nessun Break Even: SL e TP restano esattamente quelli inviati da Gold MO
 per tutta la durata del trade, senza alcuna gestione automatica
-intermedia. Per ogni trade il canale riceve quindi solo 2 messaggi: quello
-principale (entry/SL/TP) e quello finale di chiusura. Nessuno dei due
-viene mai editato dopo l'invio (l'unica eccezione e' una correzione dei
-parametri iniziali arrivata prima della chiusura del trade).
+intermedia.
+
+4. In qualsiasi momento dopo l'apertura, un messaggio del tipo:
+   ```
+   Move SL to 4149.4
+   ```
+   sposta lo Stop Loss del trade aperto al prezzo indicato (il TP
+   operativo non cambia) e invia un **messaggio separato** di conferma
+   ("STOP LOSS SPOSTATO" + nuovo valore), sempre in risposta al
+   messaggio principale.
+
+Per ogni trade il canale riceve quindi il messaggio principale
+(entry/SL/TP), eventuali messaggi "STOP LOSS SPOSTATO" e infine quello di
+chiusura. Nessuno di questi viene mai editato dopo l'invio (l'unica
+eccezione e' una correzione dei parametri iniziali arrivata prima della
+chiusura del trade).
 
 ## Comandi remoti (da "Messaggi Salvati")
 
