@@ -35,9 +35,13 @@ from telegram_sender import (
     format_bot2_stopped_message,
     format_bot2_restart_message,
     format_bot2_status_message,
+    send_bltech_open_message,
+    send_bltech_closed_profit_message,
+    send_bltech_sl_hit_message,
 )
 
 from signal_parser import parse_signal
+from bltech_parser import parse_bltech_signal
 
 from mt5_executor import (
     connect_mt5,
@@ -48,6 +52,10 @@ from mt5_executor import (
     move_position_to_breakeven,
     move_position_to_profit_protection,
     get_closed_position_info,
+    open_market_order_bltech,
+    open_pending_order_bltech,
+    check_pending_order_filled_bltech,
+    close_position_bltech,
 )
 
 from database import (
@@ -86,13 +94,19 @@ from database import (
 
 from config import (
     SOURCE_CHAT,
+    SOURCE_CHAT_BLTECH,
     DESTINATION_CHAT,
     MAX_SIGNAL_AGE_SECONDS,
     MAX_SIMULTANEOUS_SIGNALS,
     TRADING_ENABLED,
     LOG_DIR,
     MAGIC_NUMBER,
+    MAGIC_NUMBER_BLTECH,
 )
+
+# Report YARDFX (giornaliero/settimanale/mensile) uniti: Cédric + BL Tech
+# Pro contano come un unico canale, stesso calcolo di operazioni/pips/winrate.
+REPORT_SOURCE_CHATS = (SOURCE_CHAT, SOURCE_CHAT_BLTECH)
 
 
 # ============================================================
@@ -820,6 +834,336 @@ async def new_message_handler(event):
             cleanup_old_timestamp_counters()
             return
 
+
+# ============================================================
+# CANALE BL TECH PRO (XAUUSD) — formato diverso da Cédric, stesso
+# canale destination YardFX, magic/lotto separati (vedi config.py).
+# ============================================================
+
+@client.on(events.NewMessage(chats=SOURCE_CHAT_BLTECH))
+async def bltech_message_handler(event):
+    if BOT_STATE == "STOPPED":
+        return
+
+    message = event.message
+    source_message_id = message.id
+    raw_text = message.text or ""
+
+    signal = parse_bltech_signal(raw_text)
+    if signal is None:
+        # Non-XAUUSD o formato non riconosciuto: ignorato silenziosamente.
+        return
+
+    message_lock = get_message_lock(("bltech", source_message_id))
+
+    async with message_lock:
+        existing_row = get_message(SOURCE_CHAT_BLTECH, source_message_id)
+        if existing_row is not None:
+            return
+
+        if signal["action"] == "CLOSE_SIGNAL":
+            await process_bltech_close_signal(message)
+            return
+
+        # action == "OPEN"
+        inserted = insert_message(
+            source_chat_id=SOURCE_CHAT_BLTECH,
+            source_message_id=source_message_id,
+            symbol="XAUUSD",
+            direction=signal["direction"],
+            entry=signal["entry"],
+            sl=signal["sl"],
+            tp1=signal["tp"],
+            status="COPYING",
+            source_datetime=message.date.isoformat(),
+            received_datetime=datetime.now(timezone.utc).isoformat(),
+        )
+        if not inserted:
+            return
+
+        logger.info(
+            "🎯 SEGNALE BL TECH PRO | %s %s (%s) | Entry %.2f | SL=%.2f | TP=%.2f",
+            signal["symbol"], signal["direction"], signal["order_type"],
+            signal["entry"], signal["sl"], signal["tp"],
+        )
+
+        if not TRADING_ENABLED:
+            update_status(SOURCE_CHAT_BLTECH, source_message_id, "TRADE_DISABLED")
+            return
+
+        if BOT_STATE == "PAUSED":
+            logger.warning("⏸️ BOT2 IN PAUSA | Nuovo trade BL Tech Pro NON aperto | #%s", source_message_id)
+            update_status(SOURCE_CHAT_BLTECH, source_message_id, "PAUSED_NO_NEW_TRADE")
+            return
+
+        if not MT5_READY:
+            update_status(SOURCE_CHAT_BLTECH, source_message_id, "MT5_NOT_READY")
+            return
+
+        asyncio.create_task(process_bltech_trade(signal, source_message_id))
+
+
+async def process_bltech_trade(signal, source_message_id):
+    """Apre su MT5 il segnale BL Tech Pro, poi copia nel canale con
+    l'entry reale. Per gli ordini pendenti (BUY/SELL limit) la copia
+    avviene solo al momento del fill (vedi _watch_bltech_pending_order)."""
+    try:
+        if signal["order_type"] == "MARKET":
+            result = await asyncio.to_thread(open_market_order_bltech, signal)
+
+            destination_signal = dict(signal)
+            destination_signal["entry"] = result.price
+            destination_message = await send_bltech_open_message(destination_signal)
+
+            update_copy(
+                SOURCE_CHAT_BLTECH, source_message_id, destination_message.id,
+                datetime.now(timezone.utc).isoformat(),
+            )
+            update_status(
+                SOURCE_CHAT_BLTECH, source_message_id, "OPENED",
+                mt5_ticket=result.position_ticket,
+                mt5_deal=result.deal,
+                mt5_volume=result.volume,
+                mt5_price=result.price,
+                trade_datetime=datetime.now(timezone.utc).isoformat(),
+            )
+            logger.info(
+                "✅ BL TECH PRO APERTO | Position=%s | Entry reale=%.2f | Destination #%s",
+                result.position_ticket, result.price, destination_message.id,
+            )
+        else:
+            result = await asyncio.to_thread(open_pending_order_bltech, signal)
+            update_status(
+                SOURCE_CHAT_BLTECH, source_message_id, "PENDING_ORDER",
+                mt5_ticket=result.order,
+                trade_datetime=datetime.now(timezone.utc).isoformat(),
+            )
+            logger.info(
+                "🕓 BL TECH PRO ORDINE PENDENTE PIAZZATO | Order=%s | Prezzo=%.2f | #%s",
+                result.order, result.price, source_message_id,
+            )
+            asyncio.create_task(
+                _watch_bltech_pending_order(signal, source_message_id, result.order)
+            )
+    except Exception:
+        logger.exception("❌ ERRORE APERTURA BL TECH PRO | #%s", source_message_id)
+        update_status(SOURCE_CHAT_BLTECH, source_message_id, "ERROR")
+
+
+async def _watch_bltech_pending_order(signal, source_message_id, order_ticket, timeout_seconds=3600):
+    """Attende il fill di un ordine pendente BL Tech Pro (raro su XAUUSD)
+    e copia il segnale nel canale solo quando diventa una posizione reale."""
+    start = time.monotonic()
+    while time.monotonic() - start < timeout_seconds:
+        if BOT_STATE == "STOPPED":
+            return
+        try:
+            fill = await asyncio.to_thread(check_pending_order_filled_bltech, order_ticket)
+        except Exception:
+            logger.exception("❌ ERRORE VERIFICA FILL BL TECH PRO | Order=%s", order_ticket)
+            return
+
+        if fill is not None:
+            try:
+                destination_signal = dict(signal)
+                destination_signal["entry"] = fill["price"]
+                destination_message = await send_bltech_open_message(destination_signal)
+                update_copy(
+                    SOURCE_CHAT_BLTECH, source_message_id, destination_message.id,
+                    datetime.now(timezone.utc).isoformat(),
+                )
+                update_status(
+                    SOURCE_CHAT_BLTECH, source_message_id, "OPENED",
+                    mt5_ticket=fill["position_ticket"],
+                    mt5_deal=fill["deal"],
+                    mt5_volume=fill["volume"],
+                    mt5_price=fill["price"],
+                    trade_datetime=datetime.now(timezone.utc).isoformat(),
+                )
+                logger.info(
+                    "✅ BL TECH PRO PENDING RIEMPITO | Position=%s | Entry reale=%.2f | Destination #%s",
+                    fill["position_ticket"], fill["price"], destination_message.id,
+                )
+            except Exception:
+                logger.exception(
+                    "❌ ERRORE COPIA APERTURA BL TECH PRO (pending riempito) | #%s",
+                    source_message_id,
+                )
+            return
+
+        await asyncio.sleep(2.0)
+
+    logger.info(
+        "⏭️ BL TECH PRO PENDING NON RIEMPITO ENTRO %ss | Order=%s | #%s",
+        timeout_seconds, order_ticket, source_message_id,
+    )
+    update_status(SOURCE_CHAT_BLTECH, source_message_id, "PENDING_EXPIRED")
+
+
+async def process_bltech_close_signal(message):
+    """
+    Il canale BL Tech Pro chiude in profitto rispondendo (reply Telegram
+    vera) al segnale originale con "XAUUSD Running +N pips profit...".
+    I pips scritti nel testo sono solo il trigger: qui chiudiamo subito a
+    mercato e calcoliamo i pips reali dal prezzo di MT5.
+    """
+    reply_to_id = getattr(message, "reply_to_msg_id", None)
+    if reply_to_id is None:
+        logger.info(
+            "⏭️ BL TECH PRO 'RUNNING' IGNORATO | #%s | Non e' una reply.",
+            message.id,
+        )
+        return
+
+    row = get_message(SOURCE_CHAT_BLTECH, reply_to_id)
+    if row is None or row[8] != "OPENED" or row[9] is None:
+        logger.info(
+            "⏭️ BL TECH PRO 'RUNNING' IGNORATO | #%s | Segnale #%s non aperto o non trovato.",
+            message.id, reply_to_id,
+        )
+        return
+
+    position_ticket = int(row[9])
+    destination_message_id = row[2]
+    direction = row[4]
+    open_price = float(row[12] or row[5] or 0.0)
+
+    if not MT5_READY:
+        return
+
+    try:
+        result = await asyncio.to_thread(close_position_bltech, position_ticket)
+    except Exception:
+        logger.exception(
+            "❌ ERRORE CHIUSURA BL TECH PRO DA 'RUNNING' | Position=%s", position_ticket,
+        )
+        return
+
+    pips = _calculate_closed_trade_pips(open_price, result.price, direction)
+
+    record_daily_trade_result(
+        position_ticket=position_ticket,
+        source_chat_id=SOURCE_CHAT_BLTECH,
+        source_message_id=reply_to_id,
+        symbol="XAUUSD",
+        direction=direction,
+        open_price=open_price,
+        close_price=result.price,
+        profit_pips=pips,
+        close_status="TAKE_PROFIT_HIT",
+        close_datetime=datetime.now(timezone.utc).isoformat(),
+        breakeven_applied=False,
+        trailing_applied=False,
+        tp3_hit=False,
+    )
+    update_status(
+        SOURCE_CHAT_BLTECH, reply_to_id, "TAKE_PROFIT_HIT",
+        trade_datetime=datetime.now(timezone.utc).isoformat(),
+    )
+
+    try:
+        sent = await send_bltech_closed_profit_message(pips, reply_to=destination_message_id)
+        logger.info(
+            "✅ BL TECH PRO CHIUSA DA 'RUNNING' | Position=%s | Prezzo=%.2f | PIPS=%.1f | Destination #%s",
+            position_ticket, result.price, pips, sent.id,
+        )
+    except Exception:
+        logger.exception(
+            "❌ ERRORE MESSAGGIO CHIUSURA BL TECH PRO | Position=%s", position_ticket,
+        )
+
+
+async def monitor_bltech_closures(stop_event):
+    """
+    Rileva la chiusura per Stop Loss delle posizioni BL Tech Pro. Il
+    canale non manda mai un messaggio di stop loss: l'unica chiusura in
+    profitto pilotata da messaggio e' quella gestita da
+    process_bltech_close_signal ("Running +N pips profit"); qui
+    intercettiamo solo lo SL reale rilevato da MT5. Nessuna gestione
+    BE/trailing per questo canale.
+    """
+    while not stop_event.is_set():
+        try:
+            if MT5_READY and BOT_STATE != "STOPPED":
+                rows = await asyncio.to_thread(get_open_trades, SOURCE_CHAT_BLTECH, "XAUUSD")
+                for row in rows:
+                    position_ticket = row[0]
+                    original_message_id = row[1]
+                    destination_message_id = row[2]
+                    direction = row[4]
+                    open_price = float(row[11] or row[5] or 0.0)
+
+                    if position_ticket is None:
+                        continue
+
+                    still_open = await asyncio.to_thread(
+                        mt5.positions_get, ticket=int(position_ticket)
+                    )
+                    if still_open:
+                        continue
+
+                    close_info = await asyncio.to_thread(
+                        get_closed_position_info, position_ticket
+                    )
+                    if not close_info:
+                        continue
+
+                    current_row = get_message(SOURCE_CHAT_BLTECH, original_message_id)
+                    if current_row is None or current_row[8] != "OPENED":
+                        continue
+
+                    actual_close_price = float(close_info.get("price") or 0.0)
+                    pips = _calculate_closed_trade_pips(open_price, actual_close_price, direction)
+                    close_datetime = datetime.now(timezone.utc)
+
+                    close_status = "SL_INITIAL_HIT" if close_info.get("is_sl") else "CLOSED_EXTERNAL"
+
+                    record_daily_trade_result(
+                        position_ticket=int(position_ticket),
+                        source_chat_id=SOURCE_CHAT_BLTECH,
+                        source_message_id=original_message_id,
+                        symbol="XAUUSD",
+                        direction=direction,
+                        open_price=open_price,
+                        close_price=actual_close_price,
+                        profit_pips=pips,
+                        close_status=close_status,
+                        close_datetime=close_datetime.isoformat(),
+                        breakeven_applied=False,
+                        trailing_applied=False,
+                        tp3_hit=False,
+                    )
+                    update_status(
+                        SOURCE_CHAT_BLTECH, original_message_id, close_status,
+                        trade_datetime=close_datetime.isoformat(),
+                    )
+
+                    logger.info(
+                        "🛑 BL TECH PRO %s | Position=%s | Prezzo=%.2f | PIPS=%.1f",
+                        close_status, position_ticket, actual_close_price, pips,
+                    )
+
+                    if close_info.get("is_sl"):
+                        try:
+                            sent = await send_bltech_sl_hit_message(
+                                pips, reply_to=destination_message_id,
+                            )
+                            logger.info(
+                                "📤 BL TECH PRO MESSAGGIO SL INVIATO | Destination #%s", sent.id,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "❌ ERRORE MESSAGGIO SL BL TECH PRO | Position=%s", position_ticket,
+                            )
+
+            await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ ERRORE MONITOR BL TECH PRO")
+            await asyncio.sleep(5)
+
+
 # ============================================================
 # PROCESSAMENTO APERTURA TRADE
 # ============================================================
@@ -1469,7 +1813,7 @@ def _format_date_range_it(start_date, end_date):
 
 
 def _build_daily_report(report_date):
-    rows = get_daily_trade_results(report_date, SOURCE_CHAT)
+    rows = get_daily_trade_results(report_date, REPORT_SOURCE_CHATS)
 
     operations = len(rows)
     # Una chiusura a BE conta come BE, mai come vincita/perdita, anche se
@@ -1499,7 +1843,7 @@ def _build_daily_report(report_date):
 
 
 def _build_weekly_report(week_start, week_end):
-    rows = get_weekly_trade_results(week_start, week_end, SOURCE_CHAT)
+    rows = get_weekly_trade_results(week_start, week_end, REPORT_SOURCE_CHATS)
 
     operations = len(rows)
     # Una chiusura a BE conta come BE, mai come vincita/perdita (vedi
@@ -1522,7 +1866,7 @@ def _build_weekly_report(week_start, week_end):
 
 def _build_monthly_report(month_start, month_end_exclusive):
     """month_end_exclusive e' il primo giorno del mese successivo (limite escluso)."""
-    rows = get_monthly_trade_results(month_start, month_end_exclusive, SOURCE_CHAT)
+    rows = get_monthly_trade_results(month_start, month_end_exclusive, REPORT_SOURCE_CHATS)
 
     operations = len(rows)
     # Una chiusura a BE conta come BE, mai come vincita/perdita (vedi
@@ -1690,7 +2034,7 @@ async def daily_close_scheduler(stop_event):
                 positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
                 bot_positions = [
                     position for position in positions
-                    if int(getattr(position, "magic", -1)) == int(MAGIC_NUMBER)
+                    if int(getattr(position, "magic", -1)) in (int(MAGIC_NUMBER), int(MAGIC_NUMBER_BLTECH))
                 ]
 
                 if not bot_positions:
@@ -1699,6 +2043,11 @@ async def daily_close_scheduler(stop_event):
                     closed_prices = []
                     for position in bot_positions:
                         ticket = int(position.ticket)
+                        close_fn = (
+                            close_position_bltech
+                            if int(getattr(position, "magic", -1)) == int(MAGIC_NUMBER_BLTECH)
+                            else close_position
+                        )
                         # Alcuni broker (spesso i demo) hanno una breve pausa di
                         # mercato proprio intorno a quest'orario per il rollover
                         # giornaliero (retcode 10018 "Market closed"): è
@@ -1709,7 +2058,7 @@ async def daily_close_scheduler(stop_event):
                         retry_delay_seconds = 20
                         for attempt in range(1, max_attempts + 1):
                             try:
-                                result = await asyncio.to_thread(close_position, ticket)
+                                result = await asyncio.to_thread(close_fn, ticket)
                                 closed_prices.append(float(result.price))
                                 logger.info(
                                     "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 22:59 IT",
@@ -1942,20 +2291,25 @@ async def _send_monthly_report_manual():
 
 
 async def _close_all_bot_positions_now():
-    """Chiude subito a mercato tutte le posizioni del bot (comando bot2_stop)."""
+    """Chiude subito a mercato tutte le posizioni del bot (comando bot2_stop),
+    sia quelle di Cédric che quelle di BL Tech Pro (bot2_* le gestisce come
+    un unico bot)."""
     if not MT5_READY:
         return [], []
 
     positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
     bot_positions = [
-        p for p in positions if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
+        p for p in positions
+        if int(getattr(p, "magic", -1)) in (int(MAGIC_NUMBER), int(MAGIC_NUMBER_BLTECH))
     ]
 
     closed, errors = [], []
     for position in bot_positions:
         ticket = int(position.ticket)
+        is_bltech = int(getattr(position, "magic", -1)) == int(MAGIC_NUMBER_BLTECH)
+        close_fn = close_position_bltech if is_bltech else close_position
         try:
-            result = await asyncio.to_thread(close_position, ticket)
+            result = await asyncio.to_thread(close_fn, ticket)
             closed.append((ticket, float(result.price)))
             logger.info("🛑 BOT2_STOP | Posizione=%s chiusa | Prezzo=%.2f", ticket, float(result.price))
         except Exception as e:
@@ -1966,14 +2320,16 @@ async def _close_all_bot_positions_now():
 
 
 async def _format_open_positions_status():
-    """Testo (e conteggio) per il comando bot2_status: simbolo, direzione
-    e profitto/perdita in valuta di conto per ogni posizione del bot."""
+    """Testo (e conteggio) per il comando bot2_status: simbolo, direzione,
+    canale di provenienza e profitto/perdita in valuta di conto per ogni
+    posizione del bot (Cédric + BL Tech Pro insieme)."""
     if not MT5_READY:
         return 0, "⚠️ MT5 non connesso."
 
     positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
     bot_positions = [
-        p for p in positions if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
+        p for p in positions
+        if int(getattr(p, "magic", -1)) in (int(MAGIC_NUMBER), int(MAGIC_NUMBER_BLTECH))
     ]
 
     if not bot_positions:
@@ -1983,7 +2339,8 @@ async def _format_open_positions_status():
     for p in bot_positions:
         direction = "BUY" if int(getattr(p, "type", -1)) == mt5.POSITION_TYPE_BUY else "SELL"
         profit = float(getattr(p, "profit", 0.0) or 0.0)
-        lines.append(f"XAUUSD-P {direction} — {profit:+.2f}$")
+        source_label = "BL Tech" if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER_BLTECH) else "Cédric"
+        lines.append(f"XAUUSD-P {direction} ({source_label}) — {profit:+.2f}$")
 
     return len(bot_positions), "\n".join(lines)
 
@@ -3050,6 +3407,7 @@ async def main():
     # Solo logging: non modifica alcun parametro o comportamento.
     logger.info("📡 TELEGRAM")
     logger.info("SOURCE CEDRIC FX ELITE        : %s", SOURCE_CHAT)
+    logger.info("SOURCE BL TECH PRO            : %s", SOURCE_CHAT_BLTECH)
     logger.info("DESTINATION YARDFX ELITE      : %s", DESTINATION_CHAT)
     logger.info("SESSION             : gestita dal client Telegram")
     logger.info("")
@@ -3263,6 +3621,13 @@ async def main():
 
     logger.info("🛡️ Monitor trailing SL avviato.")
 
+    monitor_bltech_stop_event = asyncio.Event()
+    monitor_bltech_task = asyncio.create_task(
+        monitor_bltech_closures(monitor_bltech_stop_event)
+    )
+
+    logger.info("🛡️ Monitor BL Tech Pro (SL) avviato.")
+
     # ========================================================
     # DAILY REPORT YARDFX
     # ========================================================
@@ -3309,6 +3674,13 @@ async def main():
         monitor_task.cancel()
         try:
             await monitor_task
+        except asyncio.CancelledError:
+            pass
+
+        monitor_bltech_stop_event.set()
+        monitor_bltech_task.cancel()
+        try:
+            await monitor_bltech_task
         except asyncio.CancelledError:
             pass
 

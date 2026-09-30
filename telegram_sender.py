@@ -532,3 +532,71 @@ def format_bot2_status_message(state_label, positions_count, positions_text):
         positions_count=positions_count,
         positions=positions_text,
     )
+
+
+# ============================================================
+# CANALE BL TECH PRO — stessa destination di Cédric, formato messaggi
+# diverso (un solo TP, apertura/chiusura gestite da mt5_executor con
+# magic/lotto dedicati, vedi main.py).
+# ============================================================
+
+BLTECH_OPEN_TRADE_MESSAGE_TEMPLATE = (
+    "👑 <b>XAUUSD — {direction}</b>\n\n"
+    "🟢 <b>ENTRY:</b> {entry:.2f}\n"
+    "🛑 <b>STOP LOSS:</b> {sl:.2f}\n"
+    "🎯 <b>TAKE PROFIT:</b> {tp:.2f}"
+)
+
+BLTECH_CLOSED_PROFIT_MESSAGE_TEMPLATE = (
+    "✅ <b>OPERAZIONE CHIUSA IN PROFITTO</b>\n"
+    "📈 <b>{pips} PIPS</b>"
+)
+
+BLTECH_SL_HIT_MESSAGE_TEMPLATE = (
+    "🛑 <b>STOP LOSS PRESO</b>\n"
+    "📉 <b>{pips} PIPS</b>"
+)
+
+
+def _format_signed_pips(value):
+    value = float(value)
+    if value.is_integer():
+        return f"{int(value):+d}"
+    return f"{value:+.2f}"
+
+
+def format_bltech_open_message(signal):
+    return BLTECH_OPEN_TRADE_MESSAGE_TEMPLATE.format(
+        direction=escape(str(signal["direction"])),
+        entry=float(signal["entry"]),
+        sl=float(signal["sl"]),
+        tp=float(signal["tp"]),
+    )
+
+
+async def send_bltech_open_message(signal):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        format_bltech_open_message(signal),
+        parse_mode="html",
+    )
+
+
+async def send_bltech_closed_profit_message(pips, reply_to=None):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        BLTECH_CLOSED_PROFIT_MESSAGE_TEMPLATE.format(pips=_format_signed_pips(pips)),
+        parse_mode="html",
+        silent=True,
+        reply_to=reply_to,
+    )
+
+
+async def send_bltech_sl_hit_message(pips, reply_to=None):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        BLTECH_SL_HIT_MESSAGE_TEMPLATE.format(pips=_format_signed_pips(pips)),
+        parse_mode="html",
+        silent=True,
+        reply_to=reply_to,
+    )

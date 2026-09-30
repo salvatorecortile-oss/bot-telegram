@@ -781,6 +781,20 @@ def record_daily_trade_result(
         return cur.rowcount == 1
 
 
+def _source_chat_ids_clause(source_chat_id):
+    """
+    source_chat_id puo' essere un singolo id o una lista/tupla di id
+    (per unire piu' canali, es. Cédric + BL Tech Pro, in un unico report).
+    Ritorna (placeholders_sql, lista_valori).
+    """
+    if isinstance(source_chat_id, (list, tuple, set)):
+        ids = list(source_chat_id)
+    else:
+        ids = [source_chat_id]
+    placeholders = ",".join("?" for _ in ids)
+    return placeholders, ids
+
+
 def get_daily_trade_results(report_date, source_chat_id):
     """Restituisce le chiusure reali del giorno in Europe/Rome."""
     italy_tz = ZoneInfo("Europe/Rome")
@@ -800,9 +814,10 @@ def get_daily_trade_results(report_date, source_chat_id):
     start_utc = start_local.astimezone(timezone.utc).isoformat()
     end_utc = end_local.astimezone(timezone.utc).isoformat()
 
+    placeholders, ids = _source_chat_ids_clause(source_chat_id)
     with get_connection() as conn:
         cur = conn.execute(
-            """
+            f"""
             SELECT
                 position_ticket,
                 source_message_id,
@@ -817,12 +832,12 @@ def get_daily_trade_results(report_date, source_chat_id):
                 trailing_applied,
                 tp3_hit
             FROM daily_trade_results
-            WHERE source_chat_id = ?
+            WHERE source_chat_id IN ({placeholders})
               AND close_datetime >= ?
               AND close_datetime < ?
             ORDER BY close_datetime ASC, position_ticket ASC
             """,
-            (source_chat_id, start_utc, end_utc),
+            (*ids, start_utc, end_utc),
         )
         return cur.fetchall()
 
@@ -835,20 +850,21 @@ def get_weekly_trade_results(week_start, week_end, source_chat_id):
     start_utc = start_local.astimezone(timezone.utc).isoformat()
     end_utc = end_local.astimezone(timezone.utc).isoformat()
 
+    placeholders, ids = _source_chat_ids_clause(source_chat_id)
     with get_connection() as conn:
         cur = conn.execute(
-            """
+            f"""
             SELECT
                 position_ticket, source_message_id, symbol, direction,
                 open_price, close_price, profit_pips, close_status,
                 close_datetime, breakeven_applied, trailing_applied, tp3_hit
             FROM daily_trade_results
-            WHERE source_chat_id = ?
+            WHERE source_chat_id IN ({placeholders})
               AND close_datetime >= ?
               AND close_datetime < ?
             ORDER BY close_datetime ASC, position_ticket ASC
             """,
-            (source_chat_id, start_utc, end_utc),
+            (*ids, start_utc, end_utc),
         )
         return cur.fetchall()
 
@@ -882,20 +898,21 @@ def get_monthly_trade_results(month_start, month_end_exclusive, source_chat_id):
     start_utc = start_local.astimezone(timezone.utc).isoformat()
     end_utc = end_local.astimezone(timezone.utc).isoformat()
 
+    placeholders, ids = _source_chat_ids_clause(source_chat_id)
     with get_connection() as conn:
         cur = conn.execute(
-            """
+            f"""
             SELECT
                 position_ticket, source_message_id, symbol, direction,
                 open_price, close_price, profit_pips, close_status,
                 close_datetime, breakeven_applied, trailing_applied, tp3_hit
             FROM daily_trade_results
-            WHERE source_chat_id = ?
+            WHERE source_chat_id IN ({placeholders})
               AND close_datetime >= ?
               AND close_datetime < ?
             ORDER BY close_datetime ASC, position_ticket ASC
             """,
-            (source_chat_id, start_utc, end_utc),
+            (*ids, start_utc, end_utc),
         )
         return cur.fetchall()
 

@@ -8,7 +8,9 @@ import MetaTrader5 as mt5
 from config import (
     DEVIATION,
     LOT_SIZE,
+    LOT_SIZE_BLTECH,
     MAGIC_NUMBER,
+    MAGIC_NUMBER_BLTECH,
     MT5_LOGIN,
     MT5_PASSWORD,
     MT5_PATH,
@@ -988,6 +990,303 @@ def close_position(position_ticket):
         "price": price,
         "deviation": int(DEVIATION),
         "magic": int(MAGIC_NUMBER),
+        "comment": ORDER_COMMENT,
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": filling_mode,
+    }
+
+    result = _send_order(request)
+
+    return TradeResult(
+        order=int(getattr(result, "order", 0) or 0),
+        deal=int(getattr(result, "deal", 0) or 0),
+        volume=float(getattr(result, "volume", volume) or volume),
+        price=float(getattr(result, "price", price) or price),
+        retcode=int(result.retcode),
+        comment=str(getattr(result, "comment", "")),
+        filling_mode=int(filling_mode),
+        position_ticket=int(position_ticket),
+    )
+
+
+# ============================================================
+# CANALE BL TECH PRO — magic/lotto separati da Cédric (vedi config.py).
+# A differenza di Cédric, qui il TP dichiarato dal segnale viene impostato
+# come vero TP broker-side (anche se di norma la posizione viene chiusa
+# prima, a mercato, dal messaggio "Running +N pips profit" del canale).
+# ============================================================
+
+def _find_position_ticket_bltech(direction, volume, open_price):
+    """Come _find_position_ticket, ma filtra sul magic di BL Tech Pro."""
+    order_type = (
+        mt5.POSITION_TYPE_BUY
+        if direction == "BUY"
+        else mt5.POSITION_TYPE_SELL
+    )
+
+    positions = mt5.positions_get(symbol=MT5_SYMBOL) or []
+
+    candidates = []
+    for position in positions:
+        if getattr(position, "magic", None) != int(MAGIC_NUMBER_BLTECH):
+            continue
+        if getattr(position, "type", None) != order_type:
+            continue
+
+        pos_volume = float(getattr(position, "volume", 0.0) or 0.0)
+        pos_price = float(getattr(position, "price_open", 0.0) or 0.0)
+
+        volume_match = abs(pos_volume - float(volume)) < 1e-9
+        price_match = abs(pos_price - float(open_price)) <= 0.05
+
+        if volume_match and price_match:
+            candidates.append(position)
+
+    if not candidates:
+        for position in positions:
+            if getattr(position, "magic", None) == int(MAGIC_NUMBER_BLTECH):
+                if getattr(position, "type", None) == order_type:
+                    candidates.append(position)
+
+    if not candidates:
+        return 0
+
+    candidates.sort(
+        key=lambda p: getattr(p, "time_msc", getattr(p, "time", 0)),
+        reverse=True,
+    )
+    return int(candidates[0].ticket)
+
+
+def open_market_order_bltech(signal):
+    """
+    Apre immediatamente al prezzo corrente di mercato un segnale del
+    canale BL Tech Pro. BUY -> ASK, SELL -> BID. SL e TP del segnale
+    vengono impostati entrambi come veri ordini broker-side.
+    """
+    info = _symbol_info()
+    digits = int(info.digits)
+
+    volume = _normalize_volume(LOT_SIZE_BLTECH, info)
+    _validate_volume(volume, info)
+
+    direction = signal["direction"].upper()
+    if direction not in {"BUY", "SELL"}:
+        raise ValueError(f"Direzione non valida: {direction}")
+
+    valid_price = _current_price(direction)
+    if valid_price is None:
+        raise RuntimeError(
+            f"Prezzo corrente non disponibile per {MT5_SYMBOL}: {mt5.last_error()}"
+        )
+    valid_price = _normalize_price(valid_price, digits)
+
+    sl = _normalize_price(signal["sl"], digits)
+    tp = _normalize_price(signal["tp"], digits)
+    _validate_stops(direction, valid_price, sl, tp, info)
+
+    order_type = (
+        mt5.ORDER_TYPE_BUY
+        if direction == "BUY"
+        else mt5.ORDER_TYPE_SELL
+    )
+
+    filling_mode = _get_filling_mode(info)
+
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": MT5_SYMBOL,
+        "volume": volume,
+        "type": order_type,
+        "price": valid_price,
+        "sl": sl,
+        "tp": tp,
+        "deviation": int(DEVIATION),
+        "magic": int(MAGIC_NUMBER_BLTECH),
+        "comment": ORDER_COMMENT,
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": filling_mode,
+    }
+
+    result = _send_order(request)
+
+    actual_price = float(getattr(result, "price", valid_price) or valid_price)
+
+    position_ticket = _find_position_ticket_bltech(
+        direction,
+        float(getattr(result, "volume", volume) or volume),
+        actual_price,
+    )
+
+    if not position_ticket:
+        raise RuntimeError(
+            "Ordine BL Tech Pro eseguito ma POSITION ticket non individuato. "
+            "Per sicurezza il trade non viene considerato gestibile dal bot."
+        )
+
+    return TradeResult(
+        order=int(getattr(result, "order", 0) or 0),
+        deal=int(getattr(result, "deal", 0) or 0),
+        volume=float(getattr(result, "volume", volume) or volume),
+        price=actual_price,
+        retcode=int(result.retcode),
+        comment=str(getattr(result, "comment", "")),
+        filling_mode=int(filling_mode),
+        position_ticket=int(position_ticket),
+    )
+
+
+def open_pending_order_bltech(signal):
+    """
+    Piazza un ordine pendente BUY LIMIT / SELL LIMIT (canale BL Tech Pro),
+    al prezzo Open dichiarato nel segnale, con SL/TP reali. Raro per
+    questo canale su XAUUSD: la maggior parte dei segnali sono a mercato
+    (vedi open_market_order_bltech). Il fill viene rilevato in seguito da
+    check_pending_order_filled_bltech.
+    """
+    info = _symbol_info()
+    digits = int(info.digits)
+
+    volume = _normalize_volume(LOT_SIZE_BLTECH, info)
+    _validate_volume(volume, info)
+
+    direction = signal["direction"].upper()
+    if direction not in {"BUY", "SELL"}:
+        raise ValueError(f"Direzione non valida: {direction}")
+
+    entry_price = _normalize_price(signal["entry"], digits)
+    sl = _normalize_price(signal["sl"], digits)
+    tp = _normalize_price(signal["tp"], digits)
+    _validate_stops(direction, entry_price, sl, tp, info)
+
+    order_type = (
+        mt5.ORDER_TYPE_BUY_LIMIT
+        if direction == "BUY"
+        else mt5.ORDER_TYPE_SELL_LIMIT
+    )
+
+    filling_mode = _get_filling_mode(info)
+
+    request = {
+        "action": mt5.TRADE_ACTION_PENDING,
+        "symbol": MT5_SYMBOL,
+        "volume": volume,
+        "type": order_type,
+        "price": entry_price,
+        "sl": sl,
+        "tp": tp,
+        "deviation": int(DEVIATION),
+        "magic": int(MAGIC_NUMBER_BLTECH),
+        "comment": ORDER_COMMENT,
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": filling_mode,
+    }
+
+    result = _send_order(request)
+
+    return TradeResult(
+        order=int(getattr(result, "order", 0) or 0),
+        deal=int(getattr(result, "deal", 0) or 0),
+        volume=volume,
+        price=entry_price,
+        retcode=int(result.retcode),
+        comment=str(getattr(result, "comment", "")),
+        filling_mode=int(filling_mode),
+        position_ticket=0,
+    )
+
+
+def check_pending_order_filled_bltech(order_ticket):
+    """
+    True/dizionario se l'ordine pendente si e' riempito ed e' diventato
+    una posizione, None se e' ancora pendente. Non fa nulla se l'ordine
+    e' stato cancellato/scaduto (torna None: il chiamante decide un
+    eventuale timeout).
+    """
+    order_ticket = int(order_ticket)
+
+    # Ancora tra gli ordini attivi -> non riempito.
+    active_orders = mt5.orders_get(ticket=order_ticket)
+    if active_orders:
+        return None
+
+    # Deal collegati a quell'ordine: quello di ingresso (DEAL_ENTRY_IN) e'
+    # il fill che trasforma l'ordine pendente in posizione.
+    deals = mt5.history_deals_get(ticket=order_ticket) or []
+    entry_in = getattr(mt5, "DEAL_ENTRY_IN", 0)
+    fill_deal = None
+    for deal in deals:
+        if int(getattr(deal, "entry", -1)) == entry_in:
+            fill_deal = deal
+            break
+
+    if fill_deal is None:
+        return None
+
+    return {
+        "price": float(getattr(fill_deal, "price", 0.0) or 0.0),
+        "position_ticket": int(getattr(fill_deal, "position_id", 0) or 0),
+        "deal": int(getattr(fill_deal, "ticket", 0) or 0),
+        "volume": float(getattr(fill_deal, "volume", 0.0) or 0.0),
+    }
+
+
+def close_position_bltech(position_ticket):
+    """Come close_position, ma per posizioni del canale BL Tech Pro (magic diverso)."""
+    info = _symbol_info()
+
+    positions = mt5.positions_get(ticket=int(position_ticket))
+    if not positions:
+        raise RuntimeError(
+            f"Posizione {position_ticket} non trovata o già chiusa."
+        )
+
+    position = positions[0]
+
+    if getattr(position, "symbol", None) != MT5_SYMBOL:
+        raise RuntimeError(
+            f"Posizione {position_ticket} appartiene a "
+            f"{getattr(position, 'symbol', 'N/D')}, non a {MT5_SYMBOL}."
+        )
+
+    if getattr(position, "magic", None) != int(MAGIC_NUMBER_BLTECH):
+        raise RuntimeError(
+            f"Posizione {position_ticket} non appartiene al MAGIC "
+            f"{MAGIC_NUMBER_BLTECH}."
+        )
+
+    position_type = int(position.type)
+    volume = float(position.volume)
+
+    if position_type == mt5.POSITION_TYPE_BUY:
+        order_type = mt5.ORDER_TYPE_SELL
+        tick = mt5.symbol_info_tick(MT5_SYMBOL)
+        if tick is None:
+            raise RuntimeError("Tick MT5 non disponibile per chiusura BUY.")
+        price = float(tick.bid)
+    elif position_type == mt5.POSITION_TYPE_SELL:
+        order_type = mt5.ORDER_TYPE_BUY
+        tick = mt5.symbol_info_tick(MT5_SYMBOL)
+        if tick is None:
+            raise RuntimeError("Tick MT5 non disponibile per chiusura SELL.")
+        price = float(tick.ask)
+    else:
+        raise RuntimeError(
+            f"Tipo posizione non gestito: {position_type}"
+        )
+
+    price = _normalize_price(price, int(info.digits))
+    filling_mode = _get_filling_mode(info)
+
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": MT5_SYMBOL,
+        "volume": volume,
+        "type": order_type,
+        "position": int(position_ticket),
+        "price": price,
+        "deviation": int(DEVIATION),
+        "magic": int(MAGIC_NUMBER_BLTECH),
         "comment": ORDER_COMMENT,
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": filling_mode,

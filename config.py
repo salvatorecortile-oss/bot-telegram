@@ -30,6 +30,9 @@ SESSION_NAME = os.getenv("TELEGRAM_SESSION_NAME", "telegram_copier_final2")
 SOURCE_CHAT = int(os.getenv("TELEGRAM_SOURCE_CHAT", "-1003543239308"))
 DESTINATION_CHAT = int(os.getenv("TELEGRAM_DESTINATION_CHAT", "-1004390393606"))
 
+# Secondo canale sorgente (BL Tech Pro): stesso DESTINATION_CHAT di sopra.
+SOURCE_CHAT_BLTECH = int(os.getenv("TELEGRAM_SOURCE_CHAT_BLTECH", "-1001172633073"))
+
 # =========================
 # MT5
 # =========================
@@ -64,6 +67,11 @@ DEVIATION = int(os.getenv("DEVIATION", "50"))
 
 MAGIC_NUMBER = int(os.getenv("MAGIC_NUMBER", "26090102"))
 ORDER_COMMENT = os.getenv("ORDER_COMMENT", "Telegram Copier")
+
+# Canale BL Tech Pro: magic e lotto separati da Cédric, per non confondere
+# mai le posizioni dei due canali durante la gestione/chiusura.
+MAGIC_NUMBER_BLTECH = int(os.getenv("MAGIC_NUMBER_BLTECH", "26090103"))
+LOT_SIZE_BLTECH = float(os.getenv("LOT_SIZE_BLTECH", "0.01"))
 
 # =========================
 # LOGGING / DEBUG
