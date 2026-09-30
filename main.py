@@ -1222,7 +1222,7 @@ async def monitor_bltech_closures(stop_event):
                                 "❌ ERRORE MESSAGGIO SL BL TECH PRO | Position=%s", position_ticket,
                             )
 
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(5.0)
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -2720,7 +2720,7 @@ async def monitor_trailing_sl_closures(stop_event):
     l'operazione NON viene chiusa: viene notificato il raggiungimento e
     si attiva il trailing dinamico al 15% di ritracciamento.
     """
-    logger.info("🛡️ MONITOR LIVE SL ATTIVO | Controllo ogni 0.5s")
+    logger.info("🛡️ MONITOR LIVE SL ATTIVO | Controllo ogni 2s")
 
     while not stop_event.is_set():
         try:
@@ -3214,7 +3214,7 @@ async def monitor_trailing_sl_closures(stop_event):
             logger.exception("❌ ERRORE MONITOR LIVE SL")
 
         try:
-            await asyncio.wait_for(stop_event.wait(), timeout=0.5)
+            await asyncio.wait_for(stop_event.wait(), timeout=2.0)
         except asyncio.TimeoutError:
             pass
 
@@ -3521,7 +3521,8 @@ async def main():
     logger.info("bot2_report / bot2_reportw / bot2_reportm / bot2_comandi")
     logger.info("")
     logger.info("🛡️ MONITOR")
-    logger.info("PREZZO MT5          : ogni 0.5s")
+    logger.info("PREZZO MT5 (CÉDRIC) : ogni 2s")
+    logger.info("PREZZO MT5 (BL TECH): ogni 5s")
     logger.info("BE / TRAILING / HIT : MESSAGGI NELLA DESTINATION")
     logger.info("")
     logger.info("🔌 META TRADER 5")
