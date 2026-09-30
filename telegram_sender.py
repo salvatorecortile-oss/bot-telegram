@@ -22,7 +22,7 @@ GOOD_MORNING_MESSAGE_TEMPLATE = (
 
 FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE = (
     "🌙 <b>CHIUSURA GIORNALIERA</b>\n"
-    "🕙 Tutte le operazioni vengono chiuse entro le 21:59."
+    "🕙 Tutte le operazioni vengono chiuse entro le 22:45."
 )
 
 OPEN_TRADE_MESSAGE_TEMPLATE = (
@@ -34,13 +34,15 @@ OPEN_TRADE_MESSAGE_TEMPLATE = (
 
 BE_APPLIED_MESSAGE_TEMPLATE = (
     "🟢 <b>BE ATTIVATO</b>\n"
-    "📈 <b>+{pips} PIPS</b>\n"
 )
+
+   # "📈 <b>+{pips} PIPS</b>\n"
+
 
 PIPS_PROGRESS_MESSAGE_TEMPLATE = (
     "📈 <b>+{pips} PIPS</b>\n"
     "💰 Parzializzate o chiudete l'operazione.\n"
-    "Se volete potete lasciare aperto e puntare al TP!"
+    "🎯 Se volete potete lasciare aperto e puntare al TP!\n"
 )
 
 # Copia informativa quando Cédric scrive "STOP LOSS" in chat (nessuna
@@ -58,7 +60,7 @@ SL_HIT_MESSAGE_TEMPLATE = (
 )
 
 BREAKEVEN_SL_HIT_MESSAGE_TEMPLATE = (
-    "🟢 <b>STOP LOSS A BE PRESO</b>\n"
+    "🟢 <b>BE PRESO</b>\n"
     "📍 Prezzo di chiusura: <b>{price:.2f}</b>\n"
     "✅ <b>OPERAZIONE CHIUSA</b>"
 )
@@ -77,53 +79,65 @@ TAKE_PROFIT_REACHED_MESSAGE_TEMPLATE = (
 )
 
 WEEKLY_REPORT_MESSAGE_TEMPLATE = (
-    "📊 YARDFX ELITE REPORT\n"
-    "📅 REPORT SETTIMANALE\n\n"
+    "📊 <b>YARDFX ELITE REPORT</b>\n"
+    "📅 <b>REPORT SETTIMANALE</b>\n\n"
+
     "📅 {date_range}\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
-    "Operazioni: {operations}\n"
-    "✅ {wins} Win\n"
-    "❌ {losses} Loss\n"
-    "🟢 {breakeven} BE\n\n"
+
+    "Operazioni chiuse: {operations}\n"
+    "✅ Vincenti: {wins}\n"
+    "❌ Perse: {losses}\n"
+    "🟢 BE: {breakeven}\n\n"
+
     "📈 Win Rate: {win_rate:.1f}%\n"
     "📊 TOT {result_pips}\n\n"
-    "━━━━━━━━━━━━━━━━━━\n\n"
+
+    "━━━━━━━━━━━━━━━━━━\n"
     "Grazie per averci seguito e supportato in questi giorni.\n"
-    "Ci sentiamo lunedì con nuove operazioni.\n\n"
+    "Ci sentiamo lunedì con nuove operazioni.\n"
     "Buon weekend!\n"
-    "- YardFX"
+    "<b>- YardFX</b>"
 )
 
 MONTHLY_REPORT_TEMPLATE = (
     "📊 <b>YARDFX ELITE REPORT</b>\n"
     "📅 <b>RISULTATO MENSILE</b>\n\n"
+
     "📅 {date_range}\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
-    "Operazioni: {operations}\n"
-    "✅ {wins} Win\n"
-    "❌ {losses} Loss\n"
+
+    "Operazioni chiuse: {operations}\n"
+    "✅ Vincenti: {wins}\n"
+    "❌ Perse: {losses}\n\n"
+
     "📈 Win Rate: {win_rate:.1f}%\n"
     "📊 TOT {pips:+.0f} PIPS\n\n"
-    "━━━━━━━━━━━━━━━━━━\n\n"
+
+    "━━━━━━━━━━━━━━━━━━\n"
     "Grazie per averci seguito e supportato in questo mese.\n"
     "<b>- YardFX</b>"
 )
 
 DAILY_REPORT_MESSAGE_TEMPLATE = (
-    "📊 YARDFX ELITE REPORT\n"
-    "💰 RISULTATO GIORNALIERO\n\n"
+    "📊 <b>YARDFX ELITE REPORT</b>\n"
+    "💰 <b>RISULTATO GIORNALIERO</b>\n\n"
+
     "📅 {date}\n"
     "━━━━━━━━━━━━━━━━━━\n\n"
-    "Operazioni: {operations}\n"
+
+    "Operazioni chiuse: {operations}\n"
     "✅ Vincenti: {wins}\n"
     "❌ Perse: {losses}\n"
     "🟢 BE: {breakeven}\n\n"
+
     "📈 Win Rate: {win_rate:.0f}%\n"
     "📊 Risultato: {result_pips}\n\n"
+
     "━━━━━━━━━━━━━━━━━━\n"
     "Grazie per averci seguito!\n"
     "Ci sentiamo domani con altre operazioni.\n"
-    "- YardFX"
+    "<b>- YardFX</b>"
 )
 
 # Compatibilità con eventuali riferimenti storici.
@@ -463,25 +477,25 @@ async def delete_destination_message(destination_message_id):
 # ============================================================
 
 BOT2_PLAY_MESSAGE_TEMPLATE = (
-    "✅ <b>BOT2 (CÉDRIC) ATTIVO AL 100%</b>\n"
+    "✅ <b>BOT2 ATTIVO AL 100%</b>\n"
     "Ascolto segnali e apro nuovi trade normalmente."
 )
 
 BOT2_RESTART_MESSAGE_TEMPLATE = (
-    "🔄 <b>BOT2 (CÉDRIC) RIAVVIATO</b>\n"
+    "🔄 <b>BOT2 RIAVVIATO</b>\n"
     "Posizioni chiuse: {closed}\n"
     "{errors_line}"
     "Di nuovo operativo al 100%: ascolto segnali e apro nuovi trade normalmente."
 )
 
 BOT2_PAUSED_MESSAGE_TEMPLATE = (
-    "⏸️ <b>BOT2 (CÉDRIC) IN PAUSA</b>\n"
+    "⏸️ <b>BOT2 IN PAUSA</b>\n"
     "Nessun nuovo trade verrà aperto.\n"
     "Le posizioni già aperte continuano a essere gestite."
 )
 
 BOT2_STOPPED_MESSAGE_TEMPLATE = (
-    "🛑 <b>BOT2 (CÉDRIC) FERMATO</b>\n"
+    "🛑 <b>BOT2 FERMATO</b>\n"
     "Posizioni chiuse: {closed}\n"
     "{errors_line}"
     "Non ascolto più messaggi e non invio altro nel canale finché non ricevo bot2_play."
@@ -503,16 +517,19 @@ BOT2_UNKNOWN_COMMAND_MESSAGE = (
 )
 
 BOT2_HELP_MESSAGE_TEMPLATE = (
-    "📋 <b>COMANDI DISPONIBILI BOT2 (CÉDRIC)</b>\n\n"
-    "bot2_play — attivo al 100%\n"
-    "bot2_pausa — nessun nuovo trade, gestisce quelli aperti\n"
-    "bot2_stop — chiude tutto e non ascolta più nulla\n"
-    "bot2_riavvio — chiude tutto e riparte al 100%\n"
-    "bot2_status — stato attuale e posizioni aperte\n"
-    "bot2_report — report giornaliero ora\n"
-    "bot2_reportw — report settimanale ora\n"
-    "bot2_reportm — report mensile ora\n"
-    "bot2_comandi — questo elenco"
+    "📋 <b>COMANDI DISPONIBILI BOT2</b>\n\n"
+    "▶️ <b>bot2_play</b> — Il bot riparte al 100%\n"
+    "🛑 <b>bot2_stop</b> — Chiude tutte le posizioni a mercato e ferma "
+    "completamente il bot (niente più ascolto né messaggi nel canale)\n"
+    "🔄 <b>bot2_riavvio</b> — Come bot1_stop e subito dopo come bot1_play\n"
+    "⏸️ <b>bot2_pausa</b> — Non copia né apre nuovi trade, ma lascia gestite "
+    "da MT5 le posizioni già aperte\n"
+    "📊 <b>bot2_status</b> — Stato attuale del bot + posizioni aperte con "
+    "il profitto/perdita di ciascuna\n"
+    "📈 <b>bot2_report</b> — Invia subito nel canale il report giornaliero\n"
+    "📅 <b>bot2_reportw</b> — Invia subito nel canale il report settimanale\n"
+    "🗓️ <b>bot2_reportm</b> — Invia subito nel canale il report mensile\n"
+    "❓ <b>bot2_comandi</b> — Mostra questo elenco"
 )
 
 
