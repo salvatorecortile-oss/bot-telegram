@@ -144,6 +144,67 @@ simultaneous_signal_counts = {}
 
 
 # ============================================================
+# SEGNALI CONTRASTANTI/RIDONDANTI TRA I DUE CANALI (Cédric + BL Tech Pro)
+# ============================================================
+# Regola:
+# 1) Direzione OPPOSTA a una posizione del bot gia' aperta (di uno
+#    qualunque dei due canali) -> bloccato sempre, finche' quella
+#    posizione non si chiude. Identica alla regola che valeva gia' solo
+#    per Cédric, ora estesa a entrambi i canali insieme.
+# 2) Stessa direzione segnalata dall'ALTRO canale entro 10 minuti dal
+#    segnale precedente -> bloccato (si apre solo il primo dei due, per
+#    tenere il minor numero possibile di trade aperti). Due segnali dello
+#    STESSO canale nella stessa direzione NON sono soggetti a questa
+#    regola: restano ammessi in parallelo come sempre (comportamento
+#    Cédric invariato).
+CROSS_CHANNEL_SAME_DIRECTION_WINDOW_SECONDS = 10 * 60
+
+cross_channel_signal_lock = asyncio.Lock()
+_last_directional_open = {"BUY": None, "SELL": None}  # {"source": chat_id, "at": datetime}
+
+
+async def reserve_cross_channel_signal(direction, source_chat_id):
+    """
+    Da chiamare PRIMA di aprire qualunque trade (Cédric o BL Tech Pro).
+    Se ritorna (True, None) il chiamante puo' procedere: la prenotazione
+    e' gia' stata registrata atomicamente sotto lock, cosi' due segnali
+    quasi simultanei dai due canali non possono aprirsi entrambi.
+    Se ritorna (False, motivo) il segnale va scartato senza aprire nulla.
+    """
+    opposite = "SELL" if direction == "BUY" else "BUY"
+
+    async with cross_channel_signal_lock:
+        try:
+            positions = await asyncio.to_thread(mt5.positions_get, symbol="XAUUSD-P") or []
+        except Exception:
+            positions = []
+
+        bot_positions = [
+            p for p in positions
+            if int(getattr(p, "magic", -1)) in (int(MAGIC_NUMBER), int(MAGIC_NUMBER_BLTECH))
+        ]
+
+        for position in bot_positions:
+            position_direction = (
+                "BUY" if int(getattr(position, "type", -1)) == mt5.POSITION_TYPE_BUY else "SELL"
+            )
+            if position_direction == opposite:
+                return False, "OPPOSITE_DIRECTION_OPEN"
+
+        last = _last_directional_open.get(direction)
+        if last is not None and last["source"] != source_chat_id:
+            elapsed = (datetime.now(timezone.utc) - last["at"]).total_seconds()
+            if elapsed < CROSS_CHANNEL_SAME_DIRECTION_WINDOW_SECONDS:
+                return False, "SAME_DIRECTION_TOO_RECENT"
+
+        _last_directional_open[direction] = {
+            "source": source_chat_id,
+            "at": datetime.now(timezone.utc),
+        }
+        return True, None
+
+
+# ============================================================
 # LOGGING
 # ============================================================
 
@@ -687,41 +748,6 @@ async def new_message_handler(event):
                 cleanup_old_timestamp_counters()
                 return
 
-            # --------------------------------------------------------
-            # BLOCCO SEGNALI IN DIREZIONE OPPOSTA A UN TRADE GIA' APERTO
-            # --------------------------------------------------------
-            # Se c'e' gia' una posizione del bot aperta in direzione
-            # OPPOSTA, il segnale non va ne' copiato nel canale ne' aperto
-            # su MT5, finche' quella posizione non si chiude (in profitto o
-            # in perdita). Segnali nella STESSA direzione restano ammessi e
-            # possono aprirsi/essere copiati insieme.
-            try:
-                existing_positions = await asyncio.to_thread(
-                    mt5.positions_get, symbol="XAUUSD-P"
-                ) or []
-            except Exception:
-                existing_positions = []
-
-            opposite_direction_open = any(
-                (
-                    "BUY" if int(getattr(p, "type", -1)) == mt5.POSITION_TYPE_BUY
-                    else "SELL"
-                ) != signal["direction"]
-                for p in existing_positions
-                if int(getattr(p, "magic", -1)) == int(MAGIC_NUMBER)
-            )
-
-            if opposite_direction_open:
-                logger.warning(
-                    "🚫 SEGNALE %s BLOCCATO | #%s | Trade opposto già aperto: "
-                    "ignorato, non copiato nel canale, non aperto su MT5.",
-                    signal["direction"],
-                    source_message_id,
-                )
-                update_status(SOURCE_CHAT, source_message_id, "BLOCKED_OPPOSITE_DIRECTION")
-                cleanup_old_timestamp_counters()
-                return
-
             signal_age = calculate_signal_age_seconds(telegram_datetime)
             logger.info(
                 "⏱ SIGNAL AGE #%s: %.3fs | Limite=%ss",
@@ -748,6 +774,29 @@ async def new_message_handler(event):
 
             if not slot_available:
                 update_status(SOURCE_CHAT, source_message_id, "SIMULTANEOUS_LIMIT")
+                cleanup_old_timestamp_counters()
+                return
+
+            # --------------------------------------------------------
+            # SEGNALI CONTRASTANTI/RIDONDANTI TRA I DUE CANALI
+            # --------------------------------------------------------
+            # Direzione opposta a una posizione gia' aperta (di uno dei due
+            # canali) -> bloccato sempre. Stessa direzione segnalata
+            # dall'ALTRO canale entro 10 minuti -> bloccato anche quella
+            # (si apre solo il primo dei due). Vedi reserve_cross_channel_signal.
+            can_open, blocked_reason = await reserve_cross_channel_signal(
+                signal["direction"], SOURCE_CHAT,
+            )
+            if not can_open:
+                logger.warning(
+                    "🚫 SEGNALE %s BLOCCATO | #%s | Motivo=%s",
+                    signal["direction"], source_message_id, blocked_reason,
+                )
+                update_status(
+                    SOURCE_CHAT, source_message_id,
+                    "BLOCKED_OPPOSITE_DIRECTION" if blocked_reason == "OPPOSITE_DIRECTION_OPEN"
+                    else "BLOCKED_DUPLICATE_SIGNAL",
+                )
                 cleanup_old_timestamp_counters()
                 return
 
@@ -898,6 +947,23 @@ async def bltech_message_handler(event):
 
         if not MT5_READY:
             update_status(SOURCE_CHAT_BLTECH, source_message_id, "MT5_NOT_READY")
+            return
+
+        # Stessa regola anti-segnali-contrastanti/ridondanti di Cédric,
+        # vedi reserve_cross_channel_signal.
+        can_open, blocked_reason = await reserve_cross_channel_signal(
+            signal["direction"], SOURCE_CHAT_BLTECH,
+        )
+        if not can_open:
+            logger.warning(
+                "🚫 SEGNALE BL TECH PRO %s BLOCCATO | #%s | Motivo=%s",
+                signal["direction"], source_message_id, blocked_reason,
+            )
+            update_status(
+                SOURCE_CHAT_BLTECH, source_message_id,
+                "BLOCKED_OPPOSITE_DIRECTION" if blocked_reason == "OPPOSITE_DIRECTION_OPEN"
+                else "BLOCKED_DUPLICATE_SIGNAL",
+            )
             return
 
         asyncio.create_task(process_bltech_trade(signal, source_message_id))
