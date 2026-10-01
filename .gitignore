@@ -5,3 +5,7 @@ __pycache__/
 *.pyc
 data/*.db
 logs/*.log
+
+# Backtest
+backtest/data_cache/
+backtest/results/
