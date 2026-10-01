@@ -8,6 +8,7 @@ Il CSV ha le colonne: time, open, high, low, close[, spread]
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time as _time
 from datetime import datetime, timezone
@@ -74,6 +75,20 @@ def _connect_mt5():
     return mt5
 
 
+def _resolve_symbol(mt5, symbol: str) -> str:
+    """Trova il nome del simbolo sul broker anche se ha un suffisso (es. EURUSD → EURUSD-P)."""
+    if mt5.symbol_info(symbol) is not None:
+        return symbol
+    base = re.sub(r"[^A-Za-z]", "", symbol).upper()[:6]
+    found = [s.name for s in (mt5.symbols_get(f"*{base}*") or [])
+             if re.sub(r"[^A-Za-z]", "", s.name).upper().startswith(base)]
+    if not found:
+        raise RuntimeError(f"Simbolo {symbol} non trovato sul broker")
+    best = min(found, key=len)
+    print(f"  simbolo {symbol} non trovato: uso {best}")
+    return best
+
+
 def load_mt5(symbol: str, timeframe: str, date_from: str, date_to: str,
              refresh: bool = False) -> tuple[pd.DataFrame, float, int]:
     """Scarica le barre da MT5 (solo lettura, nessun ordine) e le salva in cache."""
@@ -87,9 +102,8 @@ def load_mt5(symbol: str, timeframe: str, date_from: str, date_to: str,
 
     mt5 = _connect_mt5()
     try:
+        symbol = _resolve_symbol(mt5, symbol)
         info = mt5.symbol_info(symbol)
-        if info is None:
-            raise RuntimeError(f"Simbolo {symbol} non trovato sul broker (controlla eventuali suffissi, es. EURUSD-P)")
         if not info.visible:
             mt5.symbol_select(symbol, True)
 

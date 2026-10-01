@@ -15,9 +15,7 @@ set PY=python
 %PY% --version >nul 2>&1
 if errorlevel 1 set PY=py
 
-set SUFFISSO=
-set /p SUFFISSO="Suffisso dei simboli (la volta scorsa era -P), poi INVIO: "
-set SIMBOLI=EURUSD%SUFFISSO% GBPUSD%SUFFISSO% USDCHF%SUFFISSO% EURGBP%SUFFISSO%
+set SIMBOLI=EURUSD GBPUSD USDCHF EURGBP
 echo.
 
 echo [1/3] Timeframe M15 dal 2018...

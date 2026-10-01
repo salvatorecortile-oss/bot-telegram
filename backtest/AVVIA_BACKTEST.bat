@@ -23,10 +23,6 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo I simboli del tuo broker hanno un suffisso? Per esempio il tuo oro e' XAUUSD-P,
-echo quindi probabilmente l'euro-dollaro e' EURUSD-P.
-set SUFFISSO=
-set /p SUFFISSO="Scrivi il suffisso (es. -P) oppure premi INVIO se non c'e': "
 echo.
 
 echo [1/2] Installazione pacchetti necessari...
@@ -34,7 +30,7 @@ echo [1/2] Installazione pacchetti necessari...
 echo.
 
 echo [2/2] Backtest in corso (la prima volta puo' richiedere diversi minuti)...
-%PY% run_vformation.py --symbols EURUSD%SUFFISSO% GBPUSD%SUFFISSO% USDCHF%SUFFISSO% EURGBP%SUFFISSO% --timeframe M5 --from 2021-01-01 --compare --split 2024-01-01 > risultati.txt 2>&1
+%PY% run_vformation.py --symbols EURUSD GBPUSD USDCHF EURGBP --timeframe M5 --from 2021-01-01 --compare --split 2024-01-01 > risultati.txt 2>&1
 
 type risultati.txt
 echo.
