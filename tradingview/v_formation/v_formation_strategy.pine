@@ -1,0 +1,454 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+// V-Formation — strategia di BACKTEST
+// Schema: impulso → ritraccio (50-88%) → V-Formation → entry limite sul
+// ritraccio della gamba destra, stop oltre la V, TP sulle liquidità.
+// Specifica completa delle regole: tradingview/v_formation/README.md
+//
+// Nota: le impostazioni di default sono un punto di partenza da testare,
+// non parametri ottimizzati.
+// ─────────────────────────────────────────────────────────────────────────────
+strategy("V-Formation [Backtest]", shorttitle = "V-Formation", overlay = true,
+     initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1,
+     pyramiding = 0, commission_type = strategy.commission.percent, commission_value = 0.0,
+     slippage = 1, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500,
+     max_bars_back = 1000)
+
+// ═════════════════════════════════════ INPUT ═════════════════════════════════
+const string G_V = "1 · Swing e V-Formation"
+const string G_E = "2 · Entry e uscite"
+const string G_F = "3 · Filtri di contesto"
+const string G_R = "4 · Rischio"
+const string G_D = "5 · Grafica"
+
+int    pivLen       = input.int(3, "Lunghezza pivot (barre a sx/dx)", minval = 1, group = G_V,
+     tooltip = "Uno swing high/low è confermato quando è il più alto/basso di N barre a sinistra e N a destra. Più alto = swing più significativi ma conferma più lenta.")
+int    atrLen       = input.int(14, "Periodo ATR", minval = 1, group = G_V)
+float  impMinAtr    = input.float(2.0, "Impulso minimo (× ATR)", minval = 0.0, step = 0.1, group = G_V)
+float  retMin       = input.float(0.5, "Ritraccio minimo dell'impulso", minval = 0.0, maxval = 1.0, step = 0.01, group = G_V)
+float  retMax       = input.float(0.886, "Ritraccio massimo dell'impulso", minval = 0.0, maxval = 1.0, step = 0.01, group = G_V)
+bool   needBreakC   = input.bool(true, "La gamba sinistra deve rompere lo swing precedente", group = G_V,
+     tooltip = "Il piccolo rimbalzo dei buyer (sellers nello short) dentro il ritraccio viene 'mangiato': il minimo della V deve stare sotto il minimo precedente.")
+float  vTolAtr      = input.float(0.1, "Tolleranza 'gambe uguali' (× ATR)", minval = 0.0, step = 0.05, group = G_V,
+     tooltip = "Rango S: la gamba destra supera l'inizio della gamba sinistra di oltre questa tolleranza. Rango A: lo raggiunge entro la tolleranza.")
+string minRank      = input.string("A", "Rango minimo", options = ["S", "A"], group = G_V)
+int    maxRightBars = input.int(20, "Barre max per completare la gamba destra", minval = 1, group = G_V)
+
+float  entryFib     = input.float(0.5, "Entry: ritraccio della gamba destra", minval = 0.1, maxval = 0.95, step = 0.01, group = G_E)
+float  zoneFib      = input.float(0.7, "Fine zona di entry (solo grafica)", minval = 0.1, maxval = 0.95, step = 0.01, group = G_E)
+int    pendingMax   = input.int(30, "Validità ordine limite (barre)", minval = 1, group = G_E)
+float  slBufAtr     = input.float(0.1, "Buffer stop oltre la V (× ATR)", minval = 0.0, step = 0.05, group = G_E)
+string tp1Mode      = input.string("Massimo gamba destra", "TP1", options = ["Massimo gamba destra", "Massimo impulso", "R:R fisso"], group = G_E)
+float  tp1RR        = input.float(1.0, "TP1 R:R (modalità R:R fisso)", minval = 0.1, step = 0.1, group = G_E)
+int    tp1Pct       = input.int(50, "% posizione chiusa al TP1", minval = 1, maxval = 100, group = G_E)
+string tp2Mode      = input.string("Massimo impulso", "TP2", options = ["Massimo impulso", "R:R fisso"], group = G_E,
+     tooltip = "Massimo impulso = liquidità a sinistra (estremo dell'impulso). Se è già stato superato dalla gamba destra si usa il R:R fisso.")
+float  tp2RR        = input.float(2.0, "TP2 R:R (R:R fisso o fallback)", minval = 0.1, step = 0.1, group = G_E)
+bool   beAfterTp1   = input.bool(true, "Stop a break-even dopo TP1", group = G_E)
+float  minRR        = input.float(1.0, "R:R minimo sul target finale", minval = 0.0, step = 0.1, group = G_E)
+
+string biasMode     = input.string("Struttura HTF", "Bias", options = ["Struttura HTF", "EMA HTF", "Off"], group = G_F,
+     tooltip = "Struttura HTF: long dopo chiusura sopra l'ultimo swing high del TF superiore, short dopo chiusura sotto l'ultimo swing low.")
+string htf          = input.timeframe("60", "Timeframe superiore", group = G_F)
+int    htfPiv       = input.int(3, "Pivot struttura HTF", minval = 1, group = G_F)
+int    htfEmaLen    = input.int(50, "Periodo EMA HTF", minval = 1, group = G_F)
+bool   useSess      = input.bool(true, "Entra solo in sessione", group = G_F)
+string sess         = input.session("0900-1700", "Sessione operativa", group = G_F)
+string tz           = input.string("Europe/Rome", "Fuso orario", group = G_F)
+bool   closeEOS     = input.bool(false, "Chiudi le posizioni a fine sessione", group = G_F)
+string sweepMode    = input.string("Off", "Sweep di liquidità sulla V", options = ["Off", "Asia o giorno precedente", "Solo giorno precedente", "Solo Asia"], group = G_F,
+     tooltip = "Se attivo, l'estremo della V deve aver preso il massimo/minimo della sessione asiatica e/o del giorno precedente.")
+string asiaSess     = input.session("0100-0800", "Sessione asiatica", group = G_F)
+int    maxTradesDay = input.int(2, "Trade max al giorno", minval = 1, group = G_F)
+
+float  riskPct      = input.float(1.0, "Rischio % equity (rango S)", minval = 0.01, step = 0.1, group = G_R)
+float  riskAMult    = input.float(0.5, "Moltiplicatore rischio rango A", minval = 0.0, maxval = 1.0, step = 0.05, group = G_R)
+bool   qtyFloor     = input.bool(true, "Arrotonda la quantità all'unità", group = G_R)
+
+bool   showSetups   = input.bool(true, "Disegna V, zona entry, SL e TP", group = G_D)
+bool   showLevels   = input.bool(false, "Mostra livelli Asia e giorno precedente", group = G_D)
+bool   showSessBg   = input.bool(true, "Colora la sessione operativa", group = G_D)
+bool   showPanel    = input.bool(true, "Pannello di stato", group = G_D)
+
+// ═══════════════════════════════ SERIE DI BASE ═══════════════════════════════
+float atr = ta.atr(atrLen)
+
+// ── Bias del timeframe superiore (non repaint: valore della barra HTF chiusa)
+f_structBias(int len) =>
+    float ph = ta.pivothigh(high, len, len)
+    float pl = ta.pivotlow(low, len, len)
+    var float lastH = na
+    var float lastL = na
+    var int   b     = 0
+    if not na(ph)
+        lastH := ph
+    if not na(pl)
+        lastL := pl
+    if not na(lastH) and close > lastH
+        b := 1
+    else if not na(lastL) and close < lastL
+        b := -1
+    b
+
+f_emaBias(int len) =>
+    float e = ta.ema(close, len)
+    close > e ? 1 : close < e ? -1 : 0
+
+int htfStructBias = request.security(syminfo.tickerid, htf, f_structBias(htfPiv)[1], lookahead = barmerge.lookahead_on)
+int htfEmaBias    = request.security(syminfo.tickerid, htf, f_emaBias(htfEmaLen)[1], lookahead = barmerge.lookahead_on)
+int bias          = biasMode == "Struttura HTF" ? htfStructBias : biasMode == "EMA HTF" ? htfEmaBias : 0
+
+// ── Sessioni e giorno
+bool inSessRaw = not na(time(timeframe.period, sess, tz))
+bool inSess    = not useSess or inSessRaw
+bool newDay    = dayofmonth(time, tz) != dayofmonth(time[1], tz)
+
+// ── Massimo/minimo della sessione asiatica (ultima sessione completata)
+bool inAsia = not na(time(timeframe.period, asiaSess, tz))
+var float asiaRunHi = na
+var float asiaRunLo = na
+var float asiaHi    = na
+var float asiaLo    = na
+if inAsia and not inAsia[1]
+    asiaRunHi := high
+    asiaRunLo := low
+else if inAsia
+    asiaRunHi := math.max(asiaRunHi, high)
+    asiaRunLo := math.min(asiaRunLo, low)
+if not inAsia and inAsia[1]
+    asiaHi := asiaRunHi
+    asiaLo := asiaRunLo
+
+// ── Massimo/minimo del giorno precedente
+float pdh = request.security(syminfo.tickerid, "D", high[1], lookahead = barmerge.lookahead_on)
+float pdl = request.security(syminfo.tickerid, "D", low[1], lookahead = barmerge.lookahead_on)
+
+bool useAsiaSw = sweepMode == "Asia o giorno precedente" or sweepMode == "Solo Asia"
+bool usePdSw   = sweepMode == "Asia o giorno precedente" or sweepMode == "Solo giorno precedente"
+bool sweptLow  = (useAsiaSw and not na(asiaLo) and low < asiaLo) or (usePdSw and not na(pdl) and low < pdl)
+bool sweptHigh = (useAsiaSw and not na(asiaHi) and high > asiaHi) or (usePdSw and not na(pdh) and high > pdh)
+
+// ═══════════════════════════════ ZIGZAG DEGLI SWING ══════════════════════════
+// Sequenza alternata di swing confermati: tipo 1 = high, -1 = low.
+var array<float> zzPrice = array.new<float>()
+var array<int>   zzBar   = array.new<int>()
+var array<int>   zzType  = array.new<int>()
+
+// Aggiunge uno swing; se l'ultimo è dello stesso tipo lo sostituisce solo se più estremo.
+f_addSwing(int t, float p, int b) =>
+    int  n       = array.size(zzType)
+    bool changed = false
+    if n > 0 and array.get(zzType, n - 1) == t
+        float last = array.get(zzPrice, n - 1)
+        if (t == 1 and p > last) or (t == -1 and p < last)
+            array.set(zzPrice, n - 1, p)
+            array.set(zzBar, n - 1, b)
+            changed := true
+    else
+        array.push(zzPrice, p)
+        array.push(zzBar, b)
+        array.push(zzType, t)
+        if array.size(zzType) > 50
+            array.shift(zzPrice)
+            array.shift(zzBar)
+            array.shift(zzType)
+        changed := true
+    changed
+
+// Tutta la logica lavora in "spazio direzionale": prezzo × dir.
+// Così long e short usano le stesse regole (per lo short i prezzi sono negati).
+f_px(int dir, float v) =>
+    dir * v
+
+// Cerca lo schema sugli ultimi 5 swing (esempio long):
+//   A = inizio impulso (low)   B = fine impulso (high)
+//   C = minimo interno         D = rimbalzo "mangiato" = inizio gamba sinistra (high)
+//   E = fondo della V (low)
+f_pattern(int dir) =>
+    int   n    = array.size(zzType)
+    bool  ok   = false
+    float pA   = na
+    float pB   = na
+    float pC   = na
+    float pD   = na
+    float pE   = na
+    int   barD = na
+    int   barE = na
+    if n >= 5 and array.get(zzType, n - 1) == -dir
+        pA   := dir * array.get(zzPrice, n - 5)
+        pB   := dir * array.get(zzPrice, n - 4)
+        pC   := dir * array.get(zzPrice, n - 3)
+        pD   := dir * array.get(zzPrice, n - 2)
+        pE   := dir * array.get(zzPrice, n - 1)
+        barD := array.get(zzBar, n - 2)
+        barE := array.get(zzBar, n - 1)
+        float imp = pB - pA
+        float ret = imp > 0 ? (pB - pE) / imp : 0.0
+        ok := imp > 0 and imp >= impMinAtr * atr and pB > pD and pE > pA and
+             ret >= retMin and ret <= retMax and (not needBreakC or pE < pC)
+    [ok, pA, pB, pC, pD, pE, barD, barE]
+
+f_qty(float entryD, float slD, int rank) =>
+    float dist = math.abs(entryD - slD)
+    float cash = strategy.equity * riskPct / 100.0 * (rank == 2 ? 1.0 : riskAMult)
+    float q    = dist > 0 ? strategy.convert_to_symbol(cash) / (dist * syminfo.pointvalue) : 0.0
+    qtyFloor ? float(math.floor(q)) : q
+
+// ═══════════════════════════════ STATO DEL SETUP ═════════════════════════════
+// state: 0 = nessuno, 1 = V in formazione (gamba destra non ancora valida),
+//        2 = ordine limite piazzato, 3 = in posizione
+type Setup
+    int   dir
+    int   state     = 0
+    float a         = na
+    float b         = na
+    float c         = na
+    float d         = na
+    float e         = na
+    float f         = na
+    int   dBar      = na
+    int   eBar      = na
+    int   fBar      = na
+    int   placedBar = na
+    float sl        = na
+    int   rank      = 0
+    float entry     = na
+    float tp1       = na
+    float tp2       = na
+    float qtyInit   = 0.0
+    bool  beDone    = false
+    line  vLeft     = na
+    line  vRight    = na
+    box   zone      = na
+    line  slLine    = na
+    line  tp1Line   = na
+    line  tp2Line   = na
+    label tag       = na
+
+f_rankTxt(int r) =>
+    r == 2 ? "S" : r == 1 ? "A" : "-"
+
+// Messaggio JSON per gli alert (pronto per un webhook verso il bot).
+f_json(Setup s, string evt) =>
+    '{"evento":"' + evt + '","simbolo":"' + syminfo.ticker + '","tf":"' + timeframe.period +
+     '","lato":"' + (s.dir == 1 ? "buy" : "sell") + '","rango":"' + f_rankTxt(s.rank) +
+     '","entry":' + str.tostring(f_px(s.dir, s.entry), format.mintick) +
+     ',"sl":' + str.tostring(f_px(s.dir, s.sl), format.mintick) +
+     ',"tp1":' + str.tostring(f_px(s.dir, s.tp1), format.mintick) +
+     ',"tp2":' + str.tostring(f_px(s.dir, s.tp2), format.mintick) + '}'
+
+method orderId(Setup s) =>
+    s.dir == 1 ? "L" : "S"
+
+method cancelOrders(Setup s) =>
+    string id = s.orderId()
+    strategy.cancel(id)
+    strategy.cancel(id + " TP1")
+    strategy.cancel(id + " TP2")
+    if not na(s.zone)
+        s.zone.set_bgcolor(color.new(color.gray, 88))
+        s.zone.set_border_color(color.new(color.gray, 70))
+    if not na(s.slLine)
+        s.slLine.delete()
+        s.tp1Line.delete()
+        s.tp2Line.delete()
+    s.state := 0
+    s
+
+method arm(Setup s, float pA, float pB, float pC, float pD, float pE, int barD, int barE, float fInit, int fBarInit) =>
+    if s.state == 2
+        s.cancelOrders()
+    s.a         := pA
+    s.b         := pB
+    s.c         := pC
+    s.d         := pD
+    s.e         := pE
+    s.dBar      := barD
+    s.eBar      := barE
+    s.f         := fInit
+    s.fBar      := fBarInit
+    s.sl        := pE - slBufAtr * atr
+    s.rank      := 0
+    s.placedBar := na
+    s.vLeft     := na
+    s.vRight    := na
+    s.zone      := na
+    s.slLine    := na
+    s.tp1Line   := na
+    s.tp2Line   := na
+    s.tag       := na
+    s.state     := 1
+    s
+
+method drawNew(Setup s) =>
+    if showSetups
+        color col   = s.dir == 1 ? color.teal : color.maroon
+        int   right = bar_index + pendingMax
+        s.vLeft   := line.new(s.dBar, f_px(s.dir, s.d), s.eBar, f_px(s.dir, s.e), color = col, width = 2)
+        s.vRight  := line.new(s.eBar, f_px(s.dir, s.e), s.fBar, f_px(s.dir, s.f), color = col, width = 2)
+        s.zone    := box.new(bar_index, f_px(s.dir, s.f), right, f_px(s.dir, s.e), border_color = color.new(col, 60), bgcolor = color.new(col, 85))
+        s.slLine  := line.new(bar_index, f_px(s.dir, s.sl), right, f_px(s.dir, s.sl), color = color.red, style = line.style_dashed)
+        s.tp1Line := line.new(bar_index, f_px(s.dir, s.tp1), right, f_px(s.dir, s.tp1), color = color.green, style = line.style_dashed)
+        s.tp2Line := line.new(bar_index, f_px(s.dir, s.tp2), right, f_px(s.dir, s.tp2), color = color.green, style = line.style_dotted)
+        s.tag     := label.new(s.eBar, f_px(s.dir, s.e), "V", style = s.dir == 1 ? label.style_label_up : label.style_label_down,
+             color = col, textcolor = color.white, size = size.small)
+    s
+
+method drawUpdate(Setup s) =>
+    if showSetups and not na(s.zone)
+        float leg = s.f - s.e
+        float z1  = f_px(s.dir, s.f - entryFib * leg)
+        float z2  = f_px(s.dir, s.f - zoneFib * leg)
+        s.vRight.set_xy2(s.fBar, f_px(s.dir, s.f))
+        s.zone.set_top(math.max(z1, z2))
+        s.zone.set_bottom(math.min(z1, z2))
+        s.slLine.set_y1(f_px(s.dir, s.sl))
+        s.slLine.set_y2(f_px(s.dir, s.sl))
+        s.tp1Line.set_y1(f_px(s.dir, s.tp1))
+        s.tp1Line.set_y2(f_px(s.dir, s.tp1))
+        s.tp2Line.set_y1(f_px(s.dir, s.tp2))
+        s.tp2Line.set_y2(f_px(s.dir, s.tp2))
+        s.tag.set_text("V-" + f_rankTxt(s.rank))
+    s
+
+// Gestisce un setup armato o con ordine pendente. hiD/loD = massimo/minimo
+// della barra in spazio direzionale; allowed = filtri di contesto superati.
+method step(Setup s, float hiD, float loD, bool allowed) =>
+    if s.state == 1 or s.state == 2
+        if hiD > s.f
+            s.f    := hiD
+            s.fBar := bar_index
+        float tol  = vTolAtr * atr
+        s.rank    := s.f > s.d + tol ? 2 : s.f >= s.d - tol ? 1 : 0
+        float leg  = s.f - s.e
+        s.entry   := s.f - entryFib * leg
+        float risk = s.entry - s.sl
+        s.tp1     := tp1Mode == "Massimo gamba destra" ? s.f : tp1Mode == "Massimo impulso" ? math.max(s.b, s.f) : s.entry + tp1RR * risk
+        float tp2Liq = s.b > s.f + tol ? s.b : s.entry + tp2RR * risk
+        s.tp2     := math.max(tp2Mode == "Massimo impulso" ? tp2Liq : s.entry + tp2RR * risk, s.tp1)
+        float finalTp  = tp1Pct >= 100 ? s.tp1 : s.tp2
+        float rr       = risk > 0 ? (finalTp - s.entry) / risk : 0.0
+        float q        = f_qty(s.entry, s.sl, s.rank)
+        bool  rankOK   = s.rank >= (minRank == "S" ? 2 : 1)
+        bool  canPlace = allowed and rankOK and risk > 0 and s.tp1 > s.entry and rr >= minRR and q > 0
+        bool  expired  = s.state == 1 and ((s.rank == 0 and bar_index - s.eBar > maxRightBars) or bar_index - s.eBar > maxRightBars + pendingMax)
+        bool  dead     = loD < s.e or expired or (s.state == 2 and (bar_index - s.placedBar > pendingMax or not canPlace))
+        if dead
+            s.cancelOrders()
+        else
+            if s.state == 1 and canPlace
+                s.state     := 2
+                s.placedBar := bar_index
+                s.drawNew()
+                alert(f_json(s, "ordine"), alert.freq_once_per_bar_close)
+            if s.state == 2
+                string id   = s.orderId()
+                float  slPx = f_px(s.dir, s.sl)
+                strategy.entry(id, s.dir == 1 ? strategy.long : strategy.short, qty = q, limit = f_px(s.dir, s.entry),
+                     comment = id + " V-" + f_rankTxt(s.rank))
+                strategy.exit(id + " TP1", id, qty_percent = tp1Pct, limit = f_px(s.dir, s.tp1), stop = slPx,
+                     comment_profit = "TP1", comment_loss = "SL")
+                strategy.exit(id + " TP2", id, limit = f_px(s.dir, s.tp2), stop = slPx,
+                     comment_profit = "TP2", comment_loss = "SL")
+                s.drawUpdate()
+    s
+
+// Rileva il fill dell'ordine e gestisce il break-even. Ritorna true se un
+// ordine di questo setup è stato eseguito su questa barra.
+method checkFill(Setup s, bool closedNew) =>
+    bool   filled = false
+    string id     = s.orderId()
+    bool   inPos  = s.dir == 1 ? strategy.position_size > 0 : strategy.position_size < 0
+    // Entrata e uscita sulla stessa barra: la posizione è già chiusa ma il trade esiste.
+    bool   closedMine = closedNew and strategy.closedtrades > 0 and
+         strategy.closedtrades.entry_id(strategy.closedtrades - 1) == id
+    if s.state == 2 and (inPos or closedMine)
+        filled := true
+        alert(f_json(s, "eseguito"), alert.freq_once_per_bar_close)
+        if inPos
+            s.state   := 3
+            s.qtyInit := math.abs(strategy.position_size)
+            s.beDone  := false
+        else
+            s.state := 0
+    else if s.state == 3
+        if not inPos
+            s.state := 0
+        else if beAfterTp1 and not s.beDone and math.abs(strategy.position_size) < s.qtyInit
+            strategy.exit(id + " TP2", id, limit = f_px(s.dir, s.tp2), stop = strategy.position_avg_price,
+                 comment_profit = "TP2", comment_loss = "BE")
+            s.beDone := true
+    filled
+
+// ═══════════════════════════════ LOGICA PRINCIPALE ═══════════════════════════
+float ph = ta.pivothigh(high, pivLen, pivLen)
+float pl = ta.pivotlow(low, pivLen, pivLen)
+bool newSwingHigh = false
+bool newSwingLow  = false
+if not na(ph)
+    newSwingHigh := f_addSwing(1, ph, bar_index - pivLen)
+if not na(pl)
+    newSwingLow := f_addSwing(-1, pl, bar_index - pivLen)
+
+// Estremi delle barre successive al pivot appena confermato (inizio gamba destra).
+float hhAfter = ta.highest(high, pivLen)
+int   hhAgo   = -ta.highestbars(high, pivLen)
+float llAfter = ta.lowest(low, pivLen)
+int   llAgo   = -ta.lowestbars(low, pivLen)
+
+var Setup L = Setup.new(dir = 1)
+var Setup S = Setup.new(dir = -1)
+
+var int tradesToday = 0
+if newDay
+    tradesToday := 0
+
+// 1) fill e gestione posizioni aperte
+bool closedNew = strategy.closedtrades > strategy.closedtrades[1]
+if L.checkFill(closedNew)
+    tradesToday += 1
+if S.checkFill(closedNew)
+    tradesToday += 1
+
+// 2) nuove V-Formation
+if newSwingLow and L.state != 3
+    [okL, aL, bL, cL, dL, eL, dBarL, eBarL] = f_pattern(1)
+    if okL and (sweepMode == "Off" or sweptLow[pivLen])
+        L.arm(aL, bL, cL, dL, eL, dBarL, eBarL, hhAfter, bar_index - hhAgo)
+if newSwingHigh and S.state != 3
+    [okS, aS, bS, cS, dS, eS, dBarS, eBarS] = f_pattern(-1)
+    if okS and (sweepMode == "Off" or sweptHigh[pivLen])
+        S.arm(aS, bS, cS, dS, eS, dBarS, eBarS, -llAfter, bar_index - llAgo)
+
+// 3) avanzamento dei setup e gestione ordini
+bool flat   = strategy.position_size == 0
+bool baseOK = inSess and flat and tradesToday < maxTradesDay
+L.step(high, low, baseOK and (biasMode == "Off" or bias == 1))
+S.step(-low, -high, baseOK and (biasMode == "Off" or bias == -1))
+
+// 4) chiusura a fine sessione (opzionale)
+if closeEOS and inSessRaw[1] and not inSessRaw and not flat
+    strategy.close_all(comment = "Fine sessione")
+
+// ═══════════════════════════════ GRAFICA ═════════════════════════════════════
+bgcolor(showSessBg and useSess and inSessRaw ? color.new(color.blue, 94) : na, title = "Sessione operativa")
+plot(showLevels ? asiaHi : na, "Asia high", color = color.new(color.orange, 20), style = plot.style_linebr)
+plot(showLevels ? asiaLo : na, "Asia low", color = color.new(color.orange, 20), style = plot.style_linebr)
+plot(showLevels ? pdh : na, "PDH", color = color.new(color.purple, 20), style = plot.style_linebr)
+plot(showLevels ? pdl : na, "PDL", color = color.new(color.purple, 20), style = plot.style_linebr)
+
+f_stateTxt(int st) =>
+    st == 1 ? "V in formazione" : st == 2 ? "ordine limite" : st == 3 ? "in posizione" : "-"
+
+var table panel = table.new(position.top_right, 2, 4, bgcolor = color.new(color.black, 25), border_width = 1)
+if showPanel and barstate.islast
+    string biasTxt = biasMode == "Off" ? "off" : bias == 1 ? "LONG" : bias == -1 ? "SHORT" : "neutro"
+    color  biasCol = bias == 1 ? color.lime : bias == -1 ? color.red : color.gray
+    panel.cell(0, 0, "Bias " + htf, text_color = color.white, text_size = size.small)
+    panel.cell(1, 0, biasTxt, text_color = biasCol, text_size = size.small)
+    panel.cell(0, 1, "Setup long", text_color = color.white, text_size = size.small)
+    panel.cell(1, 1, f_stateTxt(L.state), text_color = color.white, text_size = size.small)
+    panel.cell(0, 2, "Setup short", text_color = color.white, text_size = size.small)
+    panel.cell(1, 2, f_stateTxt(S.state), text_color = color.white, text_size = size.small)
+    panel.cell(0, 3, "Trade oggi", text_color = color.white, text_size = size.small)
+    panel.cell(1, 3, str.tostring(tradesToday) + "/" + str.tostring(maxTradesDay), text_color = color.white, text_size = size.small)
