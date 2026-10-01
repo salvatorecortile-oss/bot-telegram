@@ -13,6 +13,12 @@ File: [`v_formation_strategy.pine`](v_formation_strategy.pine) (Pine Script v6).
 1. Apri un grafico (es. EURUSD, M5 o M15).
 2. *Pine Editor* → incolla il contenuto del file `.pine` → **Salva** → **Aggiungi al grafico**.
 3. Apri il pannello **Strategy Tester** per i risultati.
+   - **Leva**: lo script usa un margine dell'1% (leva 1:100). In forex, rischiare l'1% su uno stop di pochi pips
+     richiede posizioni di molte volte il capitale. Con il margine di default di TradingView (100%, senza leva)
+     gli ordini vengono scartati e il report resta vuoto. Se hai già aggiunto lo script prima, controlla in
+     *Impostazioni → Proprietà* che "Margine per posizioni long/short" sia **1%**.
+   - **Nessun trade?** Guarda il pannello in alto a destra: la **diagnostica** conta le V trovate
+     (triangolini grigi sul grafico) e il motivo per cui ognuna è stata scartata (bias, sessione, R:R, rango…).
 4. In *Impostazioni → Proprietà* imposta costi realistici. TradingView non simula lo spread e
    lo **slippage** si applica solo agli ordini market e stop, non ai limite. Il modo più semplice è una
    **commissione "per contratto"** pari a metà spread per ogni esecuzione.

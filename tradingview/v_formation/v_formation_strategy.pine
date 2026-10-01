@@ -11,7 +11,7 @@
 strategy("V-Formation [Backtest]", shorttitle = "V-Formation", overlay = true,
      initial_capital = 100000, default_qty_type = strategy.fixed, default_qty_value = 1,
      pyramiding = 0, commission_type = strategy.commission.percent, commission_value = 0.0,
-     slippage = 1, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500,
+     slippage = 1, margin_long = 1, margin_short = 1, max_lines_count = 500, max_boxes_count = 500, max_labels_count = 500,
      max_bars_back = 1000)
 
 // ═════════════════════════════════════ INPUT ═════════════════════════════════
@@ -69,6 +69,8 @@ bool   showSetups   = input.bool(true, "Disegna V, zona entry, SL e TP", group =
 bool   showLevels   = input.bool(false, "Mostra livelli Asia e giorno precedente", group = G_D)
 bool   showSessBg   = input.bool(true, "Colora la sessione operativa", group = G_D)
 bool   showPanel    = input.bool(true, "Pannello di stato", group = G_D)
+bool   showDiag     = input.bool(true, "Diagnostica (contatori e V scartate)", group = G_D,
+     tooltip = "Conta quante V vengono trovate e perché vengono scartate. Utile per capire quale filtro blocca i trade.")
 
 // ═══════════════════════════════ SERIE DI BASE ═══════════════════════════════
 float atr = ta.atr(atrLen)
@@ -194,6 +196,23 @@ f_qty(float entryD, float slD, int rank) =>
     float q    = dist > 0 ? strategy.convert_to_symbol(cash) / (dist * syminfo.pointvalue) : 0.0
     qtyFloor ? float(math.floor(q)) : q
 
+// ═══════════════════════════════ DIAGNOSTICA ═════════════════════════════════
+const int D_FOUND    = 0   // V valide trovate
+const int D_PLACED   = 1   // ordini limite piazzati
+const int D_FILLED   = 2   // ordini eseguiti
+const int D_BROKEN   = 3   // prezzo oltre l'estremo della V prima dell'entry
+const int D_NORANK   = 4   // gamba destra troppo corta (rango insufficiente)
+const int D_CONTEXT  = 5   // fuori sessione / posizione aperta / limite trade giornalieri
+const int D_BIAS     = 6   // bias contrario
+const int D_RR       = 7   // R:R insufficiente
+const int D_QTY      = 8   // quantità calcolata = 0
+const int D_TIMEOUT  = 9   // ordine limite scaduto senza fill
+const int D_FILTER   = 10  // ordine annullato perché un filtro non era più valido
+var array<int> diag = array.new<int>(11, 0)
+
+f_diag(int i) =>
+    array.set(diag, i, array.get(diag, i) + 1)
+
 // ═══════════════════════════════ STATO DEL SETUP ═════════════════════════════
 // state: 0 = nessuno, 1 = V in formazione (gamba destra non ancora valida),
 //        2 = ordine limite piazzato, 3 = in posizione
@@ -313,7 +332,7 @@ method drawUpdate(Setup s) =>
 
 // Gestisce un setup armato o con ordine pendente. hiD/loD = massimo/minimo
 // della barra in spazio direzionale; allowed = filtri di contesto superati.
-method step(Setup s, float hiD, float loD, bool allowed) =>
+method step(Setup s, float hiD, float loD, bool ctxOK, bool biasOK) =>
     if s.state == 1 or s.state == 2
         if hiD > s.f
             s.f    := hiD
@@ -330,14 +349,21 @@ method step(Setup s, float hiD, float loD, bool allowed) =>
         float rr       = risk > 0 ? (finalTp - s.entry) / risk : 0.0
         float q        = f_qty(s.entry, s.sl, s.rank)
         bool  rankOK   = s.rank >= (minRank == "S" ? 2 : 1)
-        bool  canPlace = allowed and rankOK and risk > 0 and s.tp1 > s.entry and rr >= minRR and q > 0
+        bool  rrOK     = risk > 0 and s.tp1 > s.entry and rr >= minRR
+        bool  canPlace = ctxOK and biasOK and rankOK and rrOK and q > 0
+        bool  broken   = loD < s.e
         bool  expired  = s.state == 1 and ((s.rank == 0 and bar_index - s.eBar > maxRightBars) or bar_index - s.eBar > maxRightBars + pendingMax)
-        bool  dead     = loD < s.e or expired or (s.state == 2 and (bar_index - s.placedBar > pendingMax or not canPlace))
-        if dead
+        bool  timeout  = s.state == 2 and bar_index - s.placedBar > pendingMax
+        bool  filtered = s.state == 2 and not canPlace
+        if broken or expired or timeout or filtered
+            // motivo dello scarto (il primo che si applica)
+            f_diag(broken ? D_BROKEN : timeout ? D_TIMEOUT : filtered ? D_FILTER :
+                 not rankOK ? D_NORANK : not ctxOK ? D_CONTEXT : not biasOK ? D_BIAS : not rrOK ? D_RR : D_QTY)
             s.cancelOrders()
         else
             if s.state == 1 and canPlace
                 s.state     := 2
+                f_diag(D_PLACED)
                 s.placedBar := bar_index
                 s.drawNew()
                 alert(f_json(s, "ordine"), alert.freq_once_per_bar_close)
@@ -364,6 +390,7 @@ method checkFill(Setup s, bool closedNew) =>
          strategy.closedtrades.entry_id(strategy.closedtrades - 1) == id
     if s.state == 2 and (inPos or closedMine)
         filled := true
+        f_diag(D_FILLED)
         alert(f_json(s, "eseguito"), alert.freq_once_per_bar_close)
         if inPos
             s.state   := 3
@@ -415,16 +442,22 @@ if newSwingLow and L.state != 3
     [okL, aL, bL, cL, dL, eL, dBarL, eBarL] = f_pattern(1)
     if okL and (sweepMode == "Off" or sweptLow[pivLen])
         L.arm(aL, bL, cL, dL, eL, dBarL, eBarL, hhAfter, bar_index - hhAgo)
+        f_diag(D_FOUND)
+        if showDiag
+            label.new(eBarL, low[pivLen], "", style = label.style_triangleup, color = color.new(color.gray, 30), size = size.tiny, yloc = yloc.belowbar)
 if newSwingHigh and S.state != 3
     [okS, aS, bS, cS, dS, eS, dBarS, eBarS] = f_pattern(-1)
     if okS and (sweepMode == "Off" or sweptHigh[pivLen])
         S.arm(aS, bS, cS, dS, eS, dBarS, eBarS, -llAfter, bar_index - llAgo)
+        f_diag(D_FOUND)
+        if showDiag
+            label.new(eBarS, high[pivLen], "", style = label.style_triangledown, color = color.new(color.gray, 30), size = size.tiny, yloc = yloc.abovebar)
 
 // 3) avanzamento dei setup e gestione ordini
 bool flat   = strategy.position_size == 0
 bool baseOK = inSess and flat and tradesToday < maxTradesDay
-L.step(high, low, baseOK and (biasMode == "Off" or bias == 1))
-S.step(-low, -high, baseOK and (biasMode == "Off" or bias == -1))
+L.step(high, low, baseOK, biasMode == "Off" or bias == 1)
+S.step(-low, -high, baseOK, biasMode == "Off" or bias == -1)
 
 // 4) chiusura a fine sessione (opzionale)
 if closeEOS and inSessRaw[1] and not inSessRaw and not flat
@@ -440,7 +473,7 @@ plot(showLevels ? pdl : na, "PDL", color = color.new(color.purple, 20), style = 
 f_stateTxt(int st) =>
     st == 1 ? "V in formazione" : st == 2 ? "ordine limite" : st == 3 ? "in posizione" : "-"
 
-var table panel = table.new(position.top_right, 2, 4, bgcolor = color.new(color.black, 25), border_width = 1)
+var table panel = table.new(position.top_right, 2, 16, bgcolor = color.new(color.black, 25), border_width = 1)
 if showPanel and barstate.islast
     string biasTxt = biasMode == "Off" ? "off" : bias == 1 ? "LONG" : bias == -1 ? "SHORT" : "neutro"
     color  biasCol = bias == 1 ? color.lime : bias == -1 ? color.red : color.gray
@@ -452,3 +485,11 @@ if showPanel and barstate.islast
     panel.cell(1, 2, f_stateTxt(S.state), text_color = color.white, text_size = size.small)
     panel.cell(0, 3, "Trade oggi", text_color = color.white, text_size = size.small)
     panel.cell(1, 3, str.tostring(tradesToday) + "/" + str.tostring(maxTradesDay), text_color = color.white, text_size = size.small)
+    if showDiag
+        array<string> names = array.from("V trovate", "Ordini piazzati", "Ordini eseguiti",
+             "Scartate: prezzo oltre la V", "Scartate: gamba destra corta", "Scartate: sessione/limiti",
+             "Scartate: bias contrario", "Scartate: R:R basso", "Scartate: quantità 0",
+             "Ordini scaduti", "Ordini annullati da filtro")
+        for i = 0 to 10
+            panel.cell(0, 4 + i, names.get(i), text_color = color.silver, text_size = size.small)
+            panel.cell(1, 4 + i, str.tostring(diag.get(i)), text_color = color.white, text_size = size.small)
