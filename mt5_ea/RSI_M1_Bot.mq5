@@ -1,39 +1,45 @@
 //+------------------------------------------------------------------+
 //|                                                  RSI_M1_Bot.mq5  |
-//|  Expert Advisor per MT5 (test su EURUSD M1). Serve un conto      |
-//|  HEDGING. Lavora in TEMPO REALE sull'RSI della candela in corso: |
-//|  aperture e chiusure avvengono nell'istante del tocco.           |
+//|  Expert Advisor per MT5. Serve un conto HEDGING.                 |
 //|                                                                  |
-//|  - BUY  al tocco dall'alto di 30, 25, 20, 15, 10, 5.             |
-//|  - SELL al tocco dal basso di 70, 75, 80, 85, 90, 95.            |
-//|  - Ogni livello apre UNA sola operazione per ciclo; se l'RSI     |
-//|    attraversa piu' livelli insieme apre un'operazione per        |
-//|    livello. I livelli tornano validi solo a ciclo chiuso.        |
-//|  - Lotti: 0.01, poi +0.01 a ogni nuova operazione del ciclo.     |
-//|  - RSI tocca 50 -> chiude tutto.                                 |
-//|  - Opzione: chiudere in pari le operazioni vecchie quando il     |
-//|    prezzo torna al loro ingresso (l'ultima resta fino al 50).    |
-//|  - Stop per simbolo: se la perdita del ciclo su QUESTO simbolo   |
-//|    arriva a -InpMaxLossMoney chiude tutto su questo simbolo.     |
+//|  - Timeframe di lavoro M15, RSI 14.                              |
+//|  - Filtro trend H1: prezzo sopra EMA 200 H1 -> solo BUY,         |
+//|    sotto -> solo SELL.                                           |
+//|  - BUY  quando una candela M15 CHIUDE con RSI sotto 30, 25, 20   |
+//|    dopo averlo toccato dall'alto (la candela prima era sopra).   |
+//|  - SELL quando una candela M15 CHIUDE con RSI sopra 70, 75, 80   |
+//|    dopo averlo toccato dal basso.                                |
+//|  - L'ordine si apre al primo tick della candela successiva.      |
+//|  - Ogni livello apre UNA sola operazione per ciclo; lotti 0.01,  |
+//|    0.02, 0.03. Le aggiunte si aprono solo se il trend H1 e'      |
+//|    ancora nella direzione del ciclo.                             |
+//|  - RSI tocca 50 (in tempo reale) -> chiude tutto.                |
+//|  - Opzione: chiudere in pari le operazioni vecchie.              |
+//|  - Stop per simbolo sulla perdita del ciclo.                     |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
-#property version   "5.00"
-#property description "RSI 14 in tempo reale: BUY ai tocchi 30-5, SELL ai tocchi 70-95 (ogni 5), lotti +0.01, chiusura al tocco del 50, stop per simbolo."
+#property version   "6.00"
+#property description "RSI 14 M15 + filtro trend EMA 200 H1: BUY a 30/25/20, SELL a 70/75/80 a candela chiusa, lotti +0.01, chiusura al tocco del 50, stop per simbolo."
 
 #include <Trade/Trade.mqh>
 
 input group "RSI"
 input int                InpRsiPeriod  = 14;            // Periodo RSI
 input ENUM_APPLIED_PRICE InpRsiPrice   = PRICE_CLOSE;   // Prezzo RSI
-input string             InpBuyLevels  = "30,25,20,15,10,5";  // Livelli BUY (tocco dall'alto)
-input string             InpSellLevels = "70,75,80,85,90,95"; // Livelli SELL (tocco dal basso)
+input string             InpBuyLevels  = "30,25,20";      // Livelli BUY (tocco dall'alto, conferma a candela chiusa)
+input string             InpSellLevels = "70,75,80";      // Livelli SELL (tocco dal basso, conferma a candela chiusa)
 input double             InpRsiMid     = 50.0;          // Tocco = chiude tutto
-input ENUM_TIMEFRAMES    InpTimeframe  = PERIOD_M1;     // Timeframe di lavoro
+input ENUM_TIMEFRAMES    InpTimeframe  = PERIOD_M15;    // Timeframe di lavoro
+
+input group "Filtro trend"
+input bool               InpUseTrendFilter = true;       // Usa il filtro trend
+input ENUM_TIMEFRAMES    InpTrendTimeframe = PERIOD_H1;  // Timeframe del trend
+input int                InpTrendMaPeriod  = 200;        // Periodo EMA del trend
 
 input group "Lotti e stop"
 input double             InpBaseLot      = 0.01;  // Lotto della prima operazione
 input double             InpLotStep      = 0.01;  // Lotto aggiunto a ogni nuova operazione
-input double             InpMaxLossMoney = 30.0;  // Stop su questo simbolo: perdita del ciclo per chiudere tutto (0 = nessuno)
+input double             InpMaxLossMoney = 50.0;  // Stop su questo simbolo: perdita del ciclo per chiudere tutto (0 = nessuno)
 input bool               InpCloseOldAtBE = false; // Chiudi in pari le operazioni vecchie (false = tutte al tocco del 50)
 
 input group "Ordini"
@@ -50,8 +56,10 @@ input int                InpEndHour   = 24;  // Ora fine (1-24, esclusa)
 
 CTrade   trade;
 int      rsiHandle  = INVALID_HANDLE;
+int      maHandle   = INVALID_HANDLE;
+datetime currentBar = 0;
+int      trendDir   = 0;       // +1 rialzista, -1 ribassista, 0 non disponibile
 double   lastRsi    = 0.0;     // RSI in tempo reale (candela in corso)
-double   prevRsi    = -1.0;    // valore al tick precedente, per riconoscere il tocco
 
 double   buyLevels[], sellLevels[];
 
@@ -60,7 +68,7 @@ double   cycleRealized = 0.0;   // risultato delle operazioni gia' chiuse nel ci
 int      cycleOpened   = 0;     // operazioni aperte finora nel ciclo
 int      usedMask      = 0;     // livelli gia' usati nel ciclo (bit = indice livello)
 
-// Livelli toccati ma non ancora aperti (es. spread troppo alto): si riprova ai tick successivi
+// Livelli confermati sulla candela appena chiusa, da aprire su questa candela
 int      pendingMask = 0;
 
 string   gvRealized, gvOpened, gvMask;
@@ -113,6 +121,16 @@ int OnInit()
       return(INIT_FAILED);
      }
 
+   if(InpUseTrendFilter)
+     {
+      maHandle = iMA(_Symbol, InpTrendTimeframe, InpTrendMaPeriod, 0, MODE_EMA, PRICE_CLOSE);
+      if(maHandle == INVALID_HANDLE)
+        {
+         Print("Impossibile creare la media mobile del trend: ", GetLastError());
+         return(INIT_FAILED);
+        }
+     }
+
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpSlippagePoints);
    trade.SetTypeFillingBySymbol(_Symbol);
@@ -147,24 +165,31 @@ void OnDeinit(const int reason)
    EventKillTimer();
    if(rsiHandle != INVALID_HANDLE)
       IndicatorRelease(rsiHandle);
+   if(maHandle != INVALID_HANDLE)
+      IndicatorRelease(maHandle);
    Comment("");
   }
 
 //+------------------------------------------------------------------+
 void OnTick()
   {
+   // Chiusura al tocco del 50 in tempo reale.
    double rsi;
-   if(ReadRsi(rsi))
+   if(ReadRsi(0, rsi))
      {
-      if(prevRsi < 0)
-         prevRsi = rsi;   // primo valore: nessun tocco finche' l'RSI non attraversa un livello
       lastRsi = rsi;
       CheckMidTouch();
-      CheckLevelTouches();
-      prevRsi = lastRsi;
      }
 
    ManageBasket();
+
+   datetime bar0 = iTime(_Symbol, InpTimeframe, 0);
+   if(bar0 != 0 && bar0 != currentBar)
+     {
+      currentBar = bar0;
+      OnNewBar();
+     }
+
    TryOpenPending();
    UpdatePanel();
   }
@@ -194,35 +219,64 @@ void CheckMidTouch()
   }
 
 //+------------------------------------------------------------------+
-//| Segna i livelli attraversati in questo tick (dall'alto per i BUY,|
-//| dal basso per i SELL) e non ancora usati nel ciclo.              |
+//| Primo tick di una nuova candela: cerca i livelli toccati e       |
+//| confermati dalla candela appena chiusa.                          |
 //+------------------------------------------------------------------+
-void CheckLevelTouches()
+void OnNewBar()
   {
+   pendingMask = 0;
+   UpdateTrend();
+
+   double cur, prev;
+   if(!ReadRsi(1, cur) || !ReadRsi(2, prev))
+      return;
+
    Basket b;
    GetBasket(b);
 
-   // Un nuovo ciclo parte solo negli orari consentiti; un ciclo aperto continua sempre.
+   // Nuovo ciclo: solo negli orari consentiti. Ciclo aperto: aggiunge solo nella sua direzione.
    if(b.count == 0 && !InTradingHours())
       return;
 
-   if(b.count == 0 || b.dir == 1)
+   // BUY: candela chiusa sotto il livello, quella prima sopra (tocco dall'alto + conferma).
+   if((b.count == 0 || b.dir == 1) && TrendAllows(1))
       for(int i = 0; i < ArraySize(buyLevels); i++)
-         if(prevRsi > buyLevels[i] && lastRsi <= buyLevels[i] && (usedMask & (1 << i)) == 0)
+         if(prev > buyLevels[i] && cur <= buyLevels[i] && (usedMask & (1 << i)) == 0)
             pendingMask |= (1 << i);
 
-   if(b.count == 0 || b.dir == -1)
+   // SELL: candela chiusa sopra il livello, quella prima sotto.
+   if((b.count == 0 || b.dir == -1) && TrendAllows(-1))
       for(int i = 0; i < ArraySize(sellLevels); i++)
-         if(prevRsi < sellLevels[i] && lastRsi >= sellLevels[i] && (usedMask & (1 << (i + MAX_LEVELS))) == 0)
+         if(prev < sellLevels[i] && cur >= sellLevels[i] && (usedMask & (1 << (i + MAX_LEVELS))) == 0)
             pendingMask |= (1 << (i + MAX_LEVELS));
+  }
 
-   // Un tocco in sospeso si annulla se l'RSI torna dall'altra parte del livello.
-   for(int i = 0; i < ArraySize(buyLevels); i++)
-      if((pendingMask & (1 << i)) != 0 && lastRsi > buyLevels[i])
-         pendingMask &= ~(1 << i);
-   for(int i = 0; i < ArraySize(sellLevels); i++)
-      if((pendingMask & (1 << (i + MAX_LEVELS))) != 0 && lastRsi < sellLevels[i])
-         pendingMask &= ~(1 << (i + MAX_LEVELS));
+//+------------------------------------------------------------------+
+//| Trend dalla chiusura dell'ultima candela H1 chiusa rispetto alla |
+//| EMA 200 della stessa candela.                                    |
+//+------------------------------------------------------------------+
+void UpdateTrend()
+  {
+   trendDir = 0;
+   if(!InpUseTrendFilter)
+      return;
+   double ma[];
+   if(CopyBuffer(maHandle, 0, 1, 1, ma) != 1)
+      return;
+   double closeH1 = iClose(_Symbol, InpTrendTimeframe, 1);
+   if(closeH1 <= 0)
+      return;
+   if(closeH1 > ma[0])
+      trendDir = 1;
+   else
+      if(closeH1 < ma[0])
+         trendDir = -1;
+  }
+
+//+------------------------------------------------------------------+
+bool TrendAllows(int dir)
+  {
+   return(!InpUseTrendFilter || trendDir == dir);
   }
 
 //+------------------------------------------------------------------+
@@ -295,7 +349,7 @@ void TryOpenPending()
       return;
    double spreadPts = (tick.ask - tick.bid) / _Point;
    if(InpMaxSpreadPoints > 0 && spreadPts > InpMaxSpreadPoints)
-      return;   // riprova ai tick successivi finche' l'RSI resta oltre il livello
+      return;   // riprova ai tick successivi della stessa candela
 
    // Livelli BUY dal piu' alto (30) al piu' basso, SELL dal piu' basso (70) al piu' alto.
    for(int pass = 0; pass < 2; pass++)
@@ -426,14 +480,14 @@ void SaveCycle()
   }
 
 //+------------------------------------------------------------------+
-//| RSI in tempo reale della candela in corso.                       |
+//| RSI della candela indicata (0 = in corso, 1 = ultima chiusa...). |
 //+------------------------------------------------------------------+
-bool ReadRsi(double &value)
+bool ReadRsi(int shift, double &value)
   {
-   if(BarsCalculated(rsiHandle) < InpRsiPeriod + 2)
+   if(BarsCalculated(rsiHandle) < InpRsiPeriod + 3)
       return(false);
    double rsi[];
-   if(CopyBuffer(rsiHandle, 0, 0, 1, rsi) != 1)
+   if(CopyBuffer(rsiHandle, 0, shift, 1, rsi) != 1)
       return(false);
    value = rsi[0];
    return(true);
@@ -498,15 +552,17 @@ void UpdatePanel()
   {
    Basket b;
    GetBasket(b);
+   string trend = !InpUseTrendFilter ? "filtro spento" : (trendDir == 1 ? "RIALZO (solo BUY)" : (trendDir == -1 ? "RIBASSO (solo SELL)" : "n.d."));
    string state = StringFormat("in attesa del tocco di %s (BUY) o %s (SELL)", InpBuyLevels, InpSellLevels);
    if(b.count > 0)
       state = StringFormat("ciclo %s, livelli usati: %s, chiude a RSI %.0f",
                            b.dir == 1 ? "BUY" : "SELL", UsedLevelsText(b.dir), InpRsiMid);
 
-   Comment(StringFormat("RSI M1 Bot  |  %s %s\nRSI(%d) in tempo reale = %.2f\nStato: %s\n"
+   Comment(StringFormat("RSI Bot  |  %s %s\nRSI(%d) in tempo reale = %.2f\nTrend %s: %s\nStato: %s\n"
                         "Posizioni aperte: %d  |  operazioni nel ciclo: %d\n"
                         "Totale ciclo %s: %.2f  (stop -%.2f)",
-                        _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, lastRsi, state,
+                        _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, lastRsi,
+                        EnumToString(InpTrendTimeframe), trend, state,
                         b.count, cycleOpened, _Symbol, cycleRealized + b.floating, InpMaxLossMoney));
   }
 //+------------------------------------------------------------------+
