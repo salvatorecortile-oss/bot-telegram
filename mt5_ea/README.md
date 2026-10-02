@@ -1,33 +1,26 @@
 # RSI M1 Bot (Expert Advisor MT5)
 
-Gira dentro MetaTrader 5 sul grafico a cui lo attacchi (test su EURUSD M1).
-Serve un conto **hedging** (più posizioni aperte sullo stesso simbolo).
+Test su EURUSD M1. Serve un conto **hedging** (più posizioni aperte sullo stesso simbolo).
+Tutti i livelli RSI sono letti sulla **candela chiusa**; chiusure e aperture avvengono sul
+primo tick della candela successiva.
 
 ## Logica
 
-RSI(28) dell'ultima candela chiusa:
-
-| RSI | Direzione |
+| RSI(14) | Cosa fa |
 |---|---|
-| sopra 70 | nessuna nuova operazione (gestisce solo quelle aperte) |
-| tra 50 e 70 | **SELL** |
-| tra 30 e 50 | **BUY** |
-| sotto 30 | nessuna nuova operazione (gestisce solo quelle aperte) |
+| tocca **30** (≤ 30) | apre un ciclo **BUY** da 0.01 |
+| tra 30 e 70 | non apre nuovi cicli (gestisce quello aperto) |
+| tocca **70** (≥ 70) | apre un ciclo **SELL** da 0.01 |
+| tocca **50** | **chiude tutto** il ciclo |
 
-Tutte le decisioni si prendono sul **primo tick di ogni nuova candela**: chiusure e aperture
-avvengono una dopo l'altra nello stesso istante.
-
-1. Apre **0.01**.
-2. Candela chiusa in profitto → chiude e riapre subito 0.01.
-3. Candela chiusa in perdita → tiene aperta e apre subito un'altra operazione con +0.01
-   (0.02, 0.03, 0.04, 0.05). Con più operazioni aperte ne aggiunge una solo se la candela
-   appena chiusa è andata contro. Massimo `InpMaxTrades` (5).
-4. Le operazioni vecchie si chiudono **in pari** quando il prezzo torna al loro ingresso;
+Durante il ciclo:
+1. A ogni candela chiusa contro la direzione apre un'altra operazione con +0.01
+   (0.02, 0.03, 0.04, …), senza limite di numero.
+2. Le operazioni vecchie si chiudono **in pari** quando il prezzo torna al loro ingresso;
    l'ultima resta aperta.
-5. Quando la **somma del ciclo** (chiuse + aperte) arriva a `InpTargetMoney` (+1 €) chiude tutto
-   e riparte da 0.01.
-6. **Stop**: se la somma arriva a `-InpMaxLossMoney` (−20 €) chiude tutto e riparte.
-7. Se l'RSI passa nella zona opposta chiude tutto e apre subito 0.01 nell'altra direzione.
+3. Quando resta solo l'ultima, le mette lo **SL a break even** e non aggiunge più operazioni.
+4. Quando l'RSI tocca **50** chiude tutto.
+5. **Stop**: se la perdita totale del ciclo arriva a `-InpMaxLossMoney` (−20 €) chiude tutto.
 
 ## Installazione
 

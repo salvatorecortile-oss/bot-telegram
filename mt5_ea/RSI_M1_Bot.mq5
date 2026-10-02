@@ -1,46 +1,42 @@
 //+------------------------------------------------------------------+
 //|                                                  RSI_M1_Bot.mq5  |
-//|  Expert Advisor per MT5: si attacca al grafico di QUALSIASI      |
-//|  simbolo (EURUSD, GBPUSD, XAUUSD, ...) e opera sul timeframe     |
-//|  scelto (default M1). Serve un conto HEDGING.                    |
+//|  Expert Advisor per MT5 (test su EURUSD M1). Serve un conto      |
+//|  HEDGING. Tutti i livelli RSI sono letti sulla candela CHIUSA.   |
 //|                                                                  |
-//|  Regole (RSI calcolato sull'ultima candela CHIUSA):              |
-//|  - RSI tra 50 e 70 -> SELL.  RSI tra 30 e 50 -> BUY.             |
-//|  - RSI sopra 70 o sotto 30 -> nessuna nuova operazione, ma le    |
-//|    operazioni aperte continuano a essere gestite.                |
-//|  - Ciclo: apre 0.01. Se alla chiusura della candela e' in        |
-//|    profitto chiude e riparte da 0.01. Se e' in perdita apre      |
-//|    un'altra operazione con lotto +0.01 (0.02, 0.03, ...) a ogni  |
-//|    candela contraria, fino a un massimo di operazioni.           |
-//|  - Con piu' operazioni aperte: quelle vecchie si chiudono in     |
-//|    pari quando il prezzo torna al loro ingresso; l'ultima resta  |
-//|    aperta. Quando la somma del ciclo (chiuse + aperte) arriva    |
-//|    al profitto obiettivo chiude tutto e riparte da 0.01.         |
-//|  - Stop di emergenza: se la somma arriva alla perdita massima    |
-//|    chiude tutto e riparte.                                       |
-//|  - Se l'RSI passa nella zona opposta chiude tutto e apre 0.01    |
-//|    nella nuova direzione.                                        |
+//|  - RSI(14) <= 30 -> apre un ciclo BUY  da 0.01.                  |
+//|  - RSI(14) >= 70 -> apre un ciclo SELL da 0.01.                  |
+//|  - Tra 30 e 70 non apre nuovi cicli.                             |
+//|  - Ciclo in corso: a ogni candela chiusa contro la direzione     |
+//|    apre un'altra operazione con lotto +0.01 (0.02, 0.03, ...),   |
+//|    senza limite di numero.                                       |
+//|  - Le operazioni vecchie si chiudono in pari quando il prezzo    |
+//|    torna al loro ingresso; l'ultima resta aperta. Quando resta   |
+//|    solo l'ultima, le mette lo SL a break even e non aggiunge     |
+//|    piu' operazioni.                                              |
+//|  - Chiude tutto quando l'RSI tocca 50 (BUY: >= 50, SELL: <= 50). |
+//|  - Stop di emergenza: chiude tutto se la perdita totale del      |
+//|    ciclo arriva a -InpMaxLossMoney.                              |
+//|  - Chiusure e aperture avvengono sul primo tick della candela.   |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
-#property version   "2.00"
-#property description "RSI 28: 50-70 SELL, 30-50 BUY. Recupero con lotti crescenti (+0.01), chiusure in pari e chiusura totale a profitto."
+#property version   "3.00"
+#property description "RSI 14: BUY a 30, SELL a 70, lotti +0.01 sulle candele contrarie, chiusure in pari, SL a BE sull'ultima, chiusura a RSI 50, stop -20."
 
 #include <Trade/Trade.mqh>
 
 input group "RSI"
-input int                InpRsiPeriod   = 28;           // Periodo RSI
-input ENUM_APPLIED_PRICE InpRsiPrice    = PRICE_CLOSE;  // Prezzo RSI
-input double             InpRsiUpper    = 70.0;         // Livello alto (sopra = niente nuove operazioni)
-input double             InpRsiMid      = 50.0;         // Livello centrale (sopra = SELL, sotto = BUY)
-input double             InpRsiLower    = 30.0;         // Livello basso (sotto = niente nuove operazioni)
-input ENUM_TIMEFRAMES    InpTimeframe   = PERIOD_M1;    // Timeframe di lavoro
+input int                InpRsiPeriod = 14;           // Periodo RSI
+input ENUM_APPLIED_PRICE InpRsiPrice  = PRICE_CLOSE;  // Prezzo RSI
+input double             InpRsiUpper  = 70.0;         // Tocco = SELL
+input double             InpRsiMid    = 50.0;         // Tocco = chiude tutto
+input double             InpRsiLower  = 30.0;         // Tocco = BUY
+input ENUM_TIMEFRAMES    InpTimeframe = PERIOD_M1;    // Timeframe di lavoro
 
 input group "Lotti e ciclo"
 input double             InpBaseLot        = 0.01;  // Lotto della prima operazione
 input double             InpLotStep        = 0.01;  // Lotto aggiunto a ogni nuova operazione
-input int                InpMaxTrades      = 5;     // Operazioni massime per ciclo
-input double             InpTargetMoney    = 1.0;   // Profitto totale del ciclo per chiudere tutto (valuta del conto)
 input double             InpMaxLossMoney   = 20.0;  // Stop: perdita totale del ciclo per chiudere tutto (0 = nessuno)
+input int                InpBeOffsetPoints = 0;     // SL a BE sull'ultima: points oltre l'ingresso (0 = ingresso esatto)
 
 input group "Ordini"
 input int                InpMaxSpreadPoints      = 0;        // Spread massimo per aprire, in points (0 = nessun filtro)
@@ -49,23 +45,22 @@ input int                InpMaxEntryDelaySeconds = 10;       // Apri solo nei pr
 input ulong              InpMagic                = 26100201; // Magic number
 input string             InpComment              = "RSI M1 Bot";
 
-input group "Orari (ora del server)"
-input int                InpStartHour = 0;   // Ora inizio nuove aperture (0-23)
-input int                InpEndHour   = 24;  // Ora fine nuove aperture (1-24, esclusa)
+input group "Orari nuovi cicli (ora del server)"
+input int                InpStartHour = 0;   // Ora inizio (0-23)
+input int                InpEndHour   = 24;  // Ora fine (1-24, esclusa)
 
 CTrade   trade;
-int      rsiHandle    = INVALID_HANDLE;
-datetime currentBar   = 0;
-double   lastRsi      = 0.0;
-int      zoneDir      = 0;      // +1 BUY, -1 SELL, 0 nessuna nuova apertura
+int      rsiHandle  = INVALID_HANDLE;
+datetime currentBar = 0;
+double   lastRsi    = 0.0;
 
 // Stato del ciclo (salvato nelle variabili globali del terminale)
-double   cycleRealized = 0.0;   // profitto gia' realizzato dalle operazioni chiuse del ciclo
+double   cycleRealized = 0.0;   // risultato delle operazioni gia' chiuse nel ciclo
 int      cycleOpened   = 0;     // operazioni aperte finora nel ciclo
 
 // Apertura da eseguire sulla candela corrente
-int      pendingDir   = 0;
-double   pendingLot   = 0.0;
+int      pendingDir = 0;
+double   pendingLot = 0.0;
 
 string   gvRealized, gvOpened;
 
@@ -80,11 +75,11 @@ struct Basket
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   if(InpRsiPeriod < 2 || InpMaxTrades < 1 || InpBaseLot <= 0 || InpLotStep < 0 ||
+   if(InpRsiPeriod < 2 || InpBaseLot <= 0 || InpLotStep < 0 ||
       !(InpRsiLower < InpRsiMid && InpRsiMid < InpRsiUpper) ||
       InpStartHour < 0 || InpStartHour > 23 || InpEndHour < 1 || InpEndHour > 24)
      {
-      Print("Parametri non validi: controlla RSI (30 < 50 < 70), lotti, operazioni massime e orari.");
+      Print("Parametri non validi: controlla RSI (30 < 50 < 70), lotti e orari.");
       return(INIT_PARAMETERS_INCORRECT);
      }
 
@@ -121,9 +116,9 @@ int OnInit()
      }
 
    EventSetTimer(1);
-   PrintFormat("RSI_M1_Bot avviato su %s %s | RSI %d | lotto %.2f +%.2f | max %d | obiettivo %.2f | stop %.2f",
-               _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, InpBaseLot, InpLotStep,
-               InpMaxTrades, InpTargetMoney, InpMaxLossMoney);
+   PrintFormat("RSI_M1_Bot avviato su %s %s | RSI %d (%.0f/%.0f/%.0f) | lotto %.2f +%.2f | stop %.2f",
+               _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, InpRsiLower, InpRsiMid, InpRsiUpper,
+               InpBaseLot, InpLotStep, InpMaxLossMoney);
    return(INIT_SUCCEEDED);
   }
 
@@ -160,61 +155,59 @@ void OnTimer()
   }
 
 //+------------------------------------------------------------------+
-//| Decisioni prese al primo tick di ogni nuova candela.             |
+//| Decisioni prese al primo tick di ogni nuova candela, con l'RSI   |
+//| della candela appena chiusa.                                     |
 //+------------------------------------------------------------------+
 void OnNewBar()
   {
    pendingDir = 0;
    pendingLot = 0.0;
 
-   zoneDir = GetZone(lastRsi);
-   if(!InTradingHours())
-      zoneDir = 0;
+   if(!ReadRsi(lastRsi))
+      return;
 
    Basket b;
    GetBasket(b);
 
-   // RSI passato nella zona opposta: chiude tutto e riparte nella nuova direzione.
-   if(b.count > 0 && zoneDir != 0 && zoneDir != b.dir)
+   if(b.count > 0)
      {
-      Print("RSI passato nella zona opposta: chiudo tutte le operazioni.");
-      if(!CloseAll())
+      // L'RSI ha toccato 50: chiude tutto il ciclo.
+      bool touchedMid = (b.dir == 1) ? (lastRsi >= InpRsiMid) : (lastRsi <= InpRsiMid);
+      if(touchedMid)
+        {
+         PrintFormat("RSI %.2f ha toccato %.0f: chiudo tutte le operazioni.", lastRsi, InpRsiMid);
+         if(!CloseAll())
+            return;
+         GetBasket(b);   // ciclo chiuso: sotto si valuta un eventuale nuovo ciclo
+        }
+      else
+        {
+         // Resta solo l'ultima, protetta a BE: nessuna nuova operazione.
+         if(IsProtected(b))
+            return;
+         if(LastCandleAgainst(b.dir))
+           {
+            pendingDir = b.dir;
+            pendingLot = InpBaseLot + InpLotStep * cycleOpened;
+           }
          return;
-      GetBasket(b);
+        }
      }
 
-   // Prima operazione del ciclo in profitto alla chiusura della candela: incassa e riparte.
-   if(b.count == 1 && cycleOpened == 1 && b.floating > 0)
-     {
-      Print("Prima operazione in profitto a fine candela: chiudo e riparto da capo.");
-      if(!CloseAll())
-         return;
-      GetBasket(b);
-     }
-
-   if(zoneDir == 0)
-      return;   // fuori zona o fuori orario: solo gestione delle aperte
-
-   if(b.count == 0)
-     {
-      pendingDir = zoneDir;
+   // Nessun ciclo aperto: ne apre uno nuovo solo al tocco di 30 o 70.
+   if(!InTradingHours())
+      return;
+   if(lastRsi <= InpRsiLower)
+      pendingDir = 1;
+   else
+      if(lastRsi >= InpRsiUpper)
+         pendingDir = -1;
+   if(pendingDir != 0)
       pendingLot = InpBaseLot;
-      return;
-     }
-
-   // Ciclo in corso: aggiunge solo se la candela appena chiusa e' andata contro.
-   if(cycleOpened >= InpMaxTrades)
-      return;
-   bool against = (cycleOpened == 1) ? (b.floating <= 0) : LastCandleAgainst(b.dir);
-   if(against)
-     {
-      pendingDir = b.dir;
-      pendingLot = InpBaseLot + InpLotStep * cycleOpened;
-     }
   }
 
 //+------------------------------------------------------------------+
-//| Controlli continui: obiettivo, stop, chiusure in pari.           |
+//| Controlli continui: stop, chiusure in pari, SL a BE sull'ultima. |
 //+------------------------------------------------------------------+
 void ManageBasket()
   {
@@ -228,13 +221,6 @@ void ManageBasket()
      }
 
    double total = cycleRealized + b.floating;
-
-   if(total >= InpTargetMoney)
-     {
-      PrintFormat("Obiettivo raggiunto: totale ciclo %.2f >= %.2f. Chiudo tutto.", total, InpTargetMoney);
-      CloseAll();
-      return;
-     }
    if(InpMaxLossMoney > 0 && total <= -InpMaxLossMoney)
      {
       PrintFormat("STOP di emergenza: totale ciclo %.2f <= -%.2f. Chiudo tutto.", total, InpMaxLossMoney);
@@ -242,31 +228,74 @@ void ManageBasket()
       return;
      }
 
-   if(b.count < 2)
-      return;
-
-   // Chiude in pari le operazioni vecchie quando il prezzo torna al loro ingresso.
    MqlTick tick;
    if(!SymbolInfoTick(_Symbol, tick))
       return;
 
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   // Chiude in pari le operazioni vecchie quando il prezzo torna al loro ingresso.
+   if(b.count >= 2)
      {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket == 0 || ticket == b.newestTicket || !IsMine())
-         continue;
-
-      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-      bool   isBuy     = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
-      bool   atEntry   = isBuy ? (tick.bid >= openPrice) : (tick.ask <= openPrice);
-      if(atEntry)
+      for(int i = PositionsTotal() - 1; i >= 0; i--)
         {
-         double lots = PositionGetDouble(POSITION_VOLUME);
-         if(ClosePosition(ticket))
-            PrintFormat("Chiusa in pari %s %.2f (ingresso %s)", isBuy ? "BUY" : "SELL",
-                        lots, DoubleToString(openPrice, _Digits));
+         ulong ticket = PositionGetTicket(i);
+         if(ticket == 0 || ticket == b.newestTicket || !IsMine())
+            continue;
+
+         double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+         bool   isBuy     = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+         bool   atEntry   = isBuy ? (tick.bid >= openPrice) : (tick.ask <= openPrice);
+         if(atEntry)
+           {
+            double lots = PositionGetDouble(POSITION_VOLUME);
+            if(ClosePosition(ticket))
+               PrintFormat("Chiusa in pari %s %.2f (ingresso %s)", isBuy ? "BUY" : "SELL",
+                           lots, DoubleToString(openPrice, _Digits));
+           }
         }
+      GetBasket(b);
      }
+
+   // Rimasta solo l'ultima dopo le chiusure in pari: SL a break even.
+   if(IsProtected(b))
+      SetBreakEven(b.newestTicket, tick);
+  }
+
+//+------------------------------------------------------------------+
+//| true quando le operazioni vecchie sono state chiuse in pari e    |
+//| resta solo l'ultima.                                             |
+//+------------------------------------------------------------------+
+bool IsProtected(const Basket &b)
+  {
+   return(b.count == 1 && cycleOpened > 1);
+  }
+
+//+------------------------------------------------------------------+
+void SetBreakEven(ulong ticket, const MqlTick &tick)
+  {
+   if(!PositionSelectByTicket(ticket))
+      return;
+
+   bool   isBuy     = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+   double curSl     = PositionGetDouble(POSITION_SL);
+   double curTp     = PositionGetDouble(POSITION_TP);
+   double beSl      = NormalizeDouble(isBuy ? openPrice + InpBeOffsetPoints * _Point
+                                            : openPrice - InpBeOffsetPoints * _Point, _Digits);
+
+   // Gia' protetta?
+   if(curSl > 0 && (isBuy ? curSl >= beSl : curSl <= beSl))
+      return;
+
+   // Il prezzo deve essere oltre lo SL di almeno lo stop level del broker.
+   double minDist = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+   if(isBuy ? (tick.bid - beSl <= minDist) : (beSl - tick.ask <= minDist))
+      return;
+
+   if(trade.PositionModify(ticket, beSl, curTp))
+      PrintFormat("SL a break even sull'ultima operazione #%I64u: %s", ticket, DoubleToString(beSl, _Digits));
+   else
+      PrintFormat("SL a BE fallito su #%I64u: %u %s", ticket,
+                  trade.ResultRetcode(), trade.ResultRetcodeDescription());
   }
 
 //+------------------------------------------------------------------+
@@ -304,9 +333,9 @@ void TryPendingOpen()
      {
       cycleOpened++;
       SaveCycle();
-      PrintFormat("Aperto %s %.2f a %s | operazione %d/%d | RSI=%.2f | spread=%.0f pts",
+      PrintFormat("Aperto %s %.2f a %s | operazione n. %d del ciclo | RSI=%.2f | spread=%.0f pts",
                   pendingDir == 1 ? "BUY" : "SELL", lots, DoubleToString(trade.ResultPrice(), _Digits),
-                  cycleOpened, InpMaxTrades, lastRsi, spreadPts);
+                  cycleOpened, lastRsi, spreadPts);
      }
    else
       PrintFormat("Apertura %s %.2f fallita: %u %s", pendingDir == 1 ? "BUY" : "SELL", lots,
@@ -410,24 +439,17 @@ void SaveCycle()
   }
 
 //+------------------------------------------------------------------+
-//| +1 BUY (RSI tra 30 e 50), -1 SELL (RSI tra 50 e 70), 0 niente.   |
+//| RSI della candela appena chiusa.                                 |
 //+------------------------------------------------------------------+
-int GetZone(double &rsiValue)
+bool ReadRsi(double &rsiValue)
   {
-   rsiValue = 0.0;
    if(BarsCalculated(rsiHandle) < InpRsiPeriod + 2)
-      return(0);
-
+      return(false);
    double rsi[];
    if(CopyBuffer(rsiHandle, 0, 1, 1, rsi) != 1)
-      return(0);
+      return(false);
    rsiValue = rsi[0];
-
-   if(rsiValue > InpRsiMid && rsiValue <= InpRsiUpper)
-      return(-1);   // tra 50 e 70 -> SELL
-   if(rsiValue < InpRsiMid && rsiValue >= InpRsiLower)
-      return(1);    // tra 30 e 50 -> BUY
-   return(0);
+   return(true);
   }
 
 //+------------------------------------------------------------------+
@@ -466,20 +488,17 @@ double NormalizeLots(double lots)
 //+------------------------------------------------------------------+
 void UpdatePanel()
   {
-   string zone = "NESSUNA (fuori 30-70)";
-   if(lastRsi > InpRsiMid && lastRsi <= InpRsiUpper)
-      zone = "SELL";
-   else
-      if(lastRsi < InpRsiMid && lastRsi >= InpRsiLower)
-         zone = "BUY";
-
    Basket b;
    GetBasket(b);
-   Comment(StringFormat("RSI M1 Bot  |  %s %s\nRSI(%d) = %.2f  ->  zona %s\n"
-                        "Posizioni aperte: %d  |  operazioni nel ciclo: %d/%d\n"
-                        "Totale ciclo: %.2f  (obiettivo %.2f, stop -%.2f)",
-                        _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, lastRsi, zone,
-                        b.count, cycleOpened, InpMaxTrades,
-                        cycleRealized + b.floating, InpTargetMoney, InpMaxLossMoney));
+   string state = "in attesa del tocco di 30 (BUY) o 70 (SELL)";
+   if(b.count > 0)
+      state = StringFormat("ciclo %s, chiude a RSI %.0f%s", b.dir == 1 ? "BUY" : "SELL", InpRsiMid,
+                           IsProtected(b) ? " (ultima protetta a BE)" : "");
+
+   Comment(StringFormat("RSI M1 Bot  |  %s %s\nRSI(%d) candela chiusa = %.2f\nStato: %s\n"
+                        "Posizioni aperte: %d  |  operazioni nel ciclo: %d\n"
+                        "Totale ciclo: %.2f  (stop -%.2f)",
+                        _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, lastRsi, state,
+                        b.count, cycleOpened, cycleRealized + b.floating, InpMaxLossMoney));
   }
 //+------------------------------------------------------------------+
