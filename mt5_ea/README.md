@@ -1,29 +1,31 @@
 # RSI M1 Bot (Expert Advisor MT5)
 
-Test su EURUSD M1. Serve un conto **hedging** (più posizioni aperte sullo stesso simbolo).
-Tutti i livelli RSI sono letti sulla **candela chiusa**; chiusure e aperture avvengono sul
-primo tick della candela successiva.
+Funziona su qualsiasi simbolo (test su EURUSD M1). Serve un conto **hedging**.
+L'RSI(14) è letto sulle **candele chiuse**; aperture e chiusure avvengono sul primo tick
+della candela successiva.
 
-## Logica
+## Ingressi
 
-| RSI(14) | Cosa fa |
-|---|---|
-| tocca **30** (≤ 30) | apre un ciclo **BUY** da 0.01 |
-| tra 30 e 70 | non apre nuovi cicli (gestisce quello aperto) |
-| tocca **70** (≥ 70) | apre un ciclo **SELL** da 0.01 |
-| tocca **50** | **chiude tutto** il ciclo |
+| Ciclo | Livelli | Quando apre |
+|---|---|---|
+| BUY | 30, 20, 10, 5 | quando l'RSI scende sotto il livello partendo da sopra |
+| SELL | 70, 80, 90, 95 | quando l'RSI sale sopra il livello partendo da sotto |
 
-Durante il ciclo:
-1. A ogni candela chiusa contro la direzione apre un'altra operazione con +0.01
-   (0.02, 0.03, 0.04, …), senza limite di numero.
-2. Le operazioni vecchie si chiudono **in pari** quando il prezzo torna al loro ingresso;
-   l'ultima resta aperta.
-3. Quando resta solo l'ultima, le mette lo **SL a break even** e non aggiunge più operazioni.
-4. Quando l'RSI tocca **50** chiude tutto.
-5. **Stop**: se la perdita totale del ciclo arriva a `-InpMaxLossMoney` (−20 €) chiude tutto.
+- Ogni livello apre **una sola operazione per ciclo**: se l'RSI balla attorno al livello non riapre.
+- Se in una candela l'RSI attraversa più livelli, apre un'operazione **per ogni livello**.
+- I livelli tornano validi solo quando il ciclo è chiuso del tutto.
+- Lotti: 0.01, poi +0.01 a ogni nuova operazione del ciclo (massimo 0.01+0.02+0.03+0.04).
+
+## Gestione
+
+- L'**ultima** operazione aperta resta aperta fino al tocco del **50**.
+- Le operazioni aperte prima si chiudono **in pari** quando il prezzo torna al loro ingresso.
+- RSI tocca **50** → chiude tutto.
+- **Stop per simbolo**: se la perdita del ciclo su quel simbolo arriva a −20 € chiude
+  le operazioni di quel simbolo. Gli altri grafici non vengono toccati.
 
 ## Installazione
 
 1. In MT5: **File → Apri cartella dati → MQL5 → Experts**, copia `RSI_M1_Bot.mq5`.
 2. Doppio clic sul file per aprirlo in MetaEditor e premi **F7** per compilarlo.
-3. Togli la versione vecchia dal grafico, trascina quella nuova su EURUSD M1 e abilita **Algo Trading**.
+3. Togli la versione vecchia dal grafico, trascina quella nuova sul grafico M1 e abilita **Algo Trading**.

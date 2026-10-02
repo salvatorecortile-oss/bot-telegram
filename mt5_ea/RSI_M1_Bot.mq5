@@ -1,42 +1,40 @@
 //+------------------------------------------------------------------+
 //|                                                  RSI_M1_Bot.mq5  |
 //|  Expert Advisor per MT5 (test su EURUSD M1). Serve un conto      |
-//|  HEDGING. Tutti i livelli RSI sono letti sulla candela CHIUSA.   |
+//|  HEDGING. L'RSI e' letto sulle candele CHIUSE; aperture e        |
+//|  chiusure avvengono sul primo tick della candela successiva.     |
 //|                                                                  |
-//|  - RSI(14) <= 30 -> apre un ciclo BUY  da 0.01.                  |
-//|  - RSI(14) >= 70 -> apre un ciclo SELL da 0.01.                  |
-//|  - Tra 30 e 70 non apre nuovi cicli.                             |
-//|  - Ciclo in corso: a ogni candela chiusa contro la direzione     |
-//|    apre un'altra operazione con lotto +0.01 (0.02, 0.03, ...),   |
-//|    senza limite di numero.                                       |
-//|  - Le operazioni vecchie si chiudono in pari quando il prezzo    |
-//|    torna al loro ingresso; l'ultima resta aperta. Quando resta   |
-//|    solo l'ultima, le mette lo SL a break even e non aggiunge     |
-//|    piu' operazioni.                                              |
-//|  - Chiude tutto quando l'RSI tocca 50 (BUY: >= 50, SELL: <= 50). |
-//|  - Stop di emergenza: chiude tutto se la perdita totale del      |
-//|    ciclo arriva a -InpMaxLossMoney.                              |
-//|  - Chiusure e aperture avvengono sul primo tick della candela.   |
+//|  - BUY  al tocco dall'alto di 30, 20, 10, 5.                     |
+//|  - SELL al tocco dal basso di 70, 80, 90, 95.                    |
+//|  - Ogni livello apre UNA sola operazione per ciclo; se una       |
+//|    candela attraversa piu' livelli apre un'operazione per        |
+//|    livello. I livelli tornano validi solo a ciclo chiuso.        |
+//|  - Lotti: 0.01, poi +0.01 a ogni nuova operazione del ciclo.     |
+//|  - L'ultima operazione aperta resta aperta fino al tocco del 50; |
+//|    quelle aperte prima si chiudono in pari quando il prezzo      |
+//|    torna al loro ingresso.                                       |
+//|  - RSI tocca 50 -> chiude tutto.                                 |
+//|  - Stop per simbolo: se la perdita del ciclo su QUESTO simbolo   |
+//|    arriva a -InpMaxLossMoney chiude tutto su questo simbolo.     |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
-#property version   "3.00"
-#property description "RSI 14: BUY a 30, SELL a 70, lotti +0.01 sulle candele contrarie, chiusure in pari, SL a BE sull'ultima, chiusura a RSI 50, stop -20."
+#property version   "4.00"
+#property description "RSI 14: BUY ai tocchi di 30/20/10/5, SELL ai tocchi di 70/80/90/95, lotti +0.01, chiusure in pari, chiusura a RSI 50, stop per simbolo."
 
 #include <Trade/Trade.mqh>
 
 input group "RSI"
-input int                InpRsiPeriod = 14;           // Periodo RSI
-input ENUM_APPLIED_PRICE InpRsiPrice  = PRICE_CLOSE;  // Prezzo RSI
-input double             InpRsiUpper  = 70.0;         // Tocco = SELL
-input double             InpRsiMid    = 50.0;         // Tocco = chiude tutto
-input double             InpRsiLower  = 30.0;         // Tocco = BUY
-input ENUM_TIMEFRAMES    InpTimeframe = PERIOD_M1;    // Timeframe di lavoro
+input int                InpRsiPeriod  = 14;            // Periodo RSI
+input ENUM_APPLIED_PRICE InpRsiPrice   = PRICE_CLOSE;   // Prezzo RSI
+input string             InpBuyLevels  = "30,20,10,5";  // Livelli BUY (tocco dall'alto)
+input string             InpSellLevels = "70,80,90,95"; // Livelli SELL (tocco dal basso)
+input double             InpRsiMid     = 50.0;          // Tocco = chiude tutto
+input ENUM_TIMEFRAMES    InpTimeframe  = PERIOD_M1;     // Timeframe di lavoro
 
-input group "Lotti e ciclo"
-input double             InpBaseLot        = 0.01;  // Lotto della prima operazione
-input double             InpLotStep        = 0.01;  // Lotto aggiunto a ogni nuova operazione
-input double             InpMaxLossMoney   = 20.0;  // Stop: perdita totale del ciclo per chiudere tutto (0 = nessuno)
-input int                InpBeOffsetPoints = 0;     // SL a BE sull'ultima: points oltre l'ingresso (0 = ingresso esatto)
+input group "Lotti e stop"
+input double             InpBaseLot      = 0.01;  // Lotto della prima operazione
+input double             InpLotStep      = 0.01;  // Lotto aggiunto a ogni nuova operazione
+input double             InpMaxLossMoney = 20.0;  // Stop su questo simbolo: perdita del ciclo per chiudere tutto (0 = nessuno)
 
 input group "Ordini"
 input int                InpMaxSpreadPoints      = 0;        // Spread massimo per aprire, in points (0 = nessun filtro)
@@ -49,20 +47,25 @@ input group "Orari nuovi cicli (ora del server)"
 input int                InpStartHour = 0;   // Ora inizio (0-23)
 input int                InpEndHour   = 24;  // Ora fine (1-24, esclusa)
 
+#define MAX_LEVELS 8
+
 CTrade   trade;
 int      rsiHandle  = INVALID_HANDLE;
 datetime currentBar = 0;
 double   lastRsi    = 0.0;
 
+double   buyLevels[], sellLevels[];
+
 // Stato del ciclo (salvato nelle variabili globali del terminale)
 double   cycleRealized = 0.0;   // risultato delle operazioni gia' chiuse nel ciclo
 int      cycleOpened   = 0;     // operazioni aperte finora nel ciclo
+int      usedMask      = 0;     // livelli gia' usati nel ciclo (bit = indice livello)
 
-// Apertura da eseguire sulla candela corrente
+// Aperture da eseguire sulla candela corrente (una per livello toccato)
 int      pendingDir = 0;
-double   pendingLot = 0.0;
+int      pendingLevels[];
 
-string   gvRealized, gvOpened;
+string   gvRealized, gvOpened, gvMask;
 
 struct Basket
   {
@@ -75,11 +78,27 @@ struct Basket
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   if(!ParseLevels(InpBuyLevels, buyLevels) || !ParseLevels(InpSellLevels, sellLevels))
+     {
+      PrintFormat("Livelli non validi: servono da 1 a %d numeri separati da virgola.", MAX_LEVELS);
+      return(INIT_PARAMETERS_INCORRECT);
+     }
+   for(int i = 0; i < ArraySize(buyLevels); i++)
+      if(buyLevels[i] >= InpRsiMid)
+        {
+         Print("I livelli BUY devono essere sotto il livello centrale.");
+         return(INIT_PARAMETERS_INCORRECT);
+        }
+   for(int i = 0; i < ArraySize(sellLevels); i++)
+      if(sellLevels[i] <= InpRsiMid)
+        {
+         Print("I livelli SELL devono essere sopra il livello centrale.");
+         return(INIT_PARAMETERS_INCORRECT);
+        }
    if(InpRsiPeriod < 2 || InpBaseLot <= 0 || InpLotStep < 0 ||
-      !(InpRsiLower < InpRsiMid && InpRsiMid < InpRsiUpper) ||
       InpStartHour < 0 || InpStartHour > 23 || InpEndHour < 1 || InpEndHour > 24)
      {
-      Print("Parametri non validi: controlla RSI (30 < 50 < 70), lotti e orari.");
+      Print("Parametri non validi: controlla periodo RSI, lotti e orari.");
       return(INIT_PARAMETERS_INCORRECT);
      }
 
@@ -102,6 +121,7 @@ int OnInit()
 
    gvRealized = StringFormat("RSIBOT_%s_%I64u_real", _Symbol, InpMagic);
    gvOpened   = StringFormat("RSIBOT_%s_%I64u_open", _Symbol, InpMagic);
+   gvMask     = StringFormat("RSIBOT_%s_%I64u_mask", _Symbol, InpMagic);
 
    Basket b;
    GetBasket(b);
@@ -111,14 +131,15 @@ int OnInit()
      {
       cycleRealized = GlobalVariableCheck(gvRealized) ? GlobalVariableGet(gvRealized) : 0.0;
       cycleOpened   = GlobalVariableCheck(gvOpened) ? (int)GlobalVariableGet(gvOpened) : b.count;
+      usedMask      = GlobalVariableCheck(gvMask) ? (int)GlobalVariableGet(gvMask) : 0;
       PrintFormat("Ripreso ciclo esistente: %d posizioni aperte, %d operazioni nel ciclo, realizzato %.2f",
                   b.count, cycleOpened, cycleRealized);
      }
 
    EventSetTimer(1);
-   PrintFormat("RSI_M1_Bot avviato su %s %s | RSI %d (%.0f/%.0f/%.0f) | lotto %.2f +%.2f | stop %.2f",
-               _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, InpRsiLower, InpRsiMid, InpRsiUpper,
-               InpBaseLot, InpLotStep, InpMaxLossMoney);
+   PrintFormat("RSI_M1_Bot avviato su %s %s | RSI %d | BUY %s | SELL %s | chiusura %.0f | lotto %.2f +%.2f | stop %.2f",
+               _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, InpBuyLevels, InpSellLevels,
+               InpRsiMid, InpBaseLot, InpLotStep, InpMaxLossMoney);
    return(INIT_SUCCEEDED);
   }
 
@@ -156,58 +177,61 @@ void OnTimer()
 
 //+------------------------------------------------------------------+
 //| Decisioni prese al primo tick di ogni nuova candela, con l'RSI   |
-//| della candela appena chiusa.                                     |
+//| delle due ultime candele chiuse (prima e dopo il tocco).         |
 //+------------------------------------------------------------------+
 void OnNewBar()
   {
    pendingDir = 0;
-   pendingLot = 0.0;
+   ArrayResize(pendingLevels, 0);
 
-   if(!ReadRsi(lastRsi))
+   double prevRsi;
+   if(!ReadRsi(lastRsi, prevRsi))
       return;
 
    Basket b;
    GetBasket(b);
 
+   // L'RSI ha toccato 50: chiude tutto il ciclo.
    if(b.count > 0)
      {
-      // L'RSI ha toccato 50: chiude tutto il ciclo.
       bool touchedMid = (b.dir == 1) ? (lastRsi >= InpRsiMid) : (lastRsi <= InpRsiMid);
       if(touchedMid)
         {
          PrintFormat("RSI %.2f ha toccato %.0f: chiudo tutte le operazioni.", lastRsi, InpRsiMid);
          if(!CloseAll())
             return;
-         GetBasket(b);   // ciclo chiuso: sotto si valuta un eventuale nuovo ciclo
-        }
-      else
-        {
-         // Resta solo l'ultima, protetta a BE: nessuna nuova operazione.
-         if(IsProtected(b))
-            return;
-         if(LastCandleAgainst(b.dir))
-           {
-            pendingDir = b.dir;
-            pendingLot = InpBaseLot + InpLotStep * cycleOpened;
-           }
-         return;
+         GetBasket(b);
         }
      }
 
-   // Nessun ciclo aperto: ne apre uno nuovo solo al tocco di 30 o 70.
-   if(!InTradingHours())
+   // Un nuovo ciclo parte solo negli orari consentiti; un ciclo aperto continua sempre.
+   if(b.count == 0 && !InTradingHours())
       return;
-   if(lastRsi <= InpRsiLower)
-      pendingDir = 1;
-   else
-      if(lastRsi >= InpRsiUpper)
-         pendingDir = -1;
-   if(pendingDir != 0)
-      pendingLot = InpBaseLot;
+
+   // BUY: tocco dall'alto dei livelli 30/20/10/5 non ancora usati.
+   if(b.count == 0 || b.dir == 1)
+      for(int i = 0; i < ArraySize(buyLevels); i++)
+         if(prevRsi > buyLevels[i] && lastRsi <= buyLevels[i] && (usedMask & (1 << i)) == 0)
+            AddPending(1, i);
+
+   // SELL: tocco dal basso dei livelli 70/80/90/95 non ancora usati.
+   if(pendingDir == 0 && (b.count == 0 || b.dir == -1))
+      for(int i = 0; i < ArraySize(sellLevels); i++)
+         if(prevRsi < sellLevels[i] && lastRsi >= sellLevels[i] && (usedMask & (1 << (i + MAX_LEVELS))) == 0)
+            AddPending(-1, i);
   }
 
 //+------------------------------------------------------------------+
-//| Controlli continui: stop, chiusure in pari, SL a BE sull'ultima. |
+void AddPending(int dir, int levelIndex)
+  {
+   pendingDir = dir;
+   int n = ArraySize(pendingLevels);
+   ArrayResize(pendingLevels, n + 1);
+   pendingLevels[n] = levelIndex;
+  }
+
+//+------------------------------------------------------------------+
+//| Controlli continui: stop del simbolo e chiusure in pari.         |
 //+------------------------------------------------------------------+
 void ManageBasket()
   {
@@ -223,81 +247,41 @@ void ManageBasket()
    double total = cycleRealized + b.floating;
    if(InpMaxLossMoney > 0 && total <= -InpMaxLossMoney)
      {
-      PrintFormat("STOP di emergenza: totale ciclo %.2f <= -%.2f. Chiudo tutto.", total, InpMaxLossMoney);
+      PrintFormat("STOP %s: totale ciclo %.2f <= -%.2f. Chiudo tutto su %s.",
+                  _Symbol, total, InpMaxLossMoney, _Symbol);
       CloseAll();
       return;
      }
 
+   if(b.count < 2)
+      return;
+
+   // Le operazioni aperte prima dell'ultima si chiudono in pari al ritorno sul loro ingresso.
    MqlTick tick;
    if(!SymbolInfoTick(_Symbol, tick))
       return;
 
-   // Chiude in pari le operazioni vecchie quando il prezzo torna al loro ingresso.
-   if(b.count >= 2)
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      for(int i = PositionsTotal() - 1; i >= 0; i--)
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || ticket == b.newestTicket || !IsMine())
+         continue;
+
+      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      bool   isBuy     = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
+      bool   atEntry   = isBuy ? (tick.bid >= openPrice) : (tick.ask <= openPrice);
+      if(atEntry)
         {
-         ulong ticket = PositionGetTicket(i);
-         if(ticket == 0 || ticket == b.newestTicket || !IsMine())
-            continue;
-
-         double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-         bool   isBuy     = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
-         bool   atEntry   = isBuy ? (tick.bid >= openPrice) : (tick.ask <= openPrice);
-         if(atEntry)
-           {
-            double lots = PositionGetDouble(POSITION_VOLUME);
-            if(ClosePosition(ticket))
-               PrintFormat("Chiusa in pari %s %.2f (ingresso %s)", isBuy ? "BUY" : "SELL",
-                           lots, DoubleToString(openPrice, _Digits));
-           }
+         double lots = PositionGetDouble(POSITION_VOLUME);
+         if(ClosePosition(ticket))
+            PrintFormat("Chiusa in pari %s %.2f (ingresso %s)", isBuy ? "BUY" : "SELL",
+                        lots, DoubleToString(openPrice, _Digits));
         }
-      GetBasket(b);
      }
-
-   // Rimasta solo l'ultima dopo le chiusure in pari: SL a break even.
-   if(IsProtected(b))
-      SetBreakEven(b.newestTicket, tick);
   }
 
 //+------------------------------------------------------------------+
-//| true quando le operazioni vecchie sono state chiuse in pari e    |
-//| resta solo l'ultima.                                             |
-//+------------------------------------------------------------------+
-bool IsProtected(const Basket &b)
-  {
-   return(b.count == 1 && cycleOpened > 1);
-  }
-
-//+------------------------------------------------------------------+
-void SetBreakEven(ulong ticket, const MqlTick &tick)
-  {
-   if(!PositionSelectByTicket(ticket))
-      return;
-
-   bool   isBuy     = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
-   double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-   double curSl     = PositionGetDouble(POSITION_SL);
-   double curTp     = PositionGetDouble(POSITION_TP);
-   double beSl      = NormalizeDouble(isBuy ? openPrice + InpBeOffsetPoints * _Point
-                                            : openPrice - InpBeOffsetPoints * _Point, _Digits);
-
-   // Gia' protetta?
-   if(curSl > 0 && (isBuy ? curSl >= beSl : curSl <= beSl))
-      return;
-
-   // Il prezzo deve essere oltre lo SL di almeno lo stop level del broker.
-   double minDist = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
-   if(isBuy ? (tick.bid - beSl <= minDist) : (beSl - tick.ask <= minDist))
-      return;
-
-   if(trade.PositionModify(ticket, beSl, curTp))
-      PrintFormat("SL a break even sull'ultima operazione #%I64u: %s", ticket, DoubleToString(beSl, _Digits));
-   else
-      PrintFormat("SL a BE fallito su #%I64u: %u %s", ticket,
-                  trade.ResultRetcode(), trade.ResultRetcodeDescription());
-  }
-
+//| Apre un'operazione per ogni livello toccato in questa candela.   |
 //+------------------------------------------------------------------+
 void TryPendingOpen()
   {
@@ -308,6 +292,7 @@ void TryPendingOpen()
      {
       Print("Apertura saltata: troppo tardi rispetto all'inizio della candela.");
       pendingDir = 0;
+      ArrayResize(pendingLevels, 0);
       return;
      }
 
@@ -315,6 +300,7 @@ void TryPendingOpen()
      {
       Print("Trading automatico disattivato: abilita 'Algo Trading'.");
       pendingDir = 0;
+      ArrayResize(pendingLevels, 0);
       return;
      }
 
@@ -325,23 +311,31 @@ void TryPendingOpen()
    if(InpMaxSpreadPoints > 0 && spreadPts > InpMaxSpreadPoints)
       return;   // riprova ai tick successivi finche' resta tempo
 
-   double lots = NormalizeLots(pendingLot);
-   bool   ok   = (pendingDir == 1) ? trade.Buy(lots, _Symbol, 0.0, 0.0, 0.0, InpComment)
-                                   : trade.Sell(lots, _Symbol, 0.0, 0.0, 0.0, InpComment);
-
-   if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
+   for(int k = 0; k < ArraySize(pendingLevels); k++)
      {
-      cycleOpened++;
-      SaveCycle();
-      PrintFormat("Aperto %s %.2f a %s | operazione n. %d del ciclo | RSI=%.2f | spread=%.0f pts",
-                  pendingDir == 1 ? "BUY" : "SELL", lots, DoubleToString(trade.ResultPrice(), _Digits),
-                  cycleOpened, lastRsi, spreadPts);
+      int    idx   = pendingLevels[k];
+      double level = (pendingDir == 1) ? buyLevels[idx] : sellLevels[idx];
+      int    bit   = (pendingDir == 1) ? idx : idx + MAX_LEVELS;
+      double lots  = NormalizeLots(InpBaseLot + InpLotStep * cycleOpened);
+
+      bool ok = (pendingDir == 1) ? trade.Buy(lots, _Symbol, 0.0, 0.0, 0.0, InpComment)
+                                  : trade.Sell(lots, _Symbol, 0.0, 0.0, 0.0, InpComment);
+      if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
+        {
+         cycleOpened++;
+         usedMask |= (1 << bit);
+         SaveCycle();
+         PrintFormat("Aperto %s %.2f a %s | tocco RSI %.0f (RSI=%.2f) | operazione n. %d del ciclo",
+                     pendingDir == 1 ? "BUY" : "SELL", lots, DoubleToString(trade.ResultPrice(), _Digits),
+                     level, lastRsi, cycleOpened);
+        }
+      else
+         PrintFormat("Apertura %s %.2f al livello %.0f fallita: %u %s", pendingDir == 1 ? "BUY" : "SELL",
+                     lots, level, trade.ResultRetcode(), trade.ResultRetcodeDescription());
      }
-   else
-      PrintFormat("Apertura %s %.2f fallita: %u %s", pendingDir == 1 ? "BUY" : "SELL", lots,
-                  trade.ResultRetcode(), trade.ResultRetcodeDescription());
 
    pendingDir = 0;
+   ArrayResize(pendingLevels, 0);
   }
 
 //+------------------------------------------------------------------+
@@ -428,6 +422,7 @@ void ResetCycle()
   {
    cycleRealized = 0.0;
    cycleOpened   = 0;
+   usedMask      = 0;
    SaveCycle();
   }
 
@@ -436,32 +431,42 @@ void SaveCycle()
   {
    GlobalVariableSet(gvRealized, cycleRealized);
    GlobalVariableSet(gvOpened, cycleOpened);
+   GlobalVariableSet(gvMask, usedMask);
   }
 
 //+------------------------------------------------------------------+
-//| RSI della candela appena chiusa.                                 |
+//| RSI dell'ultima candela chiusa (cur) e di quella prima (prev).   |
 //+------------------------------------------------------------------+
-bool ReadRsi(double &rsiValue)
+bool ReadRsi(double &cur, double &prev)
   {
-   if(BarsCalculated(rsiHandle) < InpRsiPeriod + 2)
+   if(BarsCalculated(rsiHandle) < InpRsiPeriod + 3)
       return(false);
    double rsi[];
-   if(CopyBuffer(rsiHandle, 0, 1, 1, rsi) != 1)
+   ArraySetAsSeries(rsi, true);
+   if(CopyBuffer(rsiHandle, 0, 1, 2, rsi) != 2)
       return(false);
-   rsiValue = rsi[0];
+   cur  = rsi[0];
+   prev = rsi[1];
    return(true);
   }
 
 //+------------------------------------------------------------------+
-//| true se la candela appena chiusa e' andata contro la direzione.  |
-//+------------------------------------------------------------------+
-bool LastCandleAgainst(int dir)
+bool ParseLevels(string text, double &levels[])
   {
-   double o = iOpen(_Symbol, InpTimeframe, 1);
-   double c = iClose(_Symbol, InpTimeframe, 1);
-   if(o == 0 || c == 0)
+   string parts[];
+   int n = StringSplit(text, ',', parts);
+   if(n < 1 || n > MAX_LEVELS)
       return(false);
-   return(dir == 1 ? (c < o) : (c > o));
+   ArrayResize(levels, n);
+   for(int i = 0; i < n; i++)
+     {
+      StringTrimLeft(parts[i]);
+      StringTrimRight(parts[i]);
+      levels[i] = StringToDouble(parts[i]);
+      if(levels[i] <= 0 || levels[i] >= 100)
+         return(false);
+     }
+   return(true);
   }
 
 //+------------------------------------------------------------------+
@@ -486,19 +491,33 @@ double NormalizeLots(double lots)
   }
 
 //+------------------------------------------------------------------+
+string UsedLevelsText(int dir)
+  {
+   string text = "";
+   int    n    = (dir == 1) ? ArraySize(buyLevels) : ArraySize(sellLevels);
+   for(int i = 0; i < n; i++)
+     {
+      int bit = (dir == 1) ? i : i + MAX_LEVELS;
+      if((usedMask & (1 << bit)) != 0)
+         text += (text == "" ? "" : ", ") + DoubleToString(dir == 1 ? buyLevels[i] : sellLevels[i], 0);
+     }
+   return(text == "" ? "-" : text);
+  }
+
+//+------------------------------------------------------------------+
 void UpdatePanel()
   {
    Basket b;
    GetBasket(b);
-   string state = "in attesa del tocco di 30 (BUY) o 70 (SELL)";
+   string state = StringFormat("in attesa del tocco di %s (BUY) o %s (SELL)", InpBuyLevels, InpSellLevels);
    if(b.count > 0)
-      state = StringFormat("ciclo %s, chiude a RSI %.0f%s", b.dir == 1 ? "BUY" : "SELL", InpRsiMid,
-                           IsProtected(b) ? " (ultima protetta a BE)" : "");
+      state = StringFormat("ciclo %s, livelli usati: %s, chiude a RSI %.0f",
+                           b.dir == 1 ? "BUY" : "SELL", UsedLevelsText(b.dir), InpRsiMid);
 
    Comment(StringFormat("RSI M1 Bot  |  %s %s\nRSI(%d) candela chiusa = %.2f\nStato: %s\n"
                         "Posizioni aperte: %d  |  operazioni nel ciclo: %d\n"
-                        "Totale ciclo: %.2f  (stop -%.2f)",
+                        "Totale ciclo %s: %.2f  (stop -%.2f)",
                         _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, lastRsi, state,
-                        b.count, cycleOpened, cycleRealized + b.floating, InpMaxLossMoney));
+                        b.count, cycleOpened, _Symbol, cycleRealized + b.floating, InpMaxLossMoney));
   }
 //+------------------------------------------------------------------+
