@@ -13,10 +13,13 @@ A ogni nuova candela (ogni minuto su M1) guarda l'RSI(28) dell'ultima candela ch
 | tra 30 e 50 | **SELL** |
 | sotto 30 | niente |
 
-- Apre al primo tick della candela (entro `InpMaxEntryDelaySeconds` secondi).
-- Chiude `InpCloseSecondsBeforeEnd` secondi prima della fine della stessa candela.
-- Il minuto dopo riapre, sempre, finché l'RSI resta nella zona. Quando l'RSI passa
-  dall'altra parte del 50, cambia direzione.
+- Tutto avviene sul **primo tick della nuova candela**: chiude la posizione precedente
+  e subito dopo apre la nuova, allo stesso prezzo di mercato.
+- Se la direzione resta la stessa e `InpKeepSameDirection = true` (default) la posizione
+  resta aperta: è come chiudere e riaprire allo stesso prezzo, ma senza pagare di nuovo lo spread.
+  Con `false` chiude e riapre a ogni candela.
+- Quando l'RSI passa dall'altra parte del 50 chiude e apre subito nella direzione opposta.
+  Se l'RSI esce sopra 70 o sotto 30 chiude e resta fuori.
 
 Tutti i valori si cambiano dagli input: periodo RSI, livelli 70/50/30, timeframe,
 lotto, SL/TP, spread massimo, orari.
