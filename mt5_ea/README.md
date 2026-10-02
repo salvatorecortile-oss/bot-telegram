@@ -5,20 +5,24 @@ Timeframe di lavoro **M15** (`InpTimeframe`: il bot usa questo input, non il tim
 
 ## Ingressi
 
-- **Filtro trend H1:** se la chiusura dell'ultima candela H1 è sopra la EMA 200 H1 fa **solo BUY**,
-  se è sotto fa **solo SELL** (`InpUseTrendFilter`).
-- **BUY** ai livelli RSI **30, 25, 20**; **SELL** ai livelli **70, 75, 80**.
-- Il tocco è confermato a **candela M15 chiusa**: la candela deve chiudere con l'RSI ancora oltre il
-  livello (la candela prima era dall'altra parte). L'ordine si apre al primo tick della candela successiva.
-- Ogni livello apre **una sola operazione per ciclo**; lotti **0.01, 0.02, 0.03**.
-- Le aggiunte (25/20, 75/80) si aprono solo se il trend H1 è ancora nella direzione del ciclo.
+- **Filtro trend H1:** chiusura dell'ultima candela H1 sopra la EMA 200 → **solo BUY**, sotto → **solo SELL**.
+- **BUY** ai livelli RSI **30, 25, 20**; **SELL** ai livelli **70, 75, 80**, confermati a candela M15 chiusa.
+- Ogni livello apre una sola operazione per ciclo; lotti 1x, 2x, 3x.
 
-## Chiusure
+## Novità della versione 7 (di base spente: con i valori di default si comporta come la v6)
 
-- RSI tocca **50** (in tempo reale) → chiude **tutto**.
-- `InpCloseOldAtBE = true`: le operazioni vecchie si chiudono in pari al ritorno sul loro ingresso.
-- **Stop per simbolo** (`InpMaxLossMoney`, 50): chiude tutto il ciclo di quel simbolo se la perdita
-  arriva a −50. Nel tester mettilo a 0 per vedere il drawdown reale della strategia.
+| Input | Cosa fa | Valore da provare |
+|---|---|---|
+| `InpBuyExitRsi` | i BUY si chiudono quando l'RSI sale a questo livello | 60–70 |
+| `InpSellExitRsi` | i SELL si chiudono quando l'RSI scende a questo livello | 40–30 |
+| `InpUseAtrStop` | stop loss comune a tutto il ciclo, a ATR × moltiplicatore dal primo ingresso, messo sugli ordini | true |
+| `InpAtrMultiplier` | distanza dello stop in ATR | 3 |
+| `InpRiskPercent` | il lotto viene calcolato per rischiare questa % del capitale se tutti i livelli si aprono e lo stop viene colpito (richiede lo stop ATR) | 1 |
+
+Con il rischio in %, se il capitale è troppo piccolo per rispettarlo anche con il lotto minimo,
+il bot **non apre** il ciclo e lo scrive nel Diario.
+
+`InpMaxLossMoney` (stop in denaro per simbolo) resta disponibile; con lo stop ATR puoi metterlo a 0.
 
 ## Installazione
 

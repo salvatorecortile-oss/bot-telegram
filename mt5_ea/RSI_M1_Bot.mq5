@@ -9,17 +9,16 @@
 //|    dopo averlo toccato dall'alto (la candela prima era sopra).   |
 //|  - SELL quando una candela M15 CHIUDE con RSI sopra 70, 75, 80   |
 //|    dopo averlo toccato dal basso.                                |
-//|  - L'ordine si apre al primo tick della candela successiva.      |
-//|  - Ogni livello apre UNA sola operazione per ciclo; lotti 0.01,  |
-//|    0.02, 0.03. Le aggiunte si aprono solo se il trend H1 e'      |
-//|    ancora nella direzione del ciclo.                             |
-//|  - RSI tocca 50 (in tempo reale) -> chiude tutto.                |
-//|  - Opzione: chiudere in pari le operazioni vecchie.              |
-//|  - Stop per simbolo sulla perdita del ciclo.                     |
+//|  - Ogni livello apre UNA sola operazione per ciclo; lotti 1x,    |
+//|    2x, 3x. Le aggiunte si aprono solo se il trend e' confermato. |
+//|  - Uscita: BUY chiusi al tocco di InpBuyExitRsi, SELL al tocco   |
+//|    di InpSellExitRsi (in tempo reale).                           |
+//|  - Opzioni: stop ATR comune a tutto il ciclo, lotto calcolato    |
+//|    in % del capitale, stop in denaro per simbolo.                |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
-#property version   "6.00"
-#property description "RSI 14 M15 + filtro trend EMA 200 H1: BUY a 30/25/20, SELL a 70/75/80 a candela chiusa, lotti +0.01, chiusura al tocco del 50, stop per simbolo."
+#property version   "7.00"
+#property description "RSI 14 M15 + trend EMA 200 H1. Uscite BUY/SELL separate, stop ATR, lotto in % del capitale."
 
 #include <Trade/Trade.mqh>
 
@@ -28,7 +27,8 @@ input int                InpRsiPeriod  = 14;            // Periodo RSI
 input ENUM_APPLIED_PRICE InpRsiPrice   = PRICE_CLOSE;   // Prezzo RSI
 input string             InpBuyLevels  = "30,25,20";      // Livelli BUY (tocco dall'alto, conferma a candela chiusa)
 input string             InpSellLevels = "70,75,80";      // Livelli SELL (tocco dal basso, conferma a candela chiusa)
-input double             InpRsiMid     = 50.0;          // Tocco = chiude tutto
+input double             InpBuyExitRsi  = 50.0;         // Uscita BUY: chiude tutto quando l'RSI sale a questo livello
+input double             InpSellExitRsi = 50.0;         // Uscita SELL: chiude tutto quando l'RSI scende a questo livello
 input ENUM_TIMEFRAMES    InpTimeframe  = PERIOD_M15;    // Timeframe di lavoro
 
 input group "Filtro trend"
@@ -37,10 +37,16 @@ input ENUM_TIMEFRAMES    InpTrendTimeframe = PERIOD_H1;  // Timeframe del trend
 input int                InpTrendMaPeriod  = 200;        // Periodo EMA del trend
 
 input group "Lotti e stop"
-input double             InpBaseLot      = 0.01;  // Lotto della prima operazione
-input double             InpLotStep      = 0.01;  // Lotto aggiunto a ogni nuova operazione
+input double             InpBaseLot      = 0.01;  // Lotto della prima operazione (se rischio % = 0)
+input double             InpLotStep      = 0.01;  // Lotto aggiunto a ogni nuova operazione (se rischio % = 0)
+input double             InpRiskPercent  = 0.0;   // Rischio del ciclo in % del capitale (0 = lotti fissi; richiede stop ATR)
 input double             InpMaxLossMoney = 50.0;  // Stop su questo simbolo: perdita del ciclo per chiudere tutto (0 = nessuno)
 input bool               InpCloseOldAtBE = false; // Chiudi in pari le operazioni vecchie (false = tutte al tocco del 50)
+
+input group "Stop ATR"
+input bool               InpUseAtrStop      = false; // Stop loss basato sull'ATR, comune a tutto il ciclo
+input int                InpAtrPeriod       = 14;    // Periodo ATR (sul timeframe di lavoro)
+input double             InpAtrMultiplier   = 3.0;   // Distanza dello stop = ATR x moltiplicatore dal primo ingresso
 
 input group "Ordini"
 input int                InpMaxSpreadPoints      = 0;        // Spread massimo per aprire, in points (0 = nessun filtro)
@@ -57,6 +63,7 @@ input int                InpEndHour   = 24;  // Ora fine (1-24, esclusa)
 CTrade   trade;
 int      rsiHandle  = INVALID_HANDLE;
 int      maHandle   = INVALID_HANDLE;
+int      atrHandle  = INVALID_HANDLE;
 datetime currentBar = 0;
 int      trendDir   = 0;       // +1 rialzista, -1 ribassista, 0 non disponibile
 double   lastRsi    = 0.0;     // RSI in tempo reale (candela in corso)
@@ -67,11 +74,13 @@ double   buyLevels[], sellLevels[];
 double   cycleRealized = 0.0;   // risultato delle operazioni gia' chiuse nel ciclo
 int      cycleOpened   = 0;     // operazioni aperte finora nel ciclo
 int      usedMask      = 0;     // livelli gia' usati nel ciclo (bit = indice livello)
+double   cycleStop     = 0.0;   // prezzo dello stop ATR del ciclo (0 = nessuno)
+double   cycleUnitLot  = 0.0;   // lotto unitario del ciclo in modalita' rischio %
 
 // Livelli confermati sulla candela appena chiusa, da aprire su questa candela
 int      pendingMask = 0;
 
-string   gvRealized, gvOpened, gvMask;
+string   gvRealized, gvOpened, gvMask, gvStop, gvUnit;
 
 struct Basket
   {
@@ -90,18 +99,24 @@ int OnInit()
       return(INIT_PARAMETERS_INCORRECT);
      }
    for(int i = 0; i < ArraySize(buyLevels); i++)
-      if(buyLevels[i] >= InpRsiMid)
+      if(buyLevels[i] >= InpBuyExitRsi)
         {
-         Print("I livelli BUY devono essere sotto il livello centrale.");
+         Print("I livelli BUY devono essere sotto il livello di uscita BUY.");
          return(INIT_PARAMETERS_INCORRECT);
         }
    for(int i = 0; i < ArraySize(sellLevels); i++)
-      if(sellLevels[i] <= InpRsiMid)
+      if(sellLevels[i] <= InpSellExitRsi)
         {
-         Print("I livelli SELL devono essere sopra il livello centrale.");
+         Print("I livelli SELL devono essere sopra il livello di uscita SELL.");
          return(INIT_PARAMETERS_INCORRECT);
         }
-   if(InpRsiPeriod < 2 || InpBaseLot <= 0 || InpLotStep < 0 ||
+   if(InpRiskPercent > 0 && !InpUseAtrStop)
+     {
+      Print("Il lotto in % del capitale richiede lo stop ATR (InpUseAtrStop = true).");
+      return(INIT_PARAMETERS_INCORRECT);
+     }
+   if(InpRsiPeriod < 2 || InpBaseLot <= 0 || InpLotStep < 0 || InpRiskPercent < 0 ||
+      (InpUseAtrStop && (InpAtrPeriod < 1 || InpAtrMultiplier <= 0)) ||
       InpStartHour < 0 || InpStartHour > 23 || InpEndHour < 1 || InpEndHour > 24)
      {
       Print("Parametri non validi: controlla periodo RSI, lotti e orari.");
@@ -131,6 +146,16 @@ int OnInit()
         }
      }
 
+   if(InpUseAtrStop)
+     {
+      atrHandle = iATR(_Symbol, InpTimeframe, InpAtrPeriod);
+      if(atrHandle == INVALID_HANDLE)
+        {
+         Print("Impossibile creare l'ATR: ", GetLastError());
+         return(INIT_FAILED);
+        }
+     }
+
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpSlippagePoints);
    trade.SetTypeFillingBySymbol(_Symbol);
@@ -138,6 +163,8 @@ int OnInit()
    gvRealized = StringFormat("RSIBOT_%s_%I64u_real", _Symbol, InpMagic);
    gvOpened   = StringFormat("RSIBOT_%s_%I64u_open", _Symbol, InpMagic);
    gvMask     = StringFormat("RSIBOT_%s_%I64u_mask", _Symbol, InpMagic);
+   gvStop     = StringFormat("RSIBOT_%s_%I64u_stop", _Symbol, InpMagic);
+   gvUnit     = StringFormat("RSIBOT_%s_%I64u_unit", _Symbol, InpMagic);
 
    Basket b;
    GetBasket(b);
@@ -148,14 +175,17 @@ int OnInit()
       cycleRealized = GlobalVariableCheck(gvRealized) ? GlobalVariableGet(gvRealized) : 0.0;
       cycleOpened   = GlobalVariableCheck(gvOpened) ? (int)GlobalVariableGet(gvOpened) : b.count;
       usedMask      = GlobalVariableCheck(gvMask) ? (int)GlobalVariableGet(gvMask) : 0;
+      cycleStop     = GlobalVariableCheck(gvStop) ? GlobalVariableGet(gvStop) : 0.0;
+      cycleUnitLot  = GlobalVariableCheck(gvUnit) ? GlobalVariableGet(gvUnit) : 0.0;
       PrintFormat("Ripreso ciclo esistente: %d posizioni aperte, %d operazioni nel ciclo, realizzato %.2f",
                   b.count, cycleOpened, cycleRealized);
      }
 
    EventSetTimer(1);
-   PrintFormat("RSI_M1_Bot avviato su %s %s | RSI %d | BUY %s | SELL %s | chiusura %.0f | lotto %.2f +%.2f | stop %.2f",
-               _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, InpBuyLevels, InpSellLevels,
-               InpRsiMid, InpBaseLot, InpLotStep, InpMaxLossMoney);
+   PrintFormat("RSI_M1_Bot avviato su %s %s | RSI %d | BUY %s esce a %.0f | SELL %s esce a %.0f | stop ATR %s x%.1f | rischio %.2f%% | stop denaro %.2f",
+               _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, InpBuyLevels, InpBuyExitRsi,
+               InpSellLevels, InpSellExitRsi, InpUseAtrStop ? "si" : "no", InpAtrMultiplier,
+               InpRiskPercent, InpMaxLossMoney);
    return(INIT_SUCCEEDED);
   }
 
@@ -167,6 +197,8 @@ void OnDeinit(const int reason)
       IndicatorRelease(rsiHandle);
    if(maHandle != INVALID_HANDLE)
       IndicatorRelease(maHandle);
+   if(atrHandle != INVALID_HANDLE)
+      IndicatorRelease(atrHandle);
    Comment("");
   }
 
@@ -210,10 +242,11 @@ void CheckMidTouch()
    GetBasket(b);
    if(b.count == 0)
       return;
-   bool touchedMid = (b.dir == 1) ? (lastRsi >= InpRsiMid) : (lastRsi <= InpRsiMid);
+   double exitLevel  = (b.dir == 1) ? InpBuyExitRsi : InpSellExitRsi;
+   bool   touchedMid = (b.dir == 1) ? (lastRsi >= exitLevel) : (lastRsi <= exitLevel);
    if(touchedMid)
      {
-      PrintFormat("RSI %.2f ha toccato %.0f: chiudo tutte le operazioni.", lastRsi, InpRsiMid);
+      PrintFormat("RSI %.2f ha toccato %.0f: chiudo tutte le operazioni.", lastRsi, exitLevel);
       CloseAll();
      }
   }
@@ -364,9 +397,22 @@ void TryOpenPending()
          pendingMask &= ~(1 << bit);
 
          double level = (dir == 1) ? buyLevels[i] : sellLevels[i];
-         double lots  = NormalizeLots(InpBaseLot + InpLotStep * cycleOpened);
-         bool   ok    = (dir == 1) ? trade.Buy(lots, _Symbol, 0.0, 0.0, 0.0, InpComment)
-                                   : trade.Sell(lots, _Symbol, 0.0, 0.0, 0.0, InpComment);
+
+         // Primo ingresso del ciclo: fissa stop ATR e lotto unitario per tutto il ciclo.
+         if(cycleOpened == 0 && !PrepareCycle(dir, tick))
+           {
+            pendingMask = 0;
+            return;
+           }
+
+         double lots = NextLot();
+         if(lots <= 0)
+           {
+            pendingMask = 0;
+            return;
+           }
+         bool ok = (dir == 1) ? trade.Buy(lots, _Symbol, 0.0, cycleStop, 0.0, InpComment)
+                              : trade.Sell(lots, _Symbol, 0.0, cycleStop, 0.0, InpComment);
          if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
            {
             cycleOpened++;
@@ -381,6 +427,69 @@ void TryOpenPending()
                         lots, level, trade.ResultRetcode(), trade.ResultRetcodeDescription());
         }
      }
+  }
+
+//+------------------------------------------------------------------+
+//| Inizio ciclo: calcola il prezzo dello stop ATR e, in modalita'   |
+//| rischio %, il lotto unitario. false = non aprire il ciclo.       |
+//+------------------------------------------------------------------+
+bool PrepareCycle(int dir, const MqlTick &tick)
+  {
+   cycleStop    = 0.0;
+   cycleUnitLot = 0.0;
+   if(!InpUseAtrStop)
+      return(true);
+
+   double atr[];
+   if(CopyBuffer(atrHandle, 0, 1, 1, atr) != 1 || atr[0] <= 0)
+     {
+      Print("ATR non disponibile: ciclo non aperto.");
+      return(false);
+     }
+   double entry    = (dir == 1) ? tick.ask : tick.bid;
+   double distance = atr[0] * InpAtrMultiplier;
+   cycleStop = NormalizeDouble(dir == 1 ? entry - distance : entry + distance, _Digits);
+
+   if(InpRiskPercent > 0)
+     {
+      // Perdita di 1 lotto se il prezzo va dall'ingresso allo stop.
+      double lossPerLot = 0.0;
+      ENUM_ORDER_TYPE type = (dir == 1) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      if(!OrderCalcProfit(type, _Symbol, 1.0, entry, cycleStop, lossPerLot) || lossPerLot >= 0)
+        {
+         Print("Impossibile calcolare il valore dello stop: ciclo non aperto.");
+         return(false);
+        }
+      // Caso peggiore: tutti i livelli aperti (1x + 2x + 3x ...) con lo stop colpito.
+      int    n         = (dir == 1) ? ArraySize(buyLevels) : ArraySize(sellLevels);
+      double units     = n * (n + 1) / 2.0;
+      double riskMoney = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercent / 100.0;
+      double unit      = riskMoney / (units * MathAbs(lossPerLot));
+      double minLot    = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+      double stepLot   = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+      if(stepLot > 0)
+         unit = MathFloor(unit / stepLot + 1e-9) * stepLot;
+      if(unit < minLot)
+        {
+         PrintFormat("Capitale troppo piccolo per rischiare il %.2f%% con questo stop (servirebbe %.3f lotti, minimo %.2f): ciclo non aperto.",
+                     InpRiskPercent, unit, minLot);
+         cycleStop = 0.0;
+         return(false);
+        }
+      cycleUnitLot = unit;
+     }
+   SaveCycle();
+   return(true);
+  }
+
+//+------------------------------------------------------------------+
+//| Lotto della prossima operazione del ciclo.                       |
+//+------------------------------------------------------------------+
+double NextLot()
+  {
+   if(InpRiskPercent > 0)
+      return(cycleUnitLot > 0 ? NormalizeLots(cycleUnitLot * (cycleOpened + 1)) : 0.0);
+   return(NormalizeLots(InpBaseLot + InpLotStep * cycleOpened));
   }
 
 //+------------------------------------------------------------------+
@@ -468,6 +577,8 @@ void ResetCycle()
    cycleRealized = 0.0;
    cycleOpened   = 0;
    usedMask      = 0;
+   cycleStop     = 0.0;
+   cycleUnitLot  = 0.0;
    SaveCycle();
   }
 
@@ -477,6 +588,8 @@ void SaveCycle()
    GlobalVariableSet(gvRealized, cycleRealized);
    GlobalVariableSet(gvOpened, cycleOpened);
    GlobalVariableSet(gvMask, usedMask);
+   GlobalVariableSet(gvStop, cycleStop);
+   GlobalVariableSet(gvUnit, cycleUnitLot);
   }
 
 //+------------------------------------------------------------------+
@@ -555,8 +668,10 @@ void UpdatePanel()
    string trend = !InpUseTrendFilter ? "filtro spento" : (trendDir == 1 ? "RIALZO (solo BUY)" : (trendDir == -1 ? "RIBASSO (solo SELL)" : "n.d."));
    string state = StringFormat("in attesa del tocco di %s (BUY) o %s (SELL)", InpBuyLevels, InpSellLevels);
    if(b.count > 0)
-      state = StringFormat("ciclo %s, livelli usati: %s, chiude a RSI %.0f",
-                           b.dir == 1 ? "BUY" : "SELL", UsedLevelsText(b.dir), InpRsiMid);
+      state = StringFormat("ciclo %s, livelli usati: %s, chiude a RSI %.0f%s",
+                           b.dir == 1 ? "BUY" : "SELL", UsedLevelsText(b.dir),
+                           b.dir == 1 ? InpBuyExitRsi : InpSellExitRsi,
+                           cycleStop > 0 ? ", stop ATR " + DoubleToString(cycleStop, _Digits) : "");
 
    Comment(StringFormat("RSI Bot  |  %s %s\nRSI(%d) in tempo reale = %.2f\nTrend %s: %s\nStato: %s\n"
                         "Posizioni aperte: %d  |  operazioni nel ciclo: %d\n"
