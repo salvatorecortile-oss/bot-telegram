@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//|                                             RSI_M1_Reversal.mq5  |
+//|                                                  RSI_M1_Bot.mq5  |
 //|  Expert Advisor per MT5: si attacca al grafico di QUALSIASI      |
 //|  simbolo (EURUSD, GBPUSD, XAUUSD, ...) e opera sul timeframe      |
 //|  scelto (default M1).                                            |
@@ -9,14 +9,14 @@
 //|  - RSI tra 50 e 70  -> zona BUY  (si aprono solo BUY).           |
 //|  - RSI tra 30 e 50  -> zona SELL (si aprono solo SELL).          |
 //|  - RSI sopra 70 o sotto 30 -> nessuna operazione.                |
-//|  - Zona BUY  + ultime N candele tutte ROSSE -> BUY  di inversione.|
-//|  - Zona SELL + ultime N candele tutte VERDI -> SELL di inversione.|
-//|  - L'ordine si apre all'apertura della candela N+1 e si chiude   |
+//|  - A OGNI candela (ogni minuto su M1) apre un trade nella         |
+//|    direzione della zona, senza aspettare altre condizioni.        |
+//|  - L'ordine si apre all'apertura della candela e si chiude        |
 //|    prima della fine della stessa candela.                        |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
 #property version   "1.00"
-#property description "RSI 28 (70/50/30) + inversione dopo N candele dello stesso colore, apertura e chiusura nella stessa candela."
+#property description "RSI 28 (70/50/30): tra 50 e 70 BUY, tra 30 e 50 SELL, un trade a ogni candela aperto e chiuso nella stessa candela."
 
 #include <Trade/Trade.mqh>
 
@@ -29,8 +29,6 @@ input double             InpRsiLower    = 30.0;         // Livello basso (sotto 
 
 input group "Segnale"
 input ENUM_TIMEFRAMES    InpTimeframe          = PERIOD_M1; // Timeframe di lavoro
-input int                InpStreakCandles      = 4;         // Candele consecutive dello stesso colore
-input bool               InpOnlyFirstOfStreak  = true;      // Un solo trade per serie (no rientri se la serie continua)
 
 input group "Ordini"
 input double             InpLots                  = 0.01;     // Lotto
@@ -41,7 +39,7 @@ input int                InpSlippagePoints        = 10;       // Slippage massim
 input int                InpMaxEntryDelaySeconds  = 10;       // Apri solo nei primi N secondi della candela
 input int                InpCloseSecondsBeforeEnd = 2;        // Chiudi N secondi prima della fine della candela
 input ulong              InpMagic                 = 26100201; // Magic number
-input string             InpComment               = "RSI M1 Reversal";
+input string             InpComment               = "RSI M1 Bot";
 
 input group "Orari (ora del server)"
 input int                InpStartHour = 0;   // Ora inizio (0-23)
@@ -54,11 +52,11 @@ datetime lastHandledBar = 0;   // candela su cui il segnale e' gia' stato valuta
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   if(InpRsiPeriod < 2 || InpStreakCandles < 1 ||
+   if(InpRsiPeriod < 2 ||
       !(InpRsiLower < InpRsiMid && InpRsiMid < InpRsiUpper) ||
       InpStartHour < 0 || InpStartHour > 23 || InpEndHour < 1 || InpEndHour > 24)
      {
-      Print("Parametri non validi: controlla periodo RSI, livelli (30 < 50 < 70), candele e orari.");
+      Print("Parametri non validi: controlla periodo RSI, livelli (30 < 50 < 70) e orari.");
       return(INIT_PARAMETERS_INCORRECT);
      }
 
@@ -75,9 +73,9 @@ int OnInit()
 
    // Il timer serve a chiudere in tempo anche se non arrivano tick.
    EventSetTimer(1);
-   PrintFormat("RSI_M1_Reversal avviato su %s %s | RSI %d (%.0f/%.0f/%.0f) | %d candele",
+   PrintFormat("RSI_M1_Bot avviato su %s %s | RSI %d (%.0f/%.0f/%.0f)",
                _Symbol, EnumToString(InpTimeframe), InpRsiPeriod,
-               InpRsiUpper, InpRsiMid, InpRsiLower, InpStreakCandles);
+               InpRsiUpper, InpRsiMid, InpRsiLower);
    return(INIT_SUCCEEDED);
   }
 
@@ -163,27 +161,14 @@ bool InTradingHours()
   }
 
 //+------------------------------------------------------------------+
-//| +1 = candela verde/blu (rialzista), -1 = rossa, 0 = doji         |
+//| Restituisce +1 (BUY), -1 (SELL) o 0 (nessun trade) in base       |
+//| all'RSI dell'ultima candela chiusa.                              |
 //+------------------------------------------------------------------+
-int CandleColor(const MqlRates &bar)
+int GetSignal(double &rsiValue)
   {
-   if(bar.close > bar.open)
-      return(1);
-   if(bar.close < bar.open)
-      return(-1);
-   return(0);
-  }
+   rsiValue = 0.0;
 
-//+------------------------------------------------------------------+
-//| Restituisce +1 (BUY), -1 (SELL) o 0 (nessun segnale) valutando   |
-//| le candele chiuse che precedono la candela corrente.             |
-//+------------------------------------------------------------------+
-int GetSignal(double &rsiValue, int &streakColor)
-  {
-   rsiValue    = 0.0;
-   streakColor = 0;
-
-   if(BarsCalculated(rsiHandle) < InpRsiPeriod + InpStreakCandles + 2)
+   if(BarsCalculated(rsiHandle) < InpRsiPeriod + 2)
       return(0);
 
    double rsi[];
@@ -191,31 +176,11 @@ int GetSignal(double &rsiValue, int &streakColor)
       return(0);
    rsiValue = rsi[0];
 
-   // rates[0] = ultima candela chiusa, rates[N] = candela prima della serie
-   MqlRates rates[];
-   ArraySetAsSeries(rates, true);
-   int need = InpStreakCandles + 1;
-   if(CopyRates(_Symbol, InpTimeframe, 1, need, rates) != need)
-      return(0);
-
-   int first = CandleColor(rates[0]);
-   if(first == 0)
-      return(0);
-   for(int k = 1; k < InpStreakCandles; k++)
-      if(CandleColor(rates[k]) != first)
-         return(0);
-   if(InpOnlyFirstOfStreak && CandleColor(rates[InpStreakCandles]) == first)
-      return(0);   // la serie era gia' lunga N: segnale gia' dato
-   streakColor = first;
-
-   bool buyZone  = (rsiValue > InpRsiMid && rsiValue <= InpRsiUpper);
-   bool sellZone = (rsiValue < InpRsiMid && rsiValue >= InpRsiLower);
-
-   if(buyZone && streakColor == -1)
-      return(1);    // N rosse in zona BUY -> BUY
-   if(sellZone && streakColor == 1)
-      return(-1);   // N verdi in zona SELL -> SELL
-   return(0);
+   if(rsiValue > InpRsiMid && rsiValue <= InpRsiUpper)
+      return(1);    // tra 50 e 70 -> BUY
+   if(rsiValue < InpRsiMid && rsiValue >= InpRsiLower)
+      return(-1);   // tra 30 e 50 -> SELL
+   return(0);       // sopra 70, sotto 30 o esattamente 50 -> niente
   }
 
 //+------------------------------------------------------------------+
@@ -244,9 +209,8 @@ void TryOpenTrade()
      }
 
    double rsiValue;
-   int    streakColor;
-   int    signal = GetSignal(rsiValue, streakColor);
-   UpdatePanel(rsiValue, streakColor, signal);
+   int    signal = GetSignal(rsiValue);
+   UpdatePanel(rsiValue, signal);
 
    if(signal == 0 || !InTradingHours())
      {
@@ -295,16 +259,15 @@ void TryOpenTrade()
 
    lastHandledBar = bar0;
    if(ok && (trade.ResultRetcode() == TRADE_RETCODE_DONE || trade.ResultRetcode() == TRADE_RETCODE_PLACED))
-      PrintFormat("%s %s %.2f lotti | RSI=%.2f | %d candele %s | spread=%.0f pts",
-                  signal == 1 ? "BUY" : "SELL", _Symbol, lots, rsiValue, InpStreakCandles,
-                  streakColor == 1 ? "verdi" : "rosse", spreadPts);
+      PrintFormat("%s %s %.2f lotti | RSI=%.2f | spread=%.0f pts",
+                  signal == 1 ? "BUY" : "SELL", _Symbol, lots, rsiValue, spreadPts);
    else
       PrintFormat("Apertura %s fallita: %u %s", signal == 1 ? "BUY" : "SELL",
                   trade.ResultRetcode(), trade.ResultRetcodeDescription());
   }
 
 //+------------------------------------------------------------------+
-void UpdatePanel(double rsiValue, int streakColor, int signal)
+void UpdatePanel(double rsiValue, int signal)
   {
    string zone = "NESSUNA (fuori 30-70)";
    if(rsiValue > InpRsiMid && rsiValue <= InpRsiUpper)
@@ -313,10 +276,8 @@ void UpdatePanel(double rsiValue, int streakColor, int signal)
       if(rsiValue < InpRsiMid && rsiValue >= InpRsiLower)
          zone = "solo SELL";
 
-   Comment(StringFormat("RSI M1 Reversal  |  %s %s\nRSI(%d) = %.2f  ->  zona %s\nSerie %d candele: %s\nUltimo segnale: %s",
+   Comment(StringFormat("RSI M1 Bot  |  %s %s\nRSI(%d) = %.2f  ->  zona %s\nTrade di questa candela: %s",
                         _Symbol, EnumToString(InpTimeframe), InpRsiPeriod, rsiValue, zone,
-                        InpStreakCandles,
-                        streakColor == 1 ? "verdi" : (streakColor == -1 ? "rosse" : "-"),
                         signal == 1 ? "BUY" : (signal == -1 ? "SELL" : "nessuno")));
   }
 //+------------------------------------------------------------------+
