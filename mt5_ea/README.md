@@ -28,3 +28,20 @@ il bot **non apre** il ciclo e lo scrive nel Diario.
 
 1. In MT5: **File → Apri cartella dati → MQL5 → Experts**, copia `RSI_M1_Bot.mq5`.
 2. Doppio clic sul file per aprirlo in MetaEditor e premi **F7** per compilarlo.
+
+---
+
+# Donchian Trend (Expert Advisor MT5, multi-simbolo)
+
+File: `Donchian_Trend.mq5`. **Un solo grafico gestisce tutte le 28 coppie forex** (input `InpSymbols`,
+con il suffisso del broker `InpSuffix = -P`). Con `InpSymbols` vuoto lavora solo sul simbolo del grafico.
+
+- **Ingresso:** BUY quando la candela D1 chiude sopra il massimo delle 20 candele precedenti,
+  SELL sotto il minimo.
+- **Stop iniziale:** ATR(20) × 2,5, messo sull'ordine.
+- **Uscita a inseguimento:** lo stop segue il minimo (BUY) / massimo (SELL) delle ultime 10 candele;
+  la posizione si chiude quando la candela chiude oltre quel livello. Nessun take profit.
+- **Rischio:** 0,5 % del capitale per operazione. Se il lotto calcolato è sotto il minimo (0.01)
+  usa il minimo solo se rischia al massimo il 2 % (`InpMaxRiskMinLot`), altrimenti salta.
+- **Massimo 6 posizioni aperte insieme** (`InpMaxPositions`).
+- Filtro opzionale con la SMA 200 (`InpUseTrendMa`).
