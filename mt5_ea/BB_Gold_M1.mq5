@@ -14,11 +14,13 @@
 //|  - InpOnePerCandle = true: un'operazione A OGNI candela, aperta  |
 //|    all'apertura e chiusa alla chiusura (chiusura e riapertura    |
 //|    sullo stesso tick), finche' il prezzo tocca la banda opposta. |
+//|  - InpMaxMinutes: se la modalita' dura piu' di N minuti senza     |
+//|    toccare la banda opposta, chiude tutto e la modalita' finisce. |
 //|  - Dopo la fine di una modalita' serve una nuova serie di        |
 //|    candele + tocco per ripartire.                                |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
-#property version   "1.00"
+#property version   "1.10"
 #property description "XAUUSD M1: Bollinger 20/2, almeno 4 candele dello stesso colore + tocco della banda. Un trade unico o un trade per candela."
 
 #include <Trade/Trade.mqh>
@@ -33,6 +35,7 @@ input int             InpMinCandles   = 4;     // Candele dello stesso colore di
 input bool            InpOnePerCandle = false; // false = un trade unico fino alla banda opposta; true = un trade per candela
 input bool            InpAllowBuy     = true;  // Abilita la modalita' BUY
 input bool            InpAllowSell    = true;  // Abilita la modalita' SELL
+input int             InpMaxMinutes   = 30;    // Uscita a tempo: chiude dopo N minuti senza tocco della banda opposta (0 = spenta)
 
 input group "Ordini"
 input double          InpLots            = 0.01;     // Lotto
@@ -46,13 +49,14 @@ CTrade   trade;
 int      bandsHandle = INVALID_HANDLE;
 datetime currentBar  = 0;
 int      mode        = 0;      // +1 BUY, -1 SELL, 0 in attesa
+datetime modeStart   = 0;      // inizio della modalita' attiva
 bool     openedInMode = false; // modalita' trade unico: operazione gia' aperta
 string   gvMode;
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
-   if(InpBandsPeriod < 2 || InpBandsDev <= 0 || InpMinCandles < 1 || InpLots <= 0 || InpEmergencySl < 0)
+   if(InpMaxMinutes < 0 || InpBandsPeriod < 2 || InpBandsDev <= 0 || InpMinCandles < 1 || InpLots <= 0 || InpEmergencySl < 0)
      {
       Print("Parametri non validi.");
       return(INIT_PARAMETERS_INCORRECT);
@@ -75,15 +79,20 @@ int OnInit()
    if(dir != 0)
      {
       mode         = dir;
+      modeStart    = (datetime)PositionGetInteger(POSITION_TIME);
       openedInMode = true;
      }
    else
       if(GlobalVariableCheck(gvMode))
-         mode = (int)GlobalVariableGet(gvMode);
+        {
+         mode      = (int)GlobalVariableGet(gvMode);
+         modeStart = TimeCurrent();
+        }
 
-   PrintFormat("BB_Gold_M1 avviato su %s %s | Bollinger %d/%.1f | %d candele | %s | lotto %.2f",
+   PrintFormat("BB_Gold_M1 avviato su %s %s | Bollinger %d/%.1f | %d candele | %s | uscita a tempo %d min | stop %.2f | lotto %.2f",
                _Symbol, EnumToString(InpTimeframe), InpBandsPeriod, InpBandsDev, InpMinCandles,
-               InpOnePerCandle ? "un trade per candela" : "trade unico fino alla banda opposta", InpLots);
+               InpOnePerCandle ? "un trade per candela" : "trade unico fino alla banda opposta",
+               InpMaxMinutes, InpEmergencySl, InpLots);
    return(INIT_SUCCEEDED);
   }
 
@@ -97,8 +106,9 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   // 1) Fine modalita': il prezzo tocca la banda opposta (in tempo reale).
+   // 1) Fine modalita': il prezzo tocca la banda opposta (in tempo reale) o scade il tempo.
    CheckOppositeTouch();
+   CheckTimeExit();
 
    // 2) Nuova candela: chiusura/riapertura e ricerca di una nuova modalita'.
    datetime bar0 = iTime(_Symbol, InpTimeframe, 0);
@@ -128,6 +138,21 @@ void CheckOppositeTouch()
 
    PrintFormat("Prezzo %s ha toccato la banda %s: fine modalita' %s.", DoubleToString(tick.bid, _Digits),
                mode == -1 ? "inferiore" : "superiore", mode == -1 ? "SELL" : "BUY");
+   CloseMine();
+   SetMode(0);
+  }
+
+//+------------------------------------------------------------------+
+//| Uscita a tempo: la modalita' dura troppo senza toccare la banda. |
+//+------------------------------------------------------------------+
+void CheckTimeExit()
+  {
+   if(mode == 0 || InpMaxMinutes <= 0 || modeStart == 0)
+      return;
+   if(TimeCurrent() - modeStart < InpMaxMinutes * 60)
+      return;
+   PrintFormat("Modalita' %s attiva da %d minuti senza toccare la banda opposta: chiudo.",
+               mode == -1 ? "SELL" : "BUY", InpMaxMinutes);
    CloseMine();
    SetMode(0);
   }
@@ -258,7 +283,8 @@ int PositionDir(ulong &ticket)
 //+------------------------------------------------------------------+
 void SetMode(int m)
   {
-   mode = m;
+   mode      = m;
+   modeStart = (m != 0) ? TimeCurrent() : 0;
    GlobalVariableSet(gvMode, mode);
   }
 
@@ -283,10 +309,12 @@ void UpdatePanel()
    ulong t;
    int dir = PositionDir(t);
    string m = (mode == -1) ? "SELL (fino alla banda inferiore)" : (mode == 1 ? "BUY (fino alla banda superiore)" : "in attesa di serie + tocco");
-   Comment(StringFormat("BB Gold M1  |  %s %s  |  %s\nBanda sup %s  |  banda inf %s\nModalita': %s\nPosizione: %s",
+   string left = (mode != 0 && InpMaxMinutes > 0 && modeStart > 0)
+                 ? StringFormat(" (uscita a tempo tra %d min)", (int)MathMax(0, (modeStart + InpMaxMinutes * 60 - TimeCurrent()) / 60)) : "";
+   Comment(StringFormat("BB Gold M1  |  %s %s  |  %s\nBanda sup %s  |  banda inf %s\nModalita': %s%s\nPosizione: %s",
                         _Symbol, EnumToString(InpTimeframe),
                         InpOnePerCandle ? "un trade per candela" : "trade unico",
-                        DoubleToString(upper, _Digits), DoubleToString(lower, _Digits), m,
+                        DoubleToString(upper, _Digits), DoubleToString(lower, _Digits), m, left,
                         dir == 0 ? "nessuna" : (dir == 1 ? "BUY" : "SELL")));
   }
 //+------------------------------------------------------------------+

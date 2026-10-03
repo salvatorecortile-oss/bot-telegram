@@ -61,4 +61,6 @@ File: `BB_Gold_M1.mq5`. Pensato per **XAUUSD M1**, Bande di Bollinger 20 / 2 (SM
 - `InpOnePerCandle = true`: **un trade a ogni candela**, aperto all'apertura e chiuso alla chiusura,
   finché il prezzo tocca la banda opposta.
 - Dopo la fine di una modalità serve una nuova serie di candele + tocco.
+- Uscita a tempo (`InpMaxMinutes`, default 30): se la modalità dura più di N minuti senza toccare
+  la banda opposta, chiude e la modalità finisce (0 = spenta).
 - Lotto 0.01; stop di emergenza opzionale (`InpEmergencySl`, in dollari di prezzo, 0 = nessuno).
