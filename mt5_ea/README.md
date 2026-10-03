@@ -70,10 +70,15 @@ File: `BB_Gold_M1.mq5`. Pensato per **XAUUSD M1**, Bande di Bollinger 20 / 2 (SM
 # Straddle Gold (Expert Advisor MT5)
 
 File: `Straddle_Gold.mq5`. Rottura "a forbice" su **XAUUSD**, lavora tick per tick (il timeframe non conta).
+I valori di default sono quelli del test: stop 1 $, trailing 3 $ con passo 2 $, forbice 1,20 $ senza
+ricentratura, orari 10–19, lotto 0.01, stop giornaliero −30 $.
 
-- Senza posizioni: **BUY STOP** a +1,20 $ e **SELL STOP** a −1,20 $ dal prezzo, stop loss a 1,00 $.
-- Quando uno scatta l'altro viene cancellato; una sola posizione alla volta.
-- **Trailing:** oltre +0,50 $ di profitto lo stop segue il prezzo a 0,80 $. Nessun take profit.
-- Se il prezzo si sposta di 0,50 $ senza far scattare niente, la forbice viene ricentrata.
-- Solo dalle **9 alle 18** (ora del server), lotto **0.01**, spread massimo 35 points,
-  **stop giornaliero** a −30 $.
+- `InpMode = 0` **forbice fissa:** BUY STOP a +1,20 $ e SELL STOP a −1,20 $ dal prezzo.
+- `InpMode = 1` **rottura del range:** se le ultime 15 candele M1 stanno in un range largo al massimo 3 $,
+  BUY STOP sopra il massimo e SELL STOP sotto il minimo (+/− 0,20 $).
+- Quando uno scatta l'altro viene cancellato; trailing senza take profit.
+
+Filtri aggiuntivi (di base spenti):
+- `InpBlock1`, `InpBlock2`: fasce orarie bloccate, es. `15:00-16:00`.
+- `InpMinAtrPercent`: opera solo se l'ATR giornaliero è almeno questa % del prezzo.
+- `InpUseStopLimit` + `InpMaxSlippage`: ordini stop limit, ingresso al massimo 0,30 $ peggiore del previsto.
