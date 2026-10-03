@@ -45,3 +45,20 @@ con il suffisso del broker `InpSuffix = -P`). Con `InpSymbols` vuoto lavora solo
   usa il minimo solo se rischia al massimo il 2 % (`InpMaxRiskMinLot`), altrimenti salta.
 - **Massimo 6 posizioni aperte insieme** (`InpMaxPositions`).
 - Filtro opzionale con la SMA 200 (`InpUseTrendMa`).
+
+---
+
+# BB Gold M1 (Expert Advisor MT5)
+
+File: `BB_Gold_M1.mq5`. Pensato per **XAUUSD M1**, Bande di Bollinger 20 / 2 (SMA).
+
+- **Modalità SELL:** almeno 4 candele verdi di fila e una di esse (dalla 4ª in poi) tocca la banda
+  superiore. Finisce quando il prezzo tocca la banda inferiore.
+- **Modalità BUY:** almeno 4 candele rosse di fila e una di esse tocca la banda inferiore.
+  Finisce quando il prezzo tocca la banda superiore.
+- `InpOnePerCandle = false`: **un trade unico** per modalità, aperto alla candela successiva
+  e chiuso al tocco della banda opposta.
+- `InpOnePerCandle = true`: **un trade a ogni candela**, aperto all'apertura e chiuso alla chiusura,
+  finché il prezzo tocca la banda opposta.
+- Dopo la fine di una modalità serve una nuova serie di candele + tocco.
+- Lotto 0.01; stop di emergenza opzionale (`InpEmergencySl`, in dollari di prezzo, 0 = nessuno).
