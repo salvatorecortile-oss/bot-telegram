@@ -5,7 +5,7 @@
 //  - Segnale BUY/SELL su incrocio EMA veloce/lenta filtrato da uno score
 //    multi-fattore (VWAP, RSI, MACD, ADX/DMI, EMA trend, volume, struttura,
 //    trend multi-timeframe).
-//  - Gestione trade: ENTRY, SL a multiplo di ATR, TP1..TP5 equidistanti
+//  - Gestione trade: ENTRY, SL a multiplo di ATR, TP1..TP5 equidistanti (numero configurabile)
 //    (multipli di R), zone colorate rischio/profitto.
 //  - Trailing stop (TSL) a gradini: TP1 -> breakeven, TPn -> TP(n-1).
 //  - Dashboard con Bull/Bear score, bias, stato mercato, conferme e verdetto.
@@ -42,6 +42,8 @@ mtfTf4 = input.timeframe("W",   "MTF 2 - TF B", group = grpMtf)
 
 grpRisk = "Gestione trade"
 slAtrMult = input.float(1.3, "Stop loss = ATR x", step = 0.1, group = grpRisk)
+numTp     = input.int(5, "Numero di TP", minval = 1, maxval = 5, group = grpRisk,
+     tooltip = "Quanti target mostrare e gestire. Il trade si chiude al raggiungimento dell'ultimo TP.")
 tpStepR   = input.float(1.0, "Distanza tra TP (in R)", step = 0.1, group = grpRisk)
 chaseR    = input.float(0.5, "Oltre questa distanza (R) = in ritardo", step = 0.1, group = grpRisk)
 useTsl    = input.bool(true, "Trailing stop a gradini", group = grpRisk)
@@ -167,15 +169,15 @@ if dir != 0 and bar_index > entryBar
         lastResult := tpHit == 0 ? "STOP LOSS" : "TSL · TP" + str.tostring(tpHit)
         closeTrade := true
     else
-        for i = tpHit + 1 to 5
+        for i = tpHit + 1 to numTp
             tp = tpPrice(i)
             if (dir == 1 and high >= tp) or (dir == -1 and low <= tp)
                 tpHit := i
                 newTp := true
         if newTp and useTsl
             tslPx := tpHit == 1 ? entryPx : tpPrice(tpHit - 1)
-        if tpHit == 5
-            lastResult := "TP5 FULL TARGET"
+        if tpHit == numTp
+            lastResult := "TP" + str.tostring(numTp) + " FULL TARGET"
             closeTrade := true
 
 // 2) Segnale opposto chiude il trade corrente
@@ -220,7 +222,7 @@ if (buySig or sellSig) and dir == 0
     tpLines.clear()
     tpLabels.clear()
     rightX = bar_index + lblOffset
-    for i = 1 to 5
+    for i = 1 to numTp
         p = tpPrice(i)
         tpLines.push(line.new(bar_index, p, rightX, p, color = colBull, width = 2))
         tpLabels.push(label.new(rightX, p, "TP" + str.tostring(i) + "  " + fmt(p), style = label.style_label_left, color = colBull, textcolor = colTxt, size = size.normal))
@@ -231,22 +233,22 @@ if (buySig or sellSig) and dir == 0
     slLbl     := label.new(rightX, slPx, "SL  " + fmt(slPx), style = label.style_label_left, color = colBear, textcolor = colTxt)
     tslLbl    := label.new(rightX, tslPx, "TSL  " + fmt(tslPx), style = label.style_label_left, color = colTsl, textcolor = color.black)
     if showZones
-        tp5 = tpPrice(5)
-        tpBox := box.new(bar_index, math.max(entryPx, tp5), rightX, math.min(entryPx, tp5), border_color = na, bgcolor = color.new(#26a69a, 75))
+        tpLast = tpPrice(numTp)
+        tpBox := box.new(bar_index, math.max(entryPx, tpLast), rightX, math.min(entryPx, tpLast), border_color = na, bgcolor = color.new(#26a69a, 75))
         slBox := box.new(bar_index, math.max(entryPx, slPx), rightX, math.min(entryPx, slPx), border_color = na, bgcolor = color.new(#ef5350, 80))
     else
         tpBox := na
         slBox := na
     // Alert nel formato di signal_parser.py
-    alert((dir == 1 ? "BUY " : "SELL ") + syminfo.ticker + " ➡ Entry: " + fmt(entryPx) +
-         "\nSL: " + fmt(slPx) + "\nTP1: " + fmt(tpPrice(1)) + "\nTP2: " + fmt(tpPrice(2)) +
-         "\nTP3: " + fmt(tpPrice(3)) + "\nTP4: " + fmt(tpPrice(4)) + "\nTP5: " + fmt(tpPrice(5)),
-         alert.freq_once_per_bar_close)
+    msg = (dir == 1 ? "BUY " : "SELL ") + syminfo.ticker + " ➡ Entry: " + fmt(entryPx) + "\nSL: " + fmt(slPx)
+    for i = 1 to numTp
+        msg += "\nTP" + str.tostring(i) + ": " + fmt(tpPrice(i))
+    alert(msg, alert.freq_once_per_bar_close)
 
 // 5) Aggiornamento disegni del trade attivo
 if dir != 0
     rightX = bar_index + lblOffset
-    for i = 0 to 4
+    for i = 0 to numTp - 1
         lvl = i + 1
         p = tpPrice(lvl)
         tpLines.get(i).set_x2(rightX)
@@ -300,7 +302,7 @@ if showDash and barstate.islast
     distR = dir != 0 ? (close - entryPx) * dir / risk : 0.0
     tradeTxt = dir == 0 ? "FLAT · " + lastResult : (dir == 1 ? "LONG · " : "SHORT · ") + (tpHit > 0 ? "TP" + str.tostring(tpHit) + " HIT" : "OPEN")
     levelTxt = "—"
-    if dir != 0 and tpHit < 5
+    if dir != 0 and tpHit < numTp
         nextTp = tpPrice(tpHit + 1)
         blocker = dir == 1 ? (ph1 > close and ph1 < nextTp ? ph1 : na) : (pl1 < close and pl1 > nextTp ? pl1 : na)
         levelTxt := "TP" + str.tostring(tpHit + 1) + " NEXT · " + (na(blocker) ? "CLEAR" : "S/R " + fmt(blocker))
