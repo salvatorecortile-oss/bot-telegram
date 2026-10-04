@@ -20,7 +20,7 @@
 //|  Tutte le distanze sono in prezzo (1.00 = 1 dollaro sull'oro).   |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
-#property version   "3.00"
+#property version   "3.10"
 #property description "Oro: forbice fissa o rottura del range, stop stretto e trailing. Filtri di orario, fasce bloccate, spread, volatilita' e stop limit."
 
 #include <Trade/Trade.mqh>
@@ -68,6 +68,7 @@ input double InpMaxSlippage    = 0.30;     // Stop limit: prezzo d'ingresso al m
 input int    InpSlippagePoints = 30;       // Slippage massimo in points (ordini a mercato)
 input ulong  InpMagic          = 26100601; // Magic number
 input string InpComment        = "Straddle Gold";
+input bool   InpWriteSummary   = true;     // A fine test scrive un riepilogo mensile piccolo (cartella Common/Files)
 
 CTrade   trade;
 double   dayPnl     = 0.0;
@@ -133,6 +134,8 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   if(InpWriteSummary && MQLInfoInteger(MQL_TESTER))
+      WriteSummary();
    if(atrHandle != INVALID_HANDLE)
       IndicatorRelease(atrHandle);
    if(fastAtrHandle != INVALID_HANDLE)
@@ -460,6 +463,115 @@ void UpdatePnl()
       if(dt >= monthStart)
          monthPnl += r;
      }
+  }
+
+//+------------------------------------------------------------------+
+//| Riepilogo mese per mese delle operazioni chiuse, in un file CSV  |
+//| piccolo nella cartella comune dei terminali (Common\Files).      |
+//+------------------------------------------------------------------+
+void WriteSummary()
+  {
+   if(!HistorySelect(0, TimeCurrent() + 86400))
+      return;
+
+   int      months[];      // anno*100 + mese
+   int      trades[], wins[];
+   double   profit[], worstDay[];
+   double   bestDay[];
+   double   total = 0.0, peak = 0.0, equity = 0.0, maxDd = 0.0;
+   int      curDayKey = -1;
+   double   curDayPnl = 0.0;
+   int      curMonthIdx = -1;
+
+   for(int i = 0; i < HistoryDealsTotal(); i++)
+     {
+      ulong d = HistoryDealGetTicket(i);
+      if(d == 0 || HistoryDealGetString(d, DEAL_SYMBOL) != _Symbol || (ulong)HistoryDealGetInteger(d, DEAL_MAGIC) != InpMagic)
+         continue;
+      if(HistoryDealGetInteger(d, DEAL_ENTRY) != DEAL_ENTRY_OUT)
+         continue;
+      double   r = HistoryDealGetDouble(d, DEAL_PROFIT) + HistoryDealGetDouble(d, DEAL_SWAP) + HistoryDealGetDouble(d, DEAL_COMMISSION);
+      MqlDateTime t;
+      TimeToStruct((datetime)HistoryDealGetInteger(d, DEAL_TIME), t);
+      int key = t.year * 100 + t.mon;
+
+      int idx = -1;
+      for(int k = 0; k < ArraySize(months); k++)
+         if(months[k] == key)
+           {
+            idx = k;
+            break;
+           }
+      if(idx < 0)
+        {
+         idx = ArraySize(months);
+         ArrayResize(months, idx + 1);
+         ArrayResize(trades, idx + 1);
+         ArrayResize(wins, idx + 1);
+         ArrayResize(profit, idx + 1);
+         ArrayResize(bestDay, idx + 1);
+         ArrayResize(worstDay, idx + 1);
+         months[idx] = key;
+         trades[idx] = 0;
+         wins[idx]   = 0;
+         profit[idx] = 0.0;
+         bestDay[idx]  = 0.0;
+         worstDay[idx] = 0.0;
+        }
+
+      // Chiusura del giorno precedente: miglior/peggior giorno del suo mese.
+      int dayKey = key * 100 + t.day;
+      if(dayKey != curDayKey)
+        {
+         if(curDayKey >= 0 && curMonthIdx >= 0)
+           {
+            bestDay[curMonthIdx]  = MathMax(bestDay[curMonthIdx], curDayPnl);
+            worstDay[curMonthIdx] = MathMin(worstDay[curMonthIdx], curDayPnl);
+           }
+         curDayKey = dayKey;
+         curDayPnl = 0.0;
+        }
+      curDayPnl  += r;
+      curMonthIdx = idx;
+
+      trades[idx]++;
+      if(r > 0)
+         wins[idx]++;
+      profit[idx] += r;
+
+      equity += r;
+      total  += r;
+      peak    = MathMax(peak, equity);
+      maxDd   = MathMax(maxDd, peak - equity);
+     }
+   if(curDayKey >= 0 && curMonthIdx >= 0)
+     {
+      bestDay[curMonthIdx]  = MathMax(bestDay[curMonthIdx], curDayPnl);
+      worstDay[curMonthIdx] = MathMin(worstDay[curMonthIdx], curDayPnl);
+     }
+
+   MqlDateTime now;
+   TimeToStruct(TimeLocal(), now);
+   string name = StringFormat("Straddle_Gold_riepilogo_%04d%02d%02d_%02d%02d%02d.csv",
+                              now.year, now.mon, now.day, now.hour, now.min, now.sec);
+   int h = FileOpen(name, FILE_WRITE | FILE_CSV | FILE_COMMON | FILE_ANSI, ';');
+   if(h == INVALID_HANDLE)
+     {
+      Print("Impossibile scrivere il riepilogo: ", GetLastError());
+      return;
+     }
+   FileWrite(h, "Simbolo", _Symbol, "Deposito", DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE) - total, 2));
+   FileWrite(h, "Impostazioni", StringFormat("modo=%d forbice=%.2f stop=%.2f trail=%.2f/%.2f/%.2f ricentra=%.2f orari=%d-%d fasce=%s|%s rangeOggi=%.2f volRatio=%.2f atrD1=%.2f stop g/s/m=%.0f/%.0f/%.0f stopLimit=%s lotto=%.2f",
+             InpMode, InpDistance, InpStopLoss, InpTrailStart, InpTrailDistance, InpTrailStep, InpRecenter, InpStartHour, InpEndHour,
+             InpBlock1, InpBlock2, InpMinDayRangePct, InpMinVolRatio, InpMinAtrPercent,
+             InpDailyLossLimit, InpWeeklyLossLimit, InpMonthlyLossLimit, InpUseStopLimit ? "si" : "no", InpLots));
+   FileWrite(h, "Totale", DoubleToString(total, 2), "Drawdown massimo (operazioni chiuse)", DoubleToString(maxDd, 2));
+   FileWrite(h, "Mese", "Operazioni", "Vinte", "Profitto", "Miglior giorno", "Peggior giorno");
+   for(int k = 0; k < ArraySize(months); k++)
+      FileWrite(h, StringFormat("%04d-%02d", months[k] / 100, months[k] % 100), trades[k], wins[k],
+                DoubleToString(profit[k], 2), DoubleToString(bestDay[k], 2), DoubleToString(worstDay[k], 2));
+   FileClose(h);
+   PrintFormat("Riepilogo scritto in Common\\Files\\%s", name);
   }
 
 //+------------------------------------------------------------------+
