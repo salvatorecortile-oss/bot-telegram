@@ -1,0 +1,334 @@
+//@version=6
+// ============================================================================
+//  SNIPER MODE DASHBOARD — ricostruzione dell'indicatore "Sniper Mode MANUFX"
+//  ----------------------------------------------------------------------------
+//  - Segnale BUY/SELL su incrocio EMA veloce/lenta filtrato da uno score
+//    multi-fattore (VWAP, RSI, MACD, ADX/DMI, EMA trend, volume, struttura,
+//    trend multi-timeframe).
+//  - Gestione trade: ENTRY, SL a multiplo di ATR, TP1..TP5 equidistanti
+//    (multipli di R), zone colorate rischio/profitto.
+//  - Trailing stop (TSL) a gradini: TP1 -> breakeven, TPn -> TP(n-1).
+//  - Dashboard con Bull/Bear score, bias, stato mercato, conferme e verdetto.
+//  - Alert nel formato letto da signal_parser.py (BUY XXX ➡ Entry / SL / TPn).
+// ============================================================================
+indicator("Sniper Mode Dashboard", shorttitle = "SNIPER", overlay = true,
+     max_lines_count = 500, max_labels_count = 500, max_boxes_count = 500)
+
+// ───────────────────────────── INPUT ─────────────────────────────
+grpSig = "Segnale"
+emaFastLen  = input.int(9,   "EMA veloce",            minval = 1, group = grpSig)
+emaSlowLen  = input.int(21,  "EMA lenta",             minval = 1, group = grpSig)
+emaTrendLen = input.int(200, "EMA trend",             minval = 1, group = grpSig)
+minScore    = input.int(60,  "Score minimo segnale %", minval = 0, maxval = 100, group = grpSig)
+allowShort  = input.bool(true, "Abilita segnali SELL", group = grpSig)
+
+grpInd = "Filtri"
+rsiLen    = input.int(14, "RSI", group = grpInd)
+macdFast  = input.int(12, "MACD fast", group = grpInd)
+macdSlow  = input.int(26, "MACD slow", group = grpInd)
+macdSig   = input.int(9,  "MACD signal", group = grpInd)
+adxLen    = input.int(14, "ADX / DMI", group = grpInd)
+adxThr    = input.float(20, "Soglia ADX trend", group = grpInd)
+atrLen    = input.int(14, "ATR", group = grpInd)
+volLen    = input.int(20, "Media volume", group = grpInd)
+volMult   = input.float(1.2, "Volume alto se > media x", step = 0.1, group = grpInd)
+pivLen    = input.int(5, "Pivot struttura (barre)", minval = 1, group = grpInd)
+
+grpMtf = "Multi-timeframe"
+mtfTf1 = input.timeframe("60",  "MTF 1 - TF A", group = grpMtf)
+mtfTf2 = input.timeframe("240", "MTF 1 - TF B", group = grpMtf)
+mtfTf3 = input.timeframe("D",   "MTF 2 - TF A", group = grpMtf)
+mtfTf4 = input.timeframe("W",   "MTF 2 - TF B", group = grpMtf)
+
+grpRisk = "Gestione trade"
+slAtrMult = input.float(1.3, "Stop loss = ATR x", step = 0.1, group = grpRisk)
+tpStepR   = input.float(1.0, "Distanza tra TP (in R)", step = 0.1, group = grpRisk)
+chaseR    = input.float(0.5, "Oltre questa distanza (R) = in ritardo", step = 0.1, group = grpRisk)
+useTsl    = input.bool(true, "Trailing stop a gradini", group = grpRisk)
+
+grpVis = "Grafica"
+showEmas  = input.bool(true, "Mostra EMA", group = grpVis)
+showZones = input.bool(true, "Mostra zone TP/SL", group = grpVis)
+showDash  = input.bool(true, "Mostra dashboard", group = grpVis)
+dashPos   = input.string("Top Left", "Posizione dashboard",
+     options = ["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group = grpVis)
+lblOffset = input.int(15, "Offset etichette a destra", minval = 1, maxval = 400, group = grpVis)
+
+colBull = color.new(#22ab5f, 0)
+colBear = color.new(#e53935, 0)
+colEntry = color.new(#4a90c2, 0)
+colTsl  = color.new(#f5b301, 0)
+colTxt  = color.white
+colRow  = color.new(#7a7a7a, 10)
+colHdr  = color.new(#1e2733, 0)
+
+// ───────────────────────────── CALCOLI ─────────────────────────────
+emaF = ta.ema(close, emaFastLen)
+emaS = ta.ema(close, emaSlowLen)
+emaT = ta.ema(close, emaTrendLen)
+vwap = ta.vwap(hlc3)
+rsi  = ta.rsi(close, rsiLen)
+[macdLine, sigLine, _] = ta.macd(close, macdFast, macdSlow, macdSig)
+[diP, diM, adx] = ta.dmi(adxLen, adxLen)
+atr  = ta.atr(atrLen)
+volAvg = ta.sma(volume, volLen)
+hasVol = not na(volume) and volume > 0
+volHigh = hasVol and volume > volAvg * volMult
+volLow  = hasVol and volume < volAvg * 0.7
+
+// Struttura di mercato: ultimi due swing high / low
+var float ph1 = na
+var float ph2 = na
+var float pl1 = na
+var float pl2 = na
+ph = ta.pivothigh(high, pivLen, pivLen)
+pl = ta.pivotlow(low, pivLen, pivLen)
+if not na(ph)
+    ph2 := ph1
+    ph1 := ph
+if not na(pl)
+    pl2 := pl1
+    pl1 := pl
+structBull = ph1 > ph2 and pl1 > pl2
+structBear = ph1 < ph2 and pl1 < pl2
+
+// Trend su timeframe superiori (senza repaint: valore della barra HTF chiusa)
+f_mtf(tf) =>
+    request.security(syminfo.tickerid, tf, (ta.ema(close, emaFastLen) > ta.ema(close, emaSlowLen) ? 1 : -1)[1], lookahead = barmerge.lookahead_on)
+m1 = f_mtf(mtfTf1)
+m2 = f_mtf(mtfTf2)
+m3 = f_mtf(mtfTf3)
+m4 = f_mtf(mtfTf4)
+
+f_tfName(tf) =>
+    s = timeframe.in_seconds(tf)
+    s % 604800 == 0 ? str.tostring(s / 604800) + "W" : s % 86400 == 0 ? str.tostring(s / 86400) + "D" : s % 3600 == 0 ? str.tostring(s / 3600) + "H" : str.tostring(s / 60) + "m"
+f_arrow(v) => v == 1 ? "▲" : "▼"
+
+// ───────────────────────────── SCORE ─────────────────────────────
+// 10 conferme per lato; score = conferme / 10
+bullConds = array.from(close > vwap, rsi > 50, macdLine > sigLine, adx > adxThr and diP > diM,
+     emaF > emaS, close > emaT, structBull, volHigh and close > open, m1 == 1, m2 == 1)
+bearConds = array.from(close < vwap, rsi < 50, macdLine < sigLine, adx > adxThr and diM > diP,
+     emaF < emaS, close < emaT, structBear, volHigh and close < open, m1 == -1, m2 == -1)
+f_count(arr) =>
+    n = 0
+    for c in arr
+        n += c ? 1 : 0
+    n
+bullN = f_count(bullConds)
+bearN = f_count(bearConds)
+totN  = bullConds.size()
+bullScore = math.round(float(bullN) / totN * 100)
+bearScore = math.round(float(bearN) / totN * 100)
+
+f_scoreTxt(s) => s >= 80 ? "DOMINANT" : s >= 60 ? "STRONG" : s >= 40 ? "WEAK" : "VERY WEAK"
+
+// ───────────────────────────── SEGNALI ─────────────────────────────
+crossUp = ta.crossover(emaF, emaS)
+crossDn = ta.crossunder(emaF, emaS)
+buySig  = crossUp and bullScore >= minScore and barstate.isconfirmed
+sellSig = allowShort and crossDn and bearScore >= minScore and barstate.isconfirmed
+
+// ───────────────────────────── STATO TRADE ─────────────────────────────
+var int   dir      = 0      // 1 long, -1 short, 0 flat
+var float entryPx  = na
+var float slPx     = na
+var float risk     = na
+var float tslPx    = na
+var int   tpHit    = 0
+var int   entryBar = na
+var string lastResult = "—"
+
+var array<line>  tpLines  = array.new<line>()
+var array<label> tpLabels = array.new<label>()
+var line  entryLine = na
+var line  slLine    = na
+var line  tslLine   = na
+var label entryLbl  = na
+var label slLbl     = na
+var label tslLbl    = na
+var box   tpBox     = na
+var box   slBox     = na
+
+tpPrice(i) => entryPx + dir * risk * tpStepR * i
+fmt(x) => str.tostring(x, format.mintick)
+
+closeTrade = false
+newTp = false
+
+// 1) Gestione trade aperto (dalla barra successiva all'ingresso)
+if dir != 0 and bar_index > entryBar
+    stopRef = useTsl ? tslPx : slPx
+    stopHit = dir == 1 ? low <= stopRef : high >= stopRef
+    if stopHit
+        lastResult := tpHit == 0 ? "STOP LOSS" : "TSL · TP" + str.tostring(tpHit)
+        closeTrade := true
+    else
+        for i = tpHit + 1 to 5
+            tp = tpPrice(i)
+            if (dir == 1 and high >= tp) or (dir == -1 and low <= tp)
+                tpHit := i
+                newTp := true
+        if newTp and useTsl
+            tslPx := tpHit == 1 ? entryPx : tpPrice(tpHit - 1)
+        if tpHit == 5
+            lastResult := "TP5 FULL TARGET"
+            closeTrade := true
+
+// 2) Segnale opposto chiude il trade corrente
+flip = (buySig and dir == -1) or (sellSig and dir == 1)
+if flip and not closeTrade
+    lastResult := "CHIUSO DA SEGNALE OPPOSTO"
+    closeTrade := true
+
+// 3) Chiusura: congela disegni, rimuove etichette dinamiche
+if closeTrade
+    for l in tpLines
+        l.set_x2(bar_index)
+    entryLine.set_x2(bar_index)
+    slLine.set_x2(bar_index)
+    tpBox.set_right(bar_index)
+    slBox.set_right(bar_index)
+    tslLine.delete()
+    for lb in tpLabels
+        lb.delete()
+    entryLbl.delete()
+    slLbl.delete()
+    tslLbl.delete()
+    dir := 0
+
+// 4) Apertura nuovo trade
+if (buySig or sellSig) and dir == 0
+    dir      := buySig ? 1 : -1
+    entryPx  := close
+    risk     := atr * slAtrMult
+    slPx     := entryPx - dir * risk
+    tslPx    := slPx
+    tpHit    := 0
+    entryBar := bar_index
+    tpLines.clear()
+    tpLabels.clear()
+    rightX = bar_index + lblOffset
+    for i = 1 to 5
+        p = tpPrice(i)
+        tpLines.push(line.new(bar_index, p, rightX, p, color = colBull, width = 2))
+        tpLabels.push(label.new(rightX, p, "TP" + str.tostring(i) + "  " + fmt(p), style = label.style_label_left, color = colBull, textcolor = colTxt, size = size.normal))
+    entryLine := line.new(bar_index, entryPx, rightX, entryPx, color = colEntry, width = 2)
+    slLine    := line.new(bar_index, slPx, rightX, slPx, color = colBear, width = 2)
+    tslLine   := line.new(bar_index, tslPx, rightX, tslPx, color = colTsl, width = 2)
+    entryLbl  := label.new(rightX, entryPx, "ENTRY  " + fmt(entryPx), style = label.style_label_left, color = colEntry, textcolor = colTxt)
+    slLbl     := label.new(rightX, slPx, "SL  " + fmt(slPx), style = label.style_label_left, color = colBear, textcolor = colTxt)
+    tslLbl    := label.new(rightX, tslPx, "TSL  " + fmt(tslPx), style = label.style_label_left, color = colTsl, textcolor = color.black)
+    if showZones
+        tp5 = tpPrice(5)
+        tpBox := box.new(bar_index, math.max(entryPx, tp5), rightX, math.min(entryPx, tp5), border_color = na, bgcolor = color.new(#26a69a, 75))
+        slBox := box.new(bar_index, math.max(entryPx, slPx), rightX, math.min(entryPx, slPx), border_color = na, bgcolor = color.new(#ef5350, 80))
+    else
+        tpBox := na
+        slBox := na
+    // Alert nel formato di signal_parser.py
+    alert((dir == 1 ? "BUY " : "SELL ") + syminfo.ticker + " ➡ Entry: " + fmt(entryPx) +
+         "\nSL: " + fmt(slPx) + "\nTP1: " + fmt(tpPrice(1)) + "\nTP2: " + fmt(tpPrice(2)) +
+         "\nTP3: " + fmt(tpPrice(3)) + "\nTP4: " + fmt(tpPrice(4)) + "\nTP5: " + fmt(tpPrice(5)),
+         alert.freq_once_per_bar_close)
+
+// 5) Aggiornamento disegni del trade attivo
+if dir != 0
+    rightX = bar_index + lblOffset
+    for i = 0 to 4
+        lvl = i + 1
+        p = tpPrice(lvl)
+        tpLines.get(i).set_x2(rightX)
+        lb = tpLabels.get(i)
+        lb.set_x(rightX)
+        lb.set_text(lvl <= tpHit ? "TP" + str.tostring(lvl) + " HIT 🔥  " + fmt(p) : "TP" + str.tostring(lvl) + "  " + fmt(p))
+    entryLine.set_x2(rightX)
+    slLine.set_x2(rightX)
+    tslLine.set_xy1(entryBar, tslPx)
+    tslLine.set_xy2(rightX, tslPx)
+    entryLbl.set_x(rightX)
+    slLbl.set_x(rightX)
+    tslLbl.set_xy(rightX, tslPx)
+    tslLbl.set_text("TSL  " + fmt(tslPx))
+    tpBox.set_right(rightX)
+    slBox.set_right(rightX)
+
+if newTp and dir != 0
+    alert(syminfo.ticker + " TP" + str.tostring(tpHit) + " HIT @ " + fmt(tpPrice(tpHit)) + " · nuovo TSL " + fmt(tslPx), alert.freq_once_per_bar_close)
+
+// ───────────────────────────── PLOT ─────────────────────────────
+plot(showEmas ? emaF : na, "EMA veloce", color = color.new(#1b9e5a, 0), linewidth = 2)
+plot(showEmas ? emaS : na, "EMA lenta",  color = color.new(#2e7d4f, 30), linewidth = 1)
+plot(showEmas ? emaT : na, "EMA trend",  color = color.new(color.gray, 40), linewidth = 1)
+plotshape(buySig,  "BUY",  shape.labelup,   location.belowbar, colBull, text = "BUY",  textcolor = colTxt, size = size.small)
+plotshape(sellSig, "SELL", shape.labeldown, location.abovebar, colBear, text = "SELL", textcolor = colTxt, size = size.small)
+
+alertcondition(buySig,  "Sniper BUY",  "Sniper BUY {{ticker}} @ {{close}}")
+alertcondition(sellSig, "Sniper SELL", "Sniper SELL {{ticker}} @ {{close}}")
+
+// ───────────────────────────── DASHBOARD ─────────────────────────────
+f_pos(p) => p == "Top Left" ? position.top_left : p == "Top Right" ? position.top_right : p == "Bottom Left" ? position.bottom_left : position.bottom_right
+var table dash = table.new(f_pos(dashPos), 2, 22, border_width = 1, border_color = color.new(color.black, 60))
+
+cG = color.new(#5fd38d, 0)
+cR = color.new(#ff6b6b, 0)
+cN = colTxt
+f_c(b) => b ? cG : cR
+inLdn = not na(time(timeframe.period, "0800-1630", "Europe/London"))
+inNy  = not na(time(timeframe.period, "0930-1600", "America/New_York"))
+adxRising = adx > adx[1]
+
+f_row(r, k, v, bgK, bgV, txtV) =>
+    dash.cell(0, r, k, text_color = colTxt, bgcolor = bgK, text_size = size.small, text_halign = text.align_left)
+    dash.cell(1, r, v, text_color = txtV, bgcolor = bgV, text_size = size.small)
+
+if showDash and barstate.islast
+    bias = bullScore >= minScore and bullScore > bearScore ? 1 : bearScore >= minScore and bearScore > bullScore ? -1 : 0
+    trending = adx > adxThr
+    // Trade / Level / Verdetto
+    distR = dir != 0 ? (close - entryPx) * dir / risk : 0.0
+    tradeTxt = dir == 0 ? "FLAT · " + lastResult : (dir == 1 ? "LONG · " : "SHORT · ") + (tpHit > 0 ? "TP" + str.tostring(tpHit) + " HIT" : "OPEN")
+    levelTxt = "—"
+    if dir != 0 and tpHit < 5
+        nextTp = tpPrice(tpHit + 1)
+        blocker = dir == 1 ? (ph1 > close and ph1 < nextTp ? ph1 : na) : (pl1 < close and pl1 > nextTp ? pl1 : na)
+        levelTxt := "TP" + str.tostring(tpHit + 1) + " NEXT · " + (na(blocker) ? "CLEAR" : "S/R " + fmt(blocker))
+    statusTxt = (buySig or sellSig) ? "ENTRY " + (dir == 1 ? "BUY" : "SELL") : dir != 0 and tpHit == 0 and distR <= chaseR ? "ACTIVE" : "WAIT"
+    verdTxt = dir == 0 ? "NESSUN TRADE · ATTENDI" : tpHit > 0 ? "IN RITARDO · TP" + str.tostring(tpHit) + " PRESO" : distR > chaseR ? "IN RITARDO · NO CHASE" : "VALIDO · ENTRA"
+    verdCol = dir == 0 ? color.gray : tpHit == 0 and distR <= chaseR ? colBull : color.new(#2e9e4f, 0)
+    // Conferme nella direzione del bias (o del trade)
+    refDir = dir != 0 ? dir : bias
+    confN = refDir == 1 ? bullN : refDir == -1 ? bearN : math.max(bullN, bearN)
+    confTxt = str.tostring(confN) + "/" + str.tostring(totN) + " · " + (confN >= 8 ? "HIGH" : confN >= 6 ? "MEDIUM" : "LOW")
+    // Sessione
+    sessName = inLdn and inNy ? "LDN+NY OVERLAP" : inLdn ? "LONDON" : inNy ? "NEW YORK" : "OFF HOURS"
+    mktTxt = syminfo.type == "crypto" ? "24x7 OPEN" : session.ismarket ? "MKT OPEN" : "MKT CLOSED"
+    phaseTxt = trending ? (adxRising ? "TRENDING · ACTIVE" : "TRENDING · FADING") : "RANGING · COMPRESSION"
+    adxTxt = adx < 20 ? "WEAK" : adx < 25 ? "MODERATE" : adx < 40 ? "STRONG" : "VERY STRONG"
+    structTxt = structBull ? "BULLISH · HH-HL" : structBear ? "BEARISH · LH-LL" : "MIXED"
+    volTxt = not hasVol ? "N/A" : volHigh ? "HIGH VOL" : volLow ? "LOW VOL" : "NORMAL"
+
+    f_row(0, "BULL SCORE", str.tostring(bullScore) + "% · " + f_scoreTxt(bullScore), colBull, colBull, colTxt)
+    f_row(1, "BEAR SCORE", str.tostring(bearScore) + "% · " + f_scoreTxt(bearScore), colBear, colBear, colTxt)
+    f_row(2, "MARKET BIAS", bias == 1 ? "BULLISH · BUY BIAS" : bias == -1 ? "BEARISH · SELL BIAS" : "NEUTRAL · NO BIAS", colHdr,
+         bias == 1 ? colBull : bias == -1 ? colBear : color.gray, colTxt)
+    f_row(3, "Trade", tradeTxt, colRow, colRow, dir == 1 ? cG : dir == -1 ? cR : cN)
+    f_row(4, "State", trending ? "TRENDING · TRADEABLE" : "RANGING · AVOID", colRow, colRow, trending ? cG : color.orange)
+    f_row(5, "Price/VWAP", close > vwap ? "ABOVE" : "BELOW", colRow, colRow, f_c(close > vwap))
+    f_row(6, "RSI (14)", str.tostring(rsi, "#.0"), colRow, colRow, rsi > 70 or rsi < 30 ? color.orange : f_c(rsi > 50))
+    f_row(7, "MACD Trend", macdLine > sigLine ? "BULL" : "BEAR", colRow, colRow, f_c(macdLine > sigLine))
+    f_row(8, "ADX Power", adxTxt + " · " + str.tostring(adx, "#.0"), colRow, colRow, trending ? f_c(diP > diM) : cN)
+    f_row(9, "EMA Cross", emaF > emaS ? "BULL" : "BEAR", colRow, colRow, f_c(emaF > emaS))
+    f_row(10, "ATR 14", fmt(atr), colRow, colRow, cN)
+    f_row(11, "Vol Status", volTxt, colRow, colRow, volHigh ? cG : cN)
+    f_row(12, "Struttura", structTxt, colRow, colRow, structBull ? cG : structBear ? cR : cN)
+    f_row(13, "Level", levelTxt, colRow, colRow, color.new(#3d7bd9, 0))
+    f_row(14, "Phase", phaseTxt, colRow, colRow, color.new(#3d7bd9, 0))
+    f_row(15, "Session", sessName + " · " + mktTxt, colRow, colRow, cN)
+    f_row(16, "MTF 1", f_tfName(mtfTf1) + " " + f_arrow(m1) + " · " + f_tfName(mtfTf2) + " " + f_arrow(m2), colRow, colRow, m1 == m2 ? f_c(m1 == 1) : cN)
+    f_row(17, "MTF 2", f_tfName(mtfTf3) + " " + f_arrow(m3) + " · " + f_tfName(mtfTf4) + " " + f_arrow(m4), colRow, colRow, m3 == m4 ? f_c(m3 == 1) : cN)
+    f_row(18, "Status", statusTxt, colRow, colRow, cN)
+    f_row(19, "Sniper Mode", "SNIPER v1", colRow, colRow, color.new(#3d7bd9, 0))
+    f_row(20, "Conferme", confTxt, colRow, colRow, confN >= 8 ? cG : confN >= 6 ? color.orange : cR)
+    f_row(21, "VERDETTO", verdTxt, colHdr, verdCol, colTxt)
