@@ -51,8 +51,9 @@ useTsl    = input.bool(true, "Trailing stop a gradini", group = grpRisk)
 grpVis = "Grafica"
 showEmas  = input.bool(true, "Mostra EMA", group = grpVis)
 showZones = input.bool(true, "Mostra zone TP/SL", group = grpVis)
+showSig   = input.bool(true, "Mostra etichette BUY/SELL", group = grpVis)
 keepHist  = input.bool(false, "Mantieni trade chiusi sul grafico", group = grpVis,
-     tooltip = "Se disattivato, linee e zone di un trade vengono eliminate alla chiusura e resta visibile solo il trade in corso.")
+     tooltip = "Se disattivato, linee, zone ed etichetta BUY/SELL di un trade vengono eliminate alla chiusura e resta visibile solo il trade in corso.")
 showDash  = input.bool(true, "Mostra dashboard", group = grpVis)
 dashPos   = input.string("Top Left", "Posizione dashboard",
      options = ["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group = grpVis)
@@ -154,6 +155,7 @@ var label slLbl     = na
 var label tslLbl    = na
 var box   tpBox     = na
 var box   slBox     = na
+var label sigLbl    = na
 
 tpPrice(i) => entryPx + dir * risk * tpStepR * i
 fmt(x) => str.tostring(x, format.mintick)
@@ -208,6 +210,8 @@ if closeTrade
     entryLbl.delete()
     slLbl.delete()
     tslLbl.delete()
+    if not keepHist
+        sigLbl.delete()
     dir := 0
 
 // 4) Apertura nuovo trade
@@ -219,6 +223,10 @@ if (buySig or sellSig) and dir == 0
     tslPx    := slPx
     tpHit    := 0
     entryBar := bar_index
+    sigLbl   := showSig ? label.new(bar_index, close, dir == 1 ? "BUY" : "SELL",
+         yloc = dir == 1 ? yloc.belowbar : yloc.abovebar,
+         style = dir == 1 ? label.style_label_up : label.style_label_down,
+         color = dir == 1 ? colBull : colBear, textcolor = colTxt, size = size.small) : na
     tpLines.clear()
     tpLabels.clear()
     rightX = bar_index + lblOffset
@@ -273,8 +281,6 @@ if newTp and dir != 0
 plot(showEmas ? emaF : na, "EMA veloce", color = color.new(#1b9e5a, 0), linewidth = 2)
 plot(showEmas ? emaS : na, "EMA lenta",  color = color.new(#2e7d4f, 30), linewidth = 1)
 plot(showEmas ? emaT : na, "EMA trend",  color = color.new(color.gray, 40), linewidth = 1)
-plotshape(buySig,  "BUY",  shape.labelup,   location.belowbar, colBull, text = "BUY",  textcolor = colTxt, size = size.small)
-plotshape(sellSig, "SELL", shape.labeldown, location.abovebar, colBear, text = "SELL", textcolor = colTxt, size = size.small)
 
 alertcondition(buySig,  "Sniper BUY",  "Sniper BUY {{ticker}} @ {{close}}")
 alertcondition(sellSig, "Sniper SELL", "Sniper SELL {{ticker}} @ {{close}}")
