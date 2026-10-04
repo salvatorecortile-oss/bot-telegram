@@ -49,6 +49,8 @@ useTsl    = input.bool(true, "Trailing stop a gradini", group = grpRisk)
 grpVis = "Grafica"
 showEmas  = input.bool(true, "Mostra EMA", group = grpVis)
 showZones = input.bool(true, "Mostra zone TP/SL", group = grpVis)
+keepHist  = input.bool(false, "Mantieni trade chiusi sul grafico", group = grpVis,
+     tooltip = "Se disattivato, linee e zone di un trade vengono eliminate alla chiusura e resta visibile solo il trade in corso.")
 showDash  = input.bool(true, "Mostra dashboard", group = grpVis)
 dashPos   = input.string("Top Left", "Posizione dashboard",
      options = ["Top Left", "Top Right", "Bottom Left", "Bottom Right"], group = grpVis)
@@ -182,14 +184,22 @@ if flip and not closeTrade
     lastResult := "CHIUSO DA SEGNALE OPPOSTO"
     closeTrade := true
 
-// 3) Chiusura: congela disegni, rimuove etichette dinamiche
+// 3) Chiusura: elimina i disegni del trade (o li congela se keepHist)
 if closeTrade
-    for l in tpLines
-        l.set_x2(bar_index)
-    entryLine.set_x2(bar_index)
-    slLine.set_x2(bar_index)
-    tpBox.set_right(bar_index)
-    slBox.set_right(bar_index)
+    if keepHist
+        for l in tpLines
+            l.set_x2(bar_index)
+        entryLine.set_x2(bar_index)
+        slLine.set_x2(bar_index)
+        tpBox.set_right(bar_index)
+        slBox.set_right(bar_index)
+    else
+        for l in tpLines
+            l.delete()
+        entryLine.delete()
+        slLine.delete()
+        tpBox.delete()
+        slBox.delete()
     tslLine.delete()
     for lb in tpLabels
         lb.delete()
