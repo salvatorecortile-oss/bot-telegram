@@ -78,7 +78,14 @@ ricentratura, orari 10–19, lotto 0.01, stop giornaliero −30 $.
   BUY STOP sopra il massimo e SELL STOP sotto il minimo (+/− 0,20 $).
 - Quando uno scatta l'altro viene cancellato; trailing senza take profit.
 
-Filtri aggiuntivi (di base spenti):
-- `InpBlock1`, `InpBlock2`: fasce orarie bloccate, es. `15:00-16:00`.
+Filtri attivi di base (versione 3):
+- `InpBlock1 = 15:00-16:00`: fascia oraria bloccata (dati USA).
+- `InpMinDayRangePct = 1.0`: opera solo se oggi l'oro si è già mosso almeno dell'1 % (massimo − minimo).
+- `InpMinVolRatio = 1.5`: opera solo se la volatilità dell'ultima ora (ATR M15 su 4 candele) è almeno
+  1,5 volte la media degli ultimi ~5 giorni (ATR M15 su 480 candele).
+- Stop giornaliero −30 $, **settimanale −60 $** (fermo fino a lunedì), **mensile −120 $** (fermo fino al mese dopo).
+
+Filtri opzionali (di base spenti):
+- `InpBlock2`: seconda fascia oraria bloccata.
 - `InpMinAtrPercent`: opera solo se l'ATR giornaliero è almeno questa % del prezzo.
 - `InpUseStopLimit` + `InpMaxSlippage`: ordini stop limit, ingresso al massimo 0,30 $ peggiore del previsto.

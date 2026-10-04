@@ -13,12 +13,14 @@
 //|  quando uno scatta, trailing senza take profit.                  |
 //|                                                                  |
 //|  Filtri: orari, due fasce orarie bloccate, spread massimo,       |
-//|  stop giornaliero, volatilita' minima (ATR giornaliero in % del  |
-//|  prezzo) e ordini stop limit per limitare lo slippage.           |
+//|  stop giornaliero / settimanale / mensile, volatilita' del giorno |
+//|  stesso (range di oggi in % del prezzo), volatilita' dell'ultima |
+//|  ora rispetto alla media, ATR giornaliero (opzionale) e ordini   |
+//|  stop limit per limitare lo slippage.                            |
 //|  Tutte le distanze sono in prezzo (1.00 = 1 dollaro sull'oro).   |
 //+------------------------------------------------------------------+
 #property copyright "Salvatore Cortile"
-#property version   "2.00"
+#property version   "3.00"
 #property description "Oro: forbice fissa o rottura del range, stop stretto e trailing. Filtri di orario, fasce bloccate, spread, volatilita' e stop limit."
 
 #include <Trade/Trade.mqh>
@@ -45,10 +47,18 @@ input group "Filtri e rischio"
 input double InpLots            = 0.01;  // Lotto
 input int    InpStartHour       = 10;    // Ora inizio (ora del server, 0-23)
 input int    InpEndHour         = 19;    // Ora fine (esclusa, 1-24)
-input string InpBlock1          = "";    // Fascia bloccata 1, es. "15:00-16:00" (vuoto = nessuna)
+input string InpBlock1          = "15:00-16:00"; // Fascia bloccata 1, es. "15:00-16:00" (vuoto = nessuna)
 input string InpBlock2          = "";    // Fascia bloccata 2, es. "16:55-17:10" (vuoto = nessuna)
 input int    InpMaxSpreadPoints = 35;    // Spread massimo per mettere gli ordini, in points (0 = nessun filtro)
 input double InpDailyLossLimit  = 30.0;  // Stop giornaliero (0 = spento)
+input double InpWeeklyLossLimit = 60.0;  // Stop settimanale: si ferma fino a lunedi' se la settimana perde questo (0 = spento)
+input double InpMonthlyLossLimit = 120.0; // Stop mensile: si ferma fino al mese dopo se il mese perde questo (0 = spento)
+
+input group "Filtri di volatilita'"
+input double InpMinDayRangePct  = 1.0;   // Volatilita' di oggi: opera solo se il range di oggi e' almeno questa % del prezzo (0 = spento)
+input double InpMinVolRatio     = 1.5;   // Volatilita' ultima ora: opera solo se e' almeno N volte la media (0 = spento)
+input int    InpFastAtrBars     = 4;     // Candele M15 per la volatilita' recente (4 = ultima ora)
+input int    InpSlowAtrBars     = 480;   // Candele M15 per la volatilita' media (480 = circa 5 giorni)
 input double InpMinAtrPercent   = 0.0;   // Volatilita' minima: ATR giornaliero in % del prezzo (0 = filtro spento)
 input int    InpAtrPeriod       = 14;    // Periodo dell'ATR giornaliero
 
@@ -61,6 +71,10 @@ input string InpComment        = "Straddle Gold";
 
 CTrade   trade;
 double   dayPnl     = 0.0;
+double   weekPnl    = 0.0;
+double   monthPnl   = 0.0;
+int      fastAtrHandle = INVALID_HANDLE;
+int      slowAtrHandle = INVALID_HANDLE;
 datetime pnlChecked = 0;
 int      atrHandle  = INVALID_HANDLE;
 int      block1Start = -1, block1End = -1, block2Start = -1, block2End = -1;
@@ -72,7 +86,8 @@ int OnInit()
    if(InpMode < 0 || InpMode > 1 || InpDistance <= 0 || InpStopLoss <= 0 || InpTrailDistance <= 0 ||
       InpTrailStart < 0 || InpTrailStep < 0 || InpRecenter <= 0 || InpLots <= 0 || InpDailyLossLimit < 0 ||
       InpRangeBars < 2 || InpMaxRangeWidth <= 0 || InpRangeBuffer < 0 || InpMinAtrPercent < 0 ||
-      InpAtrPeriod < 1 || InpMaxSlippage <= 0 ||
+      InpAtrPeriod < 1 || InpMaxSlippage <= 0 || InpWeeklyLossLimit < 0 || InpMonthlyLossLimit < 0 ||
+      InpMinDayRangePct < 0 || InpMinVolRatio < 0 || InpFastAtrBars < 1 || InpSlowAtrBars <= InpFastAtrBars ||
       InpStartHour < 0 || InpStartHour > 23 || InpEndHour < 1 || InpEndHour > 24)
      {
       Print("Parametri non validi.");
@@ -93,12 +108,25 @@ int OnInit()
         }
      }
 
+   if(InpMinVolRatio > 0)
+     {
+      fastAtrHandle = iATR(_Symbol, PERIOD_M15, InpFastAtrBars);
+      slowAtrHandle = iATR(_Symbol, PERIOD_M15, InpSlowAtrBars);
+      if(fastAtrHandle == INVALID_HANDLE || slowAtrHandle == INVALID_HANDLE)
+        {
+         Print("Impossibile creare l'ATR M15: ", GetLastError());
+         return(INIT_FAILED);
+        }
+     }
+
    trade.SetExpertMagicNumber(InpMagic);
    trade.SetDeviationInPoints(InpSlippagePoints);
    trade.SetTypeFillingBySymbol(_Symbol);
    PrintFormat("Straddle_Gold avviato su %s | modalita' %s | stop %.2f | trailing %.2f/%.2f | orari %d-%d | fasce bloccate [%s] [%s] | ATR min %.2f%% | stop limit %s",
                _Symbol, InpMode == 0 ? "forbice fissa" : "rottura del range", InpStopLoss, InpTrailDistance, InpTrailStep,
                InpStartHour, InpEndHour, InpBlock1, InpBlock2, InpMinAtrPercent, InpUseStopLimit ? "si" : "no");
+   PrintFormat("Filtri: range di oggi >= %.2f%% | volatilita' ultima ora >= %.2fx media | stop giorno/settimana/mese %.0f/%.0f/%.0f",
+               InpMinDayRangePct, InpMinVolRatio, InpDailyLossLimit, InpWeeklyLossLimit, InpMonthlyLossLimit);
    return(INIT_SUCCEEDED);
   }
 
@@ -107,6 +135,10 @@ void OnDeinit(const int reason)
   {
    if(atrHandle != INVALID_HANDLE)
       IndicatorRelease(atrHandle);
+   if(fastAtrHandle != INVALID_HANDLE)
+      IndicatorRelease(fastAtrHandle);
+   if(slowAtrHandle != INVALID_HANDLE)
+      IndicatorRelease(slowAtrHandle);
    Comment("");
   }
 
@@ -137,7 +169,17 @@ void OnTick()
 //+------------------------------------------------------------------+
 string ManagePendings(const MqlTick &tick)
   {
-   UpdateDayPnl();
+   UpdatePnl();
+   if(InpMonthlyLossLimit > 0 && monthPnl <= -InpMonthlyLossLimit)
+     {
+      DeletePendings();
+      return(StringFormat("fermo fino al mese prossimo: perdita del mese %.2f", monthPnl));
+     }
+   if(InpWeeklyLossLimit > 0 && weekPnl <= -InpWeeklyLossLimit)
+     {
+      DeletePendings();
+      return(StringFormat("fermo fino a lunedi': perdita della settimana %.2f", weekPnl));
+     }
    if(InpDailyLossLimit > 0 && dayPnl <= -InpDailyLossLimit)
      {
       DeletePendings();
@@ -164,6 +206,18 @@ string ManagePendings(const MqlTick &tick)
      {
       DeletePendings();
       return(StringFormat("volatilita' bassa (ATR %.2f%% < %.2f%%)", atrPct, InpMinAtrPercent));
+     }
+   double dayRangePct;
+   if(!DayRangeOk(dayRangePct))
+     {
+      DeletePendings();
+      return(StringFormat("giornata calma (range di oggi %.2f%% < %.2f%%)", dayRangePct, InpMinDayRangePct));
+     }
+   double volRatio;
+   if(!VolRatioOk(volRatio))
+     {
+      DeletePendings();
+      return(StringFormat("ultima ora calma (%.2fx < %.2fx la media)", volRatio, InpMinVolRatio));
      }
 
    // Livelli voluti per BUY e SELL.
@@ -310,6 +364,36 @@ bool VolatilityOk(double &atrPct)
   }
 
 //+------------------------------------------------------------------+
+//| Range di oggi (massimo - minimo della candela D1 in corso) in %. |
+//+------------------------------------------------------------------+
+bool DayRangeOk(double &rangePct)
+  {
+   rangePct = 0.0;
+   if(InpMinDayRangePct <= 0)
+      return(true);
+   double high = iHigh(_Symbol, PERIOD_D1, 0), low = iLow(_Symbol, PERIOD_D1, 0);
+   if(high <= 0 || low <= 0)
+      return(false);
+   rangePct = (high - low) / low * 100.0;
+   return(rangePct >= InpMinDayRangePct);
+  }
+
+//+------------------------------------------------------------------+
+//| Volatilita' recente (ATR M15 corto) rispetto alla media (lungo). |
+//+------------------------------------------------------------------+
+bool VolRatioOk(double &ratio)
+  {
+   ratio = 0.0;
+   if(InpMinVolRatio <= 0)
+      return(true);
+   double fast[], slow[];
+   if(CopyBuffer(fastAtrHandle, 0, 1, 1, fast) != 1 || CopyBuffer(slowAtrHandle, 0, 1, 1, slow) != 1 || slow[0] <= 0)
+      return(false);
+   ratio = fast[0] / slow[0];
+   return(ratio >= InpMinVolRatio);
+  }
+
+//+------------------------------------------------------------------+
 void DeletePendings()
   {
    for(int i = OrdersTotal() - 1; i >= 0; i--)
@@ -333,18 +417,32 @@ ulong PositionTicket()
   }
 
 //+------------------------------------------------------------------+
-//| Risultato delle operazioni chiuse oggi (ricalcolato ogni 5 s).   |
+//| Risultato delle operazioni chiuse oggi, in questa settimana e in |
+//| questo mese (ricalcolato ogni 5 secondi).                        |
 //+------------------------------------------------------------------+
-void UpdateDayPnl()
+void UpdatePnl()
   {
    datetime now = TimeCurrent();
    if(now - pnlChecked < 5)
       return;
    pnlChecked = now;
 
-   datetime dayStart = now - (now % 86400);
-   dayPnl = 0.0;
-   if(!HistorySelect(dayStart, now + 60))
+   MqlDateTime t;
+   TimeToStruct(now, t);
+   datetime dayStart  = now - (now % 86400);
+   datetime weekStart = dayStart - ((t.day_of_week + 6) % 7) * 86400;   // lunedi'
+   MqlDateTime m = t;
+   m.day  = 1;
+   m.hour = 0;
+   m.min  = 0;
+   m.sec  = 0;
+   datetime monthStart = StructToTime(m);
+   datetime from       = (weekStart < monthStart) ? weekStart : monthStart;
+
+   dayPnl   = 0.0;
+   weekPnl  = 0.0;
+   monthPnl = 0.0;
+   if(!HistorySelect(from, now + 60))
       return;
    for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
      {
@@ -353,7 +451,14 @@ void UpdateDayPnl()
          continue;
       if(HistoryDealGetInteger(d, DEAL_ENTRY) != DEAL_ENTRY_OUT)
          continue;
-      dayPnl += HistoryDealGetDouble(d, DEAL_PROFIT) + HistoryDealGetDouble(d, DEAL_SWAP) + HistoryDealGetDouble(d, DEAL_COMMISSION);
+      double   r  = HistoryDealGetDouble(d, DEAL_PROFIT) + HistoryDealGetDouble(d, DEAL_SWAP) + HistoryDealGetDouble(d, DEAL_COMMISSION);
+      datetime dt = (datetime)HistoryDealGetInteger(d, DEAL_TIME);
+      if(dt >= dayStart)
+         dayPnl += r;
+      if(dt >= weekStart)
+         weekPnl += r;
+      if(dt >= monthStart)
+         monthPnl += r;
      }
   }
 
@@ -422,8 +527,10 @@ bool InBlockedWindow()
 //+------------------------------------------------------------------+
 void UpdatePanel(string state, const MqlTick &tick)
   {
-   Comment(StringFormat("Straddle Gold  |  %s  |  %s  |  lotto %.2f\nOrari %02d:00-%02d:00  |  spread %.0f points\nStato: %s\nRisultato di oggi: %.2f  (stop giornaliero -%.2f)",
+   Comment(StringFormat("Straddle Gold  |  %s  |  %s  |  lotto %.2f\nOrari %02d:00-%02d:00  |  spread %.0f points\nStato: %s\n"
+                        "Oggi: %.2f (stop -%.0f)  |  settimana: %.2f (stop -%.0f)  |  mese: %.2f (stop -%.0f)",
                         _Symbol, InpMode == 0 ? "forbice fissa" : "rottura del range", InpLots,
-                        InpStartHour, InpEndHour, (tick.ask - tick.bid) / _Point, state, dayPnl, InpDailyLossLimit));
+                        InpStartHour, InpEndHour, (tick.ask - tick.bid) / _Point, state,
+                        dayPnl, InpDailyLossLimit, weekPnl, InpWeeklyLossLimit, monthPnl, InpMonthlyLossLimit));
   }
 //+------------------------------------------------------------------+
