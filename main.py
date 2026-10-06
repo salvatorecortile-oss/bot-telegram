@@ -891,16 +891,30 @@ async def new_message_handler(event):
 
 @client.on(events.NewMessage(chats=SOURCE_CHAT_BLTECH))
 async def bltech_message_handler(event):
-    if BOT_STATE == "STOPPED":
-        return
-
     message = event.message
     source_message_id = message.id
     raw_text = message.text or ""
 
+    # Log diagnostico di ogni messaggio ricevuto da BL Tech Pro (anche quelli
+    # poi ignorati): senza questo non si distingue "il messaggio non è mai
+    # arrivato al bot" da "è arrivato ma non è stato riconosciuto".
+    logger.info(
+        "📥 BL TECH PRO MESSAGGIO RICEVUTO #%s | %s",
+        source_message_id,
+        (raw_text[:80].replace("\n", " ") if raw_text else "[VUOTO]"),
+    )
+
+    if BOT_STATE == "STOPPED":
+        logger.info("⏭️ BL TECH PRO IGNORATO (BOT_STATE=STOPPED) | #%s", source_message_id)
+        return
+
     signal = parse_bltech_signal(raw_text)
     if signal is None:
-        # Non-XAUUSD o formato non riconosciuto: ignorato silenziosamente.
+        # Non-XAUUSD o formato non riconosciuto.
+        logger.info(
+            "⏭️ BL TECH PRO IGNORATO (non XAU o formato non riconosciuto) | #%s",
+            source_message_id,
+        )
         return
 
     message_lock = get_message_lock(("bltech", source_message_id))
