@@ -7,6 +7,8 @@ EA indipendente dal bot Telegram, da usare in MetaTrader 5 (live o Strategy Test
 - RSI 14 periodi su M5, valutato alla chiusura della candela
 - RSI sale a 70 → SELL, RSI scende a 30 → BUY (modalità `SIGNAL_CROSS_IN`)
 - Slippage massimo configurabile (default 3 pips)
+- Slippage simulato nel tester: 15 $ per lotto scalati dal saldo a ogni apertura (0.01 lotti = 0.15 $)
+- Opera solo se lo spread è inferiore a 50 points
 - SL 100 pips, nessun TP, una sola posizione alla volta
 - Trailing: ogni 20 pips di profitto lo SL sale di 20 pips (+20 → pareggio, +40 → SL +20, +60 → SL +40, ... senza limite)
 - 1 pip = 10 points (con XAUUSD a 2 decimali: 1 pip = 0.10 $, 100 pips = 10 $)

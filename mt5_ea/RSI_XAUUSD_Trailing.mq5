@@ -29,6 +29,11 @@ input ENUM_SIGNAL_MODE InpSignalMode    = SIGNAL_CROSS_IN; // Modalita' segnale
 
 //--- Slippage
 input double           InpSlippagePips  = 3.0;             // Slippage massimo (pips) - 0 = nessuna tolleranza
+input double           InpSimSlipPerLot = 15.0;            // Slippage simulato nel tester ($ per lotto, 0 = off)
+input bool             InpSimSlipOnClose= false;           // Applica lo slippage simulato anche in chiusura
+
+//--- Filtro spread
+input int              InpMaxSpreadPts  = 50;              // Opera solo se lo spread e' inferiore a (points, 0 = off)
 
 //--- Stop loss (nessun take profit)
 input double           InpStopLossPips  = 100.0;           // Stop loss (pips)
@@ -43,6 +48,8 @@ CTrade   trade;
 int      rsiHandle   = INVALID_HANDLE;
 datetime lastBarTime = 0;
 double   pipSize     = 0.0;
+double   simSlipTotal = 0.0;   // totale slippage simulato addebitato nel tester ($)
+int      simSlipCount = 0;
 
 //+------------------------------------------------------------------+
 int OnInit()
@@ -79,6 +86,47 @@ void OnDeinit(const int reason)
   {
    if(rsiHandle != INVALID_HANDLE)
       IndicatorRelease(rsiHandle);
+   if(simSlipCount > 0)
+      PrintFormat("Slippage simulato totale: %.2f $ su %d deal", simSlipTotal, simSlipCount);
+  }
+
+//+------------------------------------------------------------------+
+//| Slippage simulato: solo nello Strategy Tester, per ogni deal     |
+//| dell'EA scala dal saldo InpSimSlipPerLot $ per lotto eseguito    |
+//| (0.01 lotti -> 0.15 $ con il valore di default).                 |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &trans,
+                        const MqlTradeRequest &request,
+                        const MqlTradeResult &result)
+  {
+   if(InpSimSlipPerLot <= 0.0 || !MQLInfoInteger(MQL_TESTER))
+      return;
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD)
+      return;
+   if(!HistoryDealSelect(trans.deal))
+      return;
+   if(HistoryDealGetString(trans.deal, DEAL_SYMBOL) != _Symbol)
+      return;
+   if((ulong)HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != InpMagic)
+      return;
+
+   long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   bool isOpen  = (entry == DEAL_ENTRY_IN);
+   bool isClose = (entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY || entry == DEAL_ENTRY_INOUT);
+   if(!isOpen && !(isClose && InpSimSlipOnClose))
+      return;
+
+   double cost = NormalizeDouble(InpSimSlipPerLot * HistoryDealGetDouble(trans.deal, DEAL_VOLUME), 2);
+   if(cost <= 0.0)
+      return;
+   if(TesterWithdrawal(cost))
+     {
+      simSlipTotal += cost;
+      simSlipCount++;
+      PrintFormat("Slippage simulato: -%.2f $ (deal #%I64u, %s)", cost, trans.deal, isOpen ? "apertura" : "chiusura");
+     }
+   else
+      PrintFormat("TesterWithdrawal fallito (%.2f $), errore %d", cost, GetLastError());
   }
 
 //+------------------------------------------------------------------+
@@ -131,6 +179,15 @@ void CheckSignal()
      {
       PrintFormat("Segnale %s ignorato (RSI %.2f): posizione gia' aperta",
                   sellSignal ? "SELL" : "BUY", last);
+      return;
+     }
+
+   double point  = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   long   spread = (long)MathRound((SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID)) / point);
+   if(InpMaxSpreadPts > 0 && spread >= InpMaxSpreadPts)
+     {
+      PrintFormat("Segnale %s ignorato (RSI %.2f): spread %I64d points >= %d",
+                  sellSignal ? "SELL" : "BUY", last, spread, InpMaxSpreadPts);
       return;
      }
 
