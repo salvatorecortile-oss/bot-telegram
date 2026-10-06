@@ -6,7 +6,7 @@ EA indipendente dal bot Telegram, da usare in MetaTrader 5 (live o Strategy Test
 - Simbolo: XAUUSD (quello del grafico/tester), lotto 0.01
 - RSI 14 periodi su M5, valutato alla chiusura della candela
 - RSI sale a 70 → SELL, RSI scende a 30 → BUY (modalità `SIGNAL_CROSS_IN`)
-- Slippage massimo configurabile (default 3 pips)
+- Nessun limite di slippage massimo: gli ordini vengono sempre eseguiti
 - Slippage simulato nel tester: 15 $ per lotto scalati dal saldo a ogni apertura (0.01 lotti = 0.15 $)
 - Opera solo se lo spread è inferiore a 50 points
 - SL 100 pips, nessun TP, una sola posizione alla volta

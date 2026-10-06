@@ -28,7 +28,6 @@ input double           InpRsiBuyLevel   = 30.0;            // Livello BUY
 input ENUM_SIGNAL_MODE InpSignalMode    = SIGNAL_CROSS_IN; // Modalita' segnale
 
 //--- Slippage
-input double           InpSlippagePips  = 3.0;             // Slippage massimo (pips) - 0 = nessuna tolleranza
 input double           InpSimSlipPerLot = 15.0;            // Slippage simulato nel tester ($ per lotto, 0 = off)
 input bool             InpSimSlipOnClose= false;           // Applica lo slippage simulato anche in chiusura
 
@@ -43,6 +42,8 @@ input double           InpPointsPerPip  = 10.0;            // Points per 1 pip (
 input double           InpTrailStart    = 20.0;            // Profitto minimo per attivare il trailing (pips)
 input double           InpTrailStep     = 20.0;            // Ogni quanti pips di profitto si sposta lo SL
 input double           InpTrailDistance = 20.0;            // Distanza dello SL dal gradino raggiunto (pips)
+
+#define NO_SLIPPAGE_LIMIT 100000   // points: in pratica nessun limite allo slippage
 
 CTrade   trade;
 int      rsiHandle   = INVALID_HANDLE;
@@ -72,12 +73,12 @@ int OnInit()
      }
 
    trade.SetExpertMagicNumber(InpMagic);
-   ulong slippagePoints = (ulong)MathRound(MathMax(InpSlippagePips, 0.0) * InpPointsPerPip);
-   trade.SetDeviationInPoints(slippagePoints);
+   // Nessun limite di slippage: l'ordine viene eseguito a qualunque prezzo disponibile.
+   trade.SetDeviationInPoints(NO_SLIPPAGE_LIMIT);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   PrintFormat("EA avviato su %s | pip = %.5f | SL = %.1f pips (%.2f di prezzo) | slippage = %.1f pips (%I64u points)",
-               _Symbol, pipSize, InpStopLossPips, InpStopLossPips * pipSize, InpSlippagePips, slippagePoints);
+   PrintFormat("EA avviato su %s | pip = %.5f | SL = %.1f pips (%.2f di prezzo)",
+               _Symbol, pipSize, InpStopLossPips, InpStopLossPips * pipSize);
    return(INIT_SUCCEEDED);
   }
 
