@@ -22,7 +22,8 @@ GOOD_MORNING_MESSAGE_TEMPLATE = (
 
 FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE = (
     "🌙 <b>CHIUSURA GIORNALIERA</b>\n"
-    "🕙 Tutte le operazioni vengono chiuse entro le 22:45."
+    "🕙 Tutte le operazioni vengono chiuse entro le 22:45.\n\n"
+    "{operations}"
 )
 
 OPEN_TRADE_MESSAGE_TEMPLATE = (
@@ -403,10 +404,29 @@ async def send_good_morning_message():
     )
 
 
-async def send_forced_daily_close_message():
+def format_forced_daily_close_message(closed_operations):
+    """closed_operations: lista di dict {'direction', 'pips' (puo' essere
+    None se non calcolabile), 'source'}, una riga per ogni posizione chiusa
+    alle 22:45."""
+    lines = []
+    for op in closed_operations:
+        pips = op.get("pips")
+        if pips is None:
+            pips_text = "N/D"
+            emoji = "ℹ️"
+        else:
+            pips_text = f"{_format_signed_pips(pips)} PIPS"
+            emoji = "✅" if pips >= 0 else "❌"
+        lines.append(
+            f"{emoji} XAUUSD {op['direction']} ({op['source']}) — {pips_text}"
+        )
+    return FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE.format(operations="\n".join(lines))
+
+
+async def send_forced_daily_close_message(closed_operations):
     return await client.send_message(
         DESTINATION_CHAT,
-        FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE,
+        format_forced_daily_close_message(closed_operations),
         parse_mode="html",
         silent=True,
     )

@@ -2120,14 +2120,22 @@ async def daily_close_scheduler(stop_event):
                 if not bot_positions:
                     logger.info("🌙 22:59 | Nessun trade XAUUSD del bot aperto. Nessun messaggio di chiusura inviato.")
                 else:
-                    closed_prices = []
+                    closed_operations = []
                     for position in bot_positions:
                         ticket = int(position.ticket)
-                        close_fn = (
-                            close_position_bltech
-                            if int(getattr(position, "magic", -1)) == int(MAGIC_NUMBER_BLTECH)
-                            else close_position
+                        is_bltech = int(getattr(position, "magic", -1)) == int(MAGIC_NUMBER_BLTECH)
+                        close_fn = close_position_bltech if is_bltech else close_position
+                        source_label = "BL Tech" if is_bltech else "Cédric"
+
+                        # Lettura PRIMA della chiusura: una volta chiusa, il
+                        # monitor (entro pochi secondi) puo' gia' aggiornare lo
+                        # status della riga e farla sparire da questa query.
+                        trade_row = await asyncio.to_thread(
+                            get_open_trade_by_ticket_any_source, ticket, "XAUUSD"
                         )
+                        direction = trade_row[4] if trade_row else None
+                        open_price = float(trade_row[11] or trade_row[5] or 0.0) if trade_row else 0.0
+
                         # Alcuni broker (spesso i demo) hanno una breve pausa di
                         # mercato proprio intorno a quest'orario per il rollover
                         # giornaliero (retcode 10018 "Market closed"): è
@@ -2139,10 +2147,20 @@ async def daily_close_scheduler(stop_event):
                         for attempt in range(1, max_attempts + 1):
                             try:
                                 result = await asyncio.to_thread(close_fn, ticket)
-                                closed_prices.append(float(result.price))
+                                pips = (
+                                    _calculate_closed_trade_pips(open_price, float(result.price), direction)
+                                    if direction and open_price > 0
+                                    else None
+                                )
+                                closed_operations.append({
+                                    "direction": direction or "?",
+                                    "pips": pips,
+                                    "source": source_label,
+                                })
                                 logger.info(
-                                    "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | 22:59 IT",
+                                    "🌙 CHIUSURA GIORNALIERA | Position=%s | Prezzo=%.2f | PIPS=%s | 22:59 IT",
                                     ticket, float(result.price),
+                                    f"{pips:+.1f}" if pips is not None else "N/D",
                                 )
                                 break
                             except Exception as e:
@@ -2159,9 +2177,9 @@ async def daily_close_scheduler(stop_event):
                                 break
 
                     # Un solo avviso giornaliero, solo se esistevano posizioni da chiudere.
-                    if closed_prices:
+                    if closed_operations:
                         try:
-                            await send_forced_daily_close_message()
+                            await send_forced_daily_close_message(closed_operations)
                         except Exception:
                             logger.exception("❌ ERRORE MESSAGGIO CHIUSURA GIORNALIERA")
         except asyncio.CancelledError:
