@@ -3,7 +3,7 @@
 //|  EA RSI M5 su XAUUSD con SL fisso, senza TP e trailing a gradini |
 //+------------------------------------------------------------------+
 #property version   "1.00"
-#property description "RSI(14) M5: >=70 SELL, <=30 BUY. SL 100 pips, nessun TP."
+#property description "RSI(14) M1: >=60 SELL, <=25 BUY. SL 20 pips, nessun TP."
 #property description "Trailing: ogni 20 pips di profitto lo SL sale di 20 (+20 -> pareggio, +40 -> +20, ...)."
 
 #include <Trade\Trade.mqh>
@@ -20,11 +20,11 @@ input ulong            InpMagic         = 20261006;        // Magic number
 input bool             InpOnePosition   = true;            // Una sola posizione alla volta
 
 //--- RSI
-input ENUM_TIMEFRAMES  InpRsiTimeframe  = PERIOD_M5;       // Timeframe RSI
+input ENUM_TIMEFRAMES  InpRsiTimeframe  = PERIOD_M1;       // Timeframe RSI
 input int              InpRsiPeriod     = 14;              // Periodo RSI
 input ENUM_APPLIED_PRICE InpRsiPrice    = PRICE_CLOSE;     // Prezzo RSI
-input double           InpRsiSellLevel  = 70.0;            // Livello SELL
-input double           InpRsiBuyLevel   = 30.0;            // Livello BUY
+input double           InpRsiSellLevel  = 60.0;            // Livello SELL
+input double           InpRsiBuyLevel   = 25.0;            // Livello BUY
 input ENUM_SIGNAL_MODE InpSignalMode    = SIGNAL_CROSS_IN; // Modalita' segnale
 
 //--- Slippage
@@ -35,13 +35,13 @@ input bool             InpSimSlipOnClose= false;           // Applica lo slippag
 input int              InpMaxSpreadPts  = 50;              // Opera solo se lo spread e' inferiore a (points, 0 = off)
 
 //--- Stop loss (nessun take profit)
-input double           InpStopLossPips  = 100.0;           // Stop loss (pips)
+input double           InpStopLossPips  = 20.0;            // Stop loss (pips)
 input double           InpPointsPerPip  = 10.0;            // Points per 1 pip (XAUUSD 2 decimali: 10 -> 1 pip = 0.10)
 
-//--- Trailing a gradini: ogni 20 pips di profitto lo SL sale di 20 pips
-input double           InpTrailStart    = 20.0;            // Profitto minimo per attivare il trailing (pips)
-input double           InpTrailStep     = 20.0;            // Ogni quanti pips di profitto si sposta lo SL
-input double           InpTrailDistance = 20.0;            // Distanza dello SL dal gradino raggiunto (pips)
+//--- Trailing a gradini fisso: ogni 20 pips di profitto lo SL sale di 20 pips
+#define TRAIL_START    20.0   // profitto minimo per attivare il trailing (pips)
+#define TRAIL_STEP     20.0   // ogni quanti pips di profitto si sposta lo SL
+#define TRAIL_DISTANCE 20.0   // distanza dello SL dal gradino raggiunto (pips)
 
 #define NO_SLIPPAGE_LIMIT 100000   // points: in pratica nessun limite allo slippage
 
@@ -289,10 +289,10 @@ void ManageTrailing()
 //+------------------------------------------------------------------+
 double LockForProfit(double profitPips)
   {
-   if(InpTrailStep <= 0.0 || profitPips < InpTrailStart)
+   if(profitPips < TRAIL_START)
       return(-1.0);
-   double reached = MathFloor(profitPips / InpTrailStep) * InpTrailStep;
-   return(reached - InpTrailDistance);
+   double reached = MathFloor(profitPips / TRAIL_STEP) * TRAIL_STEP;
+   return(reached - TRAIL_DISTANCE);
   }
 
 //+------------------------------------------------------------------+
