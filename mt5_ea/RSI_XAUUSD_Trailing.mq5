@@ -4,7 +4,7 @@
 //+------------------------------------------------------------------+
 #property version   "1.00"
 #property description "RSI(14) M5: >=70 SELL, <=30 BUY. SL 100 pips, nessun TP."
-#property description "Trailing a gradini: +30 -> SL +10, +60 -> SL +40, +90 -> SL +70."
+#property description "Trailing: ogni 20 pips di profitto lo SL sale di 20 (+20 -> pareggio, +40 -> +20, ...)."
 
 #include <Trade\Trade.mqh>
 
@@ -32,13 +32,10 @@ input ENUM_SIGNAL_MODE InpSignalMode    = SIGNAL_CROSS_IN; // Modalita' segnale
 input double           InpStopLossPips  = 100.0;           // Stop loss (pips)
 input double           InpPointsPerPip  = 10.0;            // Points per 1 pip (XAUUSD 2 decimali: 10 -> 1 pip = 0.10)
 
-//--- Trailing a gradini (pips di profitto -> pips di SL bloccati)
-input double           InpTrail1Trigger = 30.0;            // Gradino 1: profitto (pips)
-input double           InpTrail1Lock    = 10.0;            // Gradino 1: SL a +pips
-input double           InpTrail2Trigger = 60.0;            // Gradino 2: profitto (pips)
-input double           InpTrail2Lock    = 40.0;            // Gradino 2: SL a +pips
-input double           InpTrail3Trigger = 90.0;            // Gradino 3: profitto (pips)
-input double           InpTrail3Lock    = 70.0;            // Gradino 3: SL a +pips
+//--- Trailing a gradini: ogni 20 pips di profitto lo SL sale di 20 pips
+input double           InpTrailStart    = 20.0;            // Profitto minimo per attivare il trailing (pips)
+input double           InpTrailStep     = 20.0;            // Ogni quanti pips di profitto si sposta lo SL
+input double           InpTrailDistance = 20.0;            // Distanza dello SL dal gradino raggiunto (pips)
 
 CTrade   trade;
 int      rsiHandle   = INVALID_HANDLE;
@@ -226,13 +223,15 @@ void ManageTrailing()
 
 //+------------------------------------------------------------------+
 //| Restituisce i pips da bloccare per il profitto attuale (-1=none) |
+//| Es. step 20, distanza 20: +20 -> SL a 0 (pareggio), +40 -> +20,  |
+//| +60 -> +40, +80 -> +60 ... senza limite                          |
 //+------------------------------------------------------------------+
 double LockForProfit(double profitPips)
   {
-   if(profitPips >= InpTrail3Trigger) return(InpTrail3Lock);
-   if(profitPips >= InpTrail2Trigger) return(InpTrail2Lock);
-   if(profitPips >= InpTrail1Trigger) return(InpTrail1Lock);
-   return(-1.0);
+   if(InpTrailStep <= 0.0 || profitPips < InpTrailStart)
+      return(-1.0);
+   double reached = MathFloor(profitPips / InpTrailStep) * InpTrailStep;
+   return(reached - InpTrailDistance);
   }
 
 //+------------------------------------------------------------------+
