@@ -17,7 +17,6 @@ enum ENUM_SIGNAL_MODE
 //--- Trading
 input double           InpLots          = 0.01;            // Lotto
 input ulong            InpMagic         = 20261006;        // Magic number
-input int              InpDeviation     = 30;              // Slippage massimo (points)
 input bool             InpOnePosition   = true;            // Una sola posizione alla volta
 
 //--- RSI
@@ -27,6 +26,9 @@ input ENUM_APPLIED_PRICE InpRsiPrice    = PRICE_CLOSE;     // Prezzo RSI
 input double           InpRsiSellLevel  = 70.0;            // Livello SELL
 input double           InpRsiBuyLevel   = 30.0;            // Livello BUY
 input ENUM_SIGNAL_MODE InpSignalMode    = SIGNAL_CROSS_IN; // Modalita' segnale
+
+//--- Slippage
+input double           InpSlippagePips  = 3.0;             // Slippage massimo (pips) - 0 = nessuna tolleranza
 
 //--- Stop loss (nessun take profit)
 input double           InpStopLossPips  = 100.0;           // Stop loss (pips)
@@ -63,11 +65,12 @@ int OnInit()
      }
 
    trade.SetExpertMagicNumber(InpMagic);
-   trade.SetDeviationInPoints(InpDeviation);
+   ulong slippagePoints = (ulong)MathRound(MathMax(InpSlippagePips, 0.0) * InpPointsPerPip);
+   trade.SetDeviationInPoints(slippagePoints);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   PrintFormat("EA avviato su %s | pip = %.5f | SL = %.1f pips (%.2f di prezzo)",
-               _Symbol, pipSize, InpStopLossPips, InpStopLossPips * pipSize);
+   PrintFormat("EA avviato su %s | pip = %.5f | SL = %.1f pips (%.2f di prezzo) | slippage = %.1f pips (%I64u points)",
+               _Symbol, pipSize, InpStopLossPips, InpStopLossPips * pipSize, InpSlippagePips, slippagePoints);
    return(INIT_SUCCEEDED);
   }
 
