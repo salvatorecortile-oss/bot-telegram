@@ -5,3 +5,5 @@ __pycache__/
 *.pyc
 data/*.db
 logs/*.log
+news_bot/data/
+news_bot/logs/
