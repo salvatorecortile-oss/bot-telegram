@@ -1,17 +1,16 @@
 //+------------------------------------------------------------------+
 //|                                        RSI_XAUUSD_Trailing.mq5   |
-//|  EA RSI M5 su XAUUSD con SL fisso, senza TP e trailing a gradini |
+//|  EA RSI su XAUUSD con stop loss e take profit fissi (in points)  |
 //+------------------------------------------------------------------+
-#property version   "1.00"
-#property description "RSI(14) M1: >=60 SELL, <=25 BUY. SL 20 pips, nessun TP."
-#property description "Trailing: ogni 20 pips di profitto lo SL sale di 20 (+20 -> pareggio, +40 -> +20, ...)."
+#property version   "2.00"
+#property description "RSI(14) M1: >=60 SELL, <=25 BUY. SL e TP fissi in points, nessun trailing."
 
 #include <Trade\Trade.mqh>
 
 enum ENUM_SIGNAL_MODE
   {
-   SIGNAL_CROSS_IN  = 0, // Entra quando l'RSI ENTRA in zona (sale sopra 70 / scende sotto 30)
-   SIGNAL_CROSS_OUT = 1  // Entra quando l'RSI ESCE dalla zona (rientra sotto 70 / sopra 30)
+   SIGNAL_CROSS_IN  = 0, // Entra quando l'RSI ENTRA in zona (sale al livello SELL / scende al livello BUY)
+   SIGNAL_CROSS_OUT = 1  // Entra quando l'RSI ESCE dalla zona (rientra sotto il livello SELL / sopra il livello BUY)
   };
 
 //--- Trading
@@ -34,21 +33,15 @@ input bool             InpSimSlipOnClose= false;           // Applica lo slippag
 //--- Filtro spread
 input int              InpMaxSpreadPts  = 50;              // Opera solo se lo spread e' inferiore a (points, 0 = off)
 
-//--- Stop loss (nessun take profit)
-input double           InpStopLossPips  = 20.0;            // Stop loss (pips)
-input double           InpPointsPerPip  = 10.0;            // Points per 1 pip (XAUUSD 2 decimali: 10 -> 1 pip = 0.10)
-
-//--- Trailing a gradini fisso: ogni 20 pips di profitto lo SL sale di 20 pips
-#define TRAIL_START    20.0   // profitto minimo per attivare il trailing (pips)
-#define TRAIL_STEP     20.0   // ogni quanti pips di profitto si sposta lo SL
-#define TRAIL_DISTANCE 20.0   // distanza dello SL dal gradino raggiunto (pips)
+//--- Stop loss e take profit (points: 1 point = 0.01 di prezzo = 0.01 $ a 0.01 lotti)
+input int              InpStopLossPts   = 200;             // Stop loss (points, 0 = nessuno SL)
+input int              InpTakeProfitPts = 200;             // Take profit (points, 0 = nessun TP)
 
 #define NO_SLIPPAGE_LIMIT 100000   // points: in pratica nessun limite allo slippage
 
 CTrade   trade;
 int      rsiHandle   = INVALID_HANDLE;
 datetime lastBarTime = 0;
-double   pipSize     = 0.0;
 double   simSlipTotal = 0.0;   // totale slippage simulato addebitato nel tester ($)
 int      simSlipCount = 0;
 
@@ -57,13 +50,6 @@ int OnInit()
   {
    if(StringFind(_Symbol, "XAU") < 0 && StringFind(_Symbol, "GOLD") < 0)
       Print("ATTENZIONE: l'EA e' pensato per XAUUSD, simbolo attuale: ", _Symbol);
-
-   pipSize = SymbolInfoDouble(_Symbol, SYMBOL_POINT) * InpPointsPerPip;
-   if(pipSize <= 0.0)
-     {
-      Print("Pip size non valida");
-      return(INIT_FAILED);
-     }
 
    rsiHandle = iRSI(_Symbol, InpRsiTimeframe, InpRsiPeriod, InpRsiPrice);
    if(rsiHandle == INVALID_HANDLE)
@@ -77,8 +63,8 @@ int OnInit()
    trade.SetDeviationInPoints(NO_SLIPPAGE_LIMIT);
    trade.SetTypeFillingBySymbol(_Symbol);
 
-   PrintFormat("EA avviato su %s | pip = %.5f | SL = %.1f pips (%.2f di prezzo)",
-               _Symbol, pipSize, InpStopLossPips, InpStopLossPips * pipSize);
+   PrintFormat("EA avviato su %s | SL = %d points | TP = %d points",
+               _Symbol, InpStopLossPts, InpTakeProfitPts);
    return(INIT_SUCCEEDED);
   }
 
@@ -133,10 +119,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   // Il trailing va controllato a ogni tick.
-   ManageTrailing();
-
-   // I segnali RSI si valutano solo alla chiusura di una candela M5.
+   // I segnali RSI si valutano solo alla chiusura di ogni candela del timeframe RSI.
    datetime barTime = iTime(_Symbol, InpRsiTimeframe, 0);
    if(barTime == 0 || barTime == lastBarTime)
       return;
@@ -198,101 +181,23 @@ void CheckSignal()
    if(buySignal)
      {
       double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-      double sl  = NormalizeDouble(ask - InpStopLossPips * pipSize, digits);
-      if(trade.Buy(lots, _Symbol, ask, sl, 0.0, "RSI BUY"))
-         PrintFormat("BUY aperto: RSI %.2f, prezzo %.2f, SL %.2f", last, ask, sl);
+      double sl  = (InpStopLossPts   > 0) ? NormalizeDouble(ask - InpStopLossPts   * point, digits) : 0.0;
+      double tp  = (InpTakeProfitPts > 0) ? NormalizeDouble(ask + InpTakeProfitPts * point, digits) : 0.0;
+      if(trade.Buy(lots, _Symbol, ask, sl, tp, "RSI BUY"))
+         PrintFormat("BUY aperto: RSI %.2f, prezzo %.2f, SL %.2f, TP %.2f", last, ask, sl, tp);
       else
          PrintFormat("BUY fallito: %d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
      }
    else if(sellSignal)
      {
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-      double sl  = NormalizeDouble(bid + InpStopLossPips * pipSize, digits);
-      if(trade.Sell(lots, _Symbol, bid, sl, 0.0, "RSI SELL"))
-         PrintFormat("SELL aperto: RSI %.2f, prezzo %.2f, SL %.2f", last, bid, sl);
+      double sl  = (InpStopLossPts   > 0) ? NormalizeDouble(bid + InpStopLossPts   * point, digits) : 0.0;
+      double tp  = (InpTakeProfitPts > 0) ? NormalizeDouble(bid - InpTakeProfitPts * point, digits) : 0.0;
+      if(trade.Sell(lots, _Symbol, bid, sl, tp, "RSI SELL"))
+         PrintFormat("SELL aperto: RSI %.2f, prezzo %.2f, SL %.2f, TP %.2f", last, bid, sl, tp);
       else
          PrintFormat("SELL fallito: %d %s", trade.ResultRetcode(), trade.ResultRetcodeDescription());
      }
-  }
-
-//+------------------------------------------------------------------+
-//| Trailing a gradini: lo SL si sposta solo in avanti, mai indietro |
-//+------------------------------------------------------------------+
-void ManageTrailing()
-  {
-   int    digits     = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
-   double point      = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   long   stopsLevel = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   long   freeze     = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
-   double minDist    = (double)MathMax(stopsLevel, freeze) * point;
-   double bid        = SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   double ask        = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
-
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
-     {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket == 0)
-         continue;
-      if(PositionGetString(POSITION_SYMBOL) != _Symbol)
-         continue;
-      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpMagic)
-         continue;
-
-      long   type      = PositionGetInteger(POSITION_TYPE);
-      double openPrice = PositionGetDouble(POSITION_PRICE_OPEN);
-      double curSL     = PositionGetDouble(POSITION_SL);
-      double curTP     = PositionGetDouble(POSITION_TP);
-
-      double profitPips = (type == POSITION_TYPE_BUY)
-                          ? (bid - openPrice) / pipSize
-                          : (openPrice - ask) / pipSize;
-
-      double lockPips = LockForProfit(profitPips);
-      if(lockPips < 0.0)
-         continue; // nessun gradino raggiunto
-
-      if(type == POSITION_TYPE_BUY)
-        {
-         double newSL = NormalizeDouble(openPrice + lockPips * pipSize, digits);
-         if(curSL > 0.0 && newSL <= curSL + point / 2.0)
-            continue;               // SL gia' a questo livello o migliore
-         if(bid - newSL < minDist)
-            continue;               // troppo vicino al prezzo per il broker
-         if(trade.PositionModify(ticket, newSL, curTP))
-            PrintFormat("Trailing BUY #%I64u: profitto %.1f pips -> SL a +%.0f pips (%.2f)",
-                        ticket, profitPips, lockPips, newSL);
-         else
-            PrintFormat("Modifica SL fallita #%I64u: %d %s", ticket,
-                        trade.ResultRetcode(), trade.ResultRetcodeDescription());
-        }
-      else
-        {
-         double newSL = NormalizeDouble(openPrice - lockPips * pipSize, digits);
-         if(curSL > 0.0 && newSL >= curSL - point / 2.0)
-            continue;
-         if(newSL - ask < minDist)
-            continue;
-         if(trade.PositionModify(ticket, newSL, curTP))
-            PrintFormat("Trailing SELL #%I64u: profitto %.1f pips -> SL a +%.0f pips (%.2f)",
-                        ticket, profitPips, lockPips, newSL);
-         else
-            PrintFormat("Modifica SL fallita #%I64u: %d %s", ticket,
-                        trade.ResultRetcode(), trade.ResultRetcodeDescription());
-        }
-     }
-  }
-
-//+------------------------------------------------------------------+
-//| Restituisce i pips da bloccare per il profitto attuale (-1=none) |
-//| Es. step 20, distanza 20: +20 -> SL a 0 (pareggio), +40 -> +20,  |
-//| +60 -> +40, +80 -> +60 ... senza limite                          |
-//+------------------------------------------------------------------+
-double LockForProfit(double profitPips)
-  {
-   if(profitPips < TRAIL_START)
-      return(-1.0);
-   double reached = MathFloor(profitPips / TRAIL_STEP) * TRAIL_STEP;
-   return(reached - TRAIL_DISTANCE);
   }
 
 //+------------------------------------------------------------------+
