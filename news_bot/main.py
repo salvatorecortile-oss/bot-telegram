@@ -112,7 +112,13 @@ class NewsBot:
                 info["level"], info["category"], title_it, summary_it,
                 info["source"], info["num_sources"], info["link"],
             )
-            await self.send(text)
+            try:
+                await self.send(text)
+            except errors.RPCError as exc:
+                log.error("Telegram non accetta il messaggio nel canale %s: %s. "
+                          "Controlla NEWS_CHANNEL e che il tuo account possa scriverci.",
+                          config.NEWS_CHANNEL, exc.__class__.__name__)
+                return
             self.storage.mark_sent(info["story_id"], time.time())
             log.info("Inviata (score %d): %s", info["score"], info["title"])
 
@@ -170,7 +176,16 @@ class NewsBot:
 
         await self.client.get_dialogs()  # carica i canali per trovare l'ID
         self.channel = await self.client.get_entity(config.NEWS_CHANNEL)
-        log.info("Bot notizie avviato. Canale: %s", getattr(self.channel, "title", config.NEWS_CHANNEL))
+        title = getattr(self.channel, "title", config.NEWS_CHANNEL)
+        # Un gruppo "normale" trasformato in supergruppo resta visibile con il vecchio ID,
+        # ma non si può più scriverci: Telegram risponde PeerIdInvalidError.
+        if getattr(self.channel, "deactivated", False) or getattr(self.channel, "migrated_to", None):
+            raise SystemExit(
+                f"Il gruppo '{title}' (ID {config.NEWS_CHANNEL}) è stato trasformato in "
+                "supergruppo e il vecchio ID non funziona più. Lancia trova_canale.py e "
+                "metti in NEWS_CHANNEL il nuovo ID (quello che inizia con -100)."
+            )
+        log.info("Bot notizie avviato. Canale: %s (ID %s)", title, config.NEWS_CHANNEL)
         if config.DRY_RUN:
             log.info("Modalità DRY_RUN attiva: nessun messaggio verrà pubblicato.")
         if config.DEEPL_API_KEY:
