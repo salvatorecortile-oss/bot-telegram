@@ -134,7 +134,8 @@ def test_translator():
 def test_messages():
     recap = [{"category": "oro", "title_it": "L'oro <scende>", "source": "Kitco", "link": "https://k"}]
     text = messages.format_morning(datetime(2026, 10, 6, 6, 0), recap)
-    assert "Buongiorno Community" in text and "Martedì 6 ottobre 2026" in text
+    assert "Buongiorno a tutti" in text and "Martedì 6 ottobre 2026" in text
+    assert "notizie più importanti di ieri" in text and "1. 🥇" in text
     assert "&lt;scende&gt;" in text
     alert = messages.format_alert("critical", "macro", "La Fed taglia i tassi", "", "Reuters", 2, "https://r")
     assert "ULTIM'ORA" in alert and "confermata da 2 fonti" in alert

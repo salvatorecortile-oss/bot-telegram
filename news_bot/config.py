@@ -49,8 +49,12 @@ QUIET_HOURS = os.getenv("QUIET_HOURS", "").strip()
 # =========================
 INSTANT_THRESHOLD = int(os.getenv("INSTANT_THRESHOLD", "85"))
 RECAP_THRESHOLD = int(os.getenv("RECAP_THRESHOLD", "60"))
-MAX_ALERTS_PER_HOUR = int(os.getenv("MAX_ALERTS_PER_HOUR", "4"))
-RECAP_MAX_ITEMS = int(os.getenv("RECAP_MAX_ITEMS", "10"))
+# Quante notizie "ULTIM'ORA" al massimo al giorno (dalla mezzanotte),
+# e almeno quanti minuti tra una e l'altra.
+MAX_ALERTS_PER_DAY = int(os.getenv("MAX_ALERTS_PER_DAY", "2"))
+MIN_MINUTES_BETWEEN_ALERTS = int(os.getenv("MIN_MINUTES_BETWEEN_ALERTS", "60"))
+# Quante notizie al massimo nel riepilogo delle 6:00.
+RECAP_MAX_ITEMS = int(os.getenv("RECAP_MAX_ITEMS", "5"))
 
 # Notizie più vecchie di così non vengono mai inviate come "istantanee".
 MAX_INSTANT_AGE_HOURS = 3

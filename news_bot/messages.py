@@ -38,10 +38,7 @@ def _link(title, url):
 
 def format_alert(level, category, title_it, summary_it, source, num_sources, link):
     """Notizia importante inviata subito."""
-    if level == "critical":
-        header = "🚨 <b>ULTIM'ORA</b>"
-    else:
-        header = "⚡️ <b>NOTIZIA IMPORTANTE</b>"
+    header = "🚨 <b>ULTIM'ORA</b>"
     label = CATEGORY_LABELS.get(category, "📰 Notizie")
 
     lines = [f"{header} · {label}", "", f"<b>{escape(title_it)}</b>"]
@@ -63,23 +60,19 @@ def format_morning(now, recap):
     """
     frase = FRASI_BUONGIORNO[now.timetuple().tm_yday % len(FRASI_BUONGIORNO)]
     lines = [
-        "☀️ <b>Buongiorno Community!</b>",
+        "☀️ <b>Buongiorno a tutti!</b>",
         f"📅 {format_date(now)}",
         "",
         frase,
         "",
     ]
     if not recap:
-        lines.append("📰 Nessuna notizia di rilievo nelle ultime 24 ore: notte tranquilla sui mercati.")
+        lines.append("📰 Ieri nessuna notizia di rilievo: giornata tranquilla sui mercati.")
     else:
-        lines.append("📰 <b>Le notizie più importanti delle ultime 24 ore</b>")
-        for category in ("oro", "macro", "geopolitica", "mondo"):
-            group = [r for r in recap if r["category"] == category]
-            if not group:
-                continue
-            lines += ["", f"<b>{CATEGORY_LABELS[category]}</b>"]
-            for r in group:
-                lines.append(f"• {_link(r['title_it'], r['link'])} <i>({escape(r['source'])})</i>")
+        lines.append("📰 <b>Queste sono le notizie più importanti di ieri:</b>")
+        for number, r in enumerate(recap, start=1):
+            label = CATEGORY_LABELS.get(r["category"], "📰").split(" ")[0]
+            lines += ["", f"{number}. {label} {_link(r['title_it'], r['link'])} <i>({escape(r['source'])})</i>"]
     lines += ["", "Buona giornata a tutti! 🚀"]
     return "\n".join(lines)
 

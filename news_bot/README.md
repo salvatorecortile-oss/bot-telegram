@@ -37,7 +37,10 @@ Ogni notizia riceve un **punteggio**:
 La stessa notizia riportata da più fonti viene inviata **una volta sola**.
 Gossip, sport, articoli "previsioni prezzo", spiegoni ("How…?", "Why…"), trascrizioni,
 risultati aziendali e necrologi vengono sempre scartati.
-Anti-spam: al massimo `MAX_ALERTS_PER_HOUR` notizie istantanee all'ora.
+Quante notizie arrivano al massimo:
+- **ULTIM'ORA**: al massimo `MAX_ALERTS_PER_DAY` (2) al giorno, con almeno
+  `MIN_MINUTES_BETWEEN_ALERTS` (60) minuti tra una e l'altra. Nelle giornate tranquille anche 0.
+- **Riepilogo delle 6:00**: al massimo `RECAP_MAX_ITEMS` (5) notizie, le più importanti di ieri.
 
 ## Traduzione in italiano: DeepL API Free (gratis)
 
@@ -93,7 +96,7 @@ da quel momento invia solo quelle nuove.
 
 ## Regolazioni utili (`.env`)
 
-- Troppe notizie istantanee? Alza `INSTANT_THRESHOLD` (es. 95) o abbassa `MAX_ALERTS_PER_HOUR`.
+- Troppe notizie istantanee? Alza `INSTANT_THRESHOLD` (es. 95) o abbassa `MAX_ALERTS_PER_DAY`.
 - Troppo poche? Abbassa `INSTANT_THRESHOLD` (es. 75).
 - Vuoi silenzio di notte? `QUIET_HOURS=23-6`.
 - Orario del buongiorno: `MORNING_HOUR` e `MORNING_MINUTE`.

@@ -100,10 +100,16 @@ class NewsBot:
         # può partire al giro successivo.
         since = time.time() - config.MAX_INSTANT_AGE_HOURS * 3600
         recent_ids = [s["id"] for s in self.storage.stories_since(since)]
+        midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         for info in self.engine.instant_candidates(recent_ids):
-            sent_last_hour = self.storage.alerts_sent_since(time.time() - 3600)
-            if sent_last_hour >= config.MAX_ALERTS_PER_HOUR:
-                log.info("Limite di %d notizie/ora raggiunto, attendo.", config.MAX_ALERTS_PER_HOUR)
+            if self.storage.alerts_sent_since(midnight) >= config.MAX_ALERTS_PER_DAY:
+                log.info("Già inviate %d ultim'ora oggi: le altre vanno nel riepilogo di domani.",
+                         config.MAX_ALERTS_PER_DAY)
+                break
+            gap = config.MIN_MINUTES_BETWEEN_ALERTS * 60
+            if self.storage.alerts_sent_since(time.time() - gap) > 0:
+                log.info("Ultima ultim'ora inviata da meno di %d minuti, attendo.",
+                         config.MIN_MINUTES_BETWEEN_ALERTS)
                 break
             title_it = await asyncio.to_thread(to_italian, info["title"])
             summary_it = await asyncio.to_thread(to_italian, info["summary"]) if info["summary"] else ""
