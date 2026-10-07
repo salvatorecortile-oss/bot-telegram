@@ -5,48 +5,69 @@
 //|  Regole (tutto valutato a candela chiusa):                       |
 //|  - Filtro trend: EMA50 < EMA200 -> solo BUY                      |
 //|                  EMA50 > EMA200 -> solo SELL                     |
+//|                  (invertibile con InpInvertTrend)                |
 //|  - BUY : RSI incrocia dal basso il livello 30                    |
 //|  - SELL: RSI incrocia dall'alto il livello 70                    |
 //|  - Una sola operazione aperta alla volta, lotto fisso            |
 //|  - SL: ultimo swing low (buy) / swing high (sell) precedente     |
-//|        all'apertura +/- 20 pips di distacco                      |
+//|        all'apertura +/- 1 x ATR, con distanza minima/massima     |
 //|  - BUY : RSI >= 45 -> SL a break-even, RSI >= 50 -> chiusura     |
 //|  - SELL: RSI <= 55 -> SL a break-even, RSI <= 50 -> chiusura     |
+//|  - Orario (server): nuove operazioni solo dalle 02:00 alle 18:00,|
+//|    alle 18:00 chiude tutte le operazioni aperte                  |
 //+------------------------------------------------------------------+
 #property copyright "RSI Retracement M15"
-#property version   "1.00"
+#property version   "1.10"
 
 #include <Trade\Trade.mqh>
 
+enum ENUM_TRADE_DIRECTION
+  {
+   DIR_BOTH      = 0, // Buy e Sell
+   DIR_BUY_ONLY  = 1, // Solo Buy
+   DIR_SELL_ONLY = 2  // Solo Sell
+  };
+
 //--- Generali
-input ENUM_TIMEFRAMES InpTimeframe    = PERIOD_M15; // Timeframe di lavoro
-input double          InpLots         = 0.01;       // Lotto fisso
-input int             InpSlippage     = 10;         // Slippage (points)
-input ulong           InpMagic        = 150030;     // Magic number
+input ENUM_TIMEFRAMES      InpTimeframe     = PERIOD_M15; // Timeframe di lavoro
+input double               InpLots          = 0.01;       // Lotto fisso
+input int                  InpSlippage      = 10;         // Slippage (points)
+input ulong                InpMagic         = 150030;     // Magic number
+input ENUM_TRADE_DIRECTION InpDirection     = DIR_BOTH;   // Direzione operazioni
 
 //--- RSI
-input int             InpRsiPeriod    = 14;         // Periodo RSI
-input double          InpBuyEntry     = 30.0;       // BUY: incrocio dal basso
-input double          InpSellEntry    = 70.0;       // SELL: incrocio dall'alto
-input double          InpBuyBE        = 45.0;       // BUY: livello break-even
-input double          InpSellBE       = 55.0;       // SELL: livello break-even
-input double          InpBuyTP        = 50.0;       // BUY: livello chiusura (TP)
-input double          InpSellTP       = 50.0;       // SELL: livello chiusura (TP)
+input int                  InpRsiPeriod     = 14;         // Periodo RSI
+input double               InpBuyEntry      = 30.0;       // BUY: incrocio dal basso
+input double               InpSellEntry     = 70.0;       // SELL: incrocio dall'alto
+input double               InpBuyBE         = 45.0;       // BUY: livello break-even
+input double               InpSellBE        = 55.0;       // SELL: livello break-even
+input double               InpBuyTP         = 50.0;       // BUY: livello chiusura (TP)
+input double               InpSellTP        = 50.0;       // SELL: livello chiusura (TP)
 
 //--- Filtro trend
-input int             InpEmaFast      = 50;         // EMA veloce
-input int             InpEmaSlow      = 200;        // EMA lenta
+input int                  InpEmaFast       = 50;         // EMA veloce
+input int                  InpEmaSlow       = 200;        // EMA lenta
+input bool                 InpInvertTrend   = false;      // Inverti filtro (EMA50>EMA200 -> BUY)
 
 //--- Stop Loss
-input int             InpSwingBars    = 2;          // Candele a sx/dx per swing
-input int             InpSwingLookback= 200;        // Candele massime di ricerca swing
-input double          InpSLBufferPips = 20.0;       // Distacco SL dallo swing (pips)
-input int             InpPipPoints    = 10;         // Points per 1 pip
+input int                  InpSwingBars     = 2;          // Candele a sx/dx per swing
+input int                  InpSwingLookback = 200;        // Candele massime di ricerca swing
+input int                  InpAtrPeriod     = 14;         // Periodo ATR
+input double               InpSLAtrMult     = 1.0;        // Distacco SL dallo swing (x ATR)
+input double               InpSLMinAtr      = 1.0;        // Distanza minima SL dall'entrata (x ATR, 0=off)
+input double               InpSLMaxAtr      = 3.0;        // Distanza massima SL dall'entrata (x ATR, 0=off)
+
+//--- Filtro orario (ora del server)
+input bool                 InpUseTimeFilter = true;       // Usa filtro orario
+input int                  InpStartHour     = 2;          // Ora inizio apertura operazioni
+input int                  InpEndHour       = 18;         // Ora fine operativita'
+input bool                 InpCloseAtEnd    = true;       // Chiudi le operazioni all'ora di fine
 
 CTrade   trade;
 int      hRsi     = INVALID_HANDLE;
 int      hEmaFast = INVALID_HANDLE;
 int      hEmaSlow = INVALID_HANDLE;
+int      hAtr     = INVALID_HANDLE;
 datetime lastBar  = 0;
 
 //+------------------------------------------------------------------+
@@ -55,7 +76,9 @@ int OnInit()
    hRsi     = iRSI(_Symbol, InpTimeframe, InpRsiPeriod, PRICE_CLOSE);
    hEmaFast = iMA(_Symbol, InpTimeframe, InpEmaFast, 0, MODE_EMA, PRICE_CLOSE);
    hEmaSlow = iMA(_Symbol, InpTimeframe, InpEmaSlow, 0, MODE_EMA, PRICE_CLOSE);
-   if(hRsi == INVALID_HANDLE || hEmaFast == INVALID_HANDLE || hEmaSlow == INVALID_HANDLE)
+   hAtr     = iATR(_Symbol, InpTimeframe, InpAtrPeriod);
+   if(hRsi == INVALID_HANDLE || hEmaFast == INVALID_HANDLE ||
+      hEmaSlow == INVALID_HANDLE || hAtr == INVALID_HANDLE)
      {
       Print("Errore creazione indicatori: ", GetLastError());
       return(INIT_FAILED);
@@ -73,6 +96,7 @@ void OnDeinit(const int reason)
    IndicatorRelease(hRsi);
    IndicatorRelease(hEmaFast);
    IndicatorRelease(hEmaSlow);
+   IndicatorRelease(hAtr);
   }
 
 //+------------------------------------------------------------------+
@@ -83,36 +107,67 @@ void OnTick()
    if(barTime == 0 || barTime == lastBar)
       return;
 
-   double rsi[], emaFast[], emaSlow[];
+   double rsi[], emaFast[], emaSlow[], atr[];
    ArraySetAsSeries(rsi, true);
    ArraySetAsSeries(emaFast, true);
    ArraySetAsSeries(emaSlow, true);
+   ArraySetAsSeries(atr, true);
    if(CopyBuffer(hRsi, 0, 1, 2, rsi) != 2 ||
       CopyBuffer(hEmaFast, 0, 1, 1, emaFast) != 1 ||
-      CopyBuffer(hEmaSlow, 0, 1, 1, emaSlow) != 1)
+      CopyBuffer(hEmaSlow, 0, 1, 1, emaSlow) != 1 ||
+      CopyBuffer(hAtr, 0, 1, 1, atr) != 1)
       return; // dati non pronti, riprova al prossimo tick
 
    lastBar = barTime;
 
    double rsiLast = rsi[0]; // candela appena chiusa (shift 1)
    double rsiPrev = rsi[1]; // candela prima (shift 2)
+   bool   inHours = IsTradingHour();
 
    //--- gestione posizione aperta
    ulong ticket;
    if(SelectMyPosition(ticket))
      {
+      if(InpUseTimeFilter && InpCloseAtEnd && !inHours)
+        {
+         if(!trade.PositionClose(ticket))
+            Print("Chiusura fine orario fallita: ", trade.ResultRetcodeDescription());
+         return;
+        }
       ManagePosition(ticket, rsiLast);
       return; // una sola operazione alla volta
      }
 
-   //--- ingressi
-   bool trendBuy  = emaFast[0] < emaSlow[0];
-   bool trendSell = emaFast[0] > emaSlow[0];
+   if(!inHours)
+      return;
 
-   if(trendBuy && rsiPrev < InpBuyEntry && rsiLast >= InpBuyEntry)
-      OpenBuy();
-   else if(trendSell && rsiPrev > InpSellEntry && rsiLast <= InpSellEntry)
-      OpenSell();
+   //--- ingressi
+   bool upTrend   = emaFast[0] > emaSlow[0];
+   bool downTrend = emaFast[0] < emaSlow[0];
+   bool trendBuy  = InpInvertTrend ? upTrend : downTrend;
+   bool trendSell = InpInvertTrend ? downTrend : upTrend;
+   bool allowBuy  = InpDirection != DIR_SELL_ONLY;
+   bool allowSell = InpDirection != DIR_BUY_ONLY;
+
+   if(allowBuy && trendBuy && rsiPrev < InpBuyEntry && rsiLast >= InpBuyEntry)
+      OpenBuy(atr[0]);
+   else if(allowSell && trendSell && rsiPrev > InpSellEntry && rsiLast <= InpSellEntry)
+      OpenSell(atr[0]);
+  }
+
+//+------------------------------------------------------------------+
+//| true se l'ora del server e' nella finestra operativa             |
+//| [InpStartHour, InpEndHour), anche a cavallo della mezzanotte     |
+//+------------------------------------------------------------------+
+bool IsTradingHour()
+  {
+   if(!InpUseTimeFilter)
+      return(true);
+   MqlDateTime t;
+   TimeToStruct(TimeCurrent(), t);
+   if(InpStartHour < InpEndHour)
+      return(t.hour >= InpStartHour && t.hour < InpEndHour);
+   return(t.hour >= InpStartHour || t.hour < InpEndHour);
   }
 
 //+------------------------------------------------------------------+
@@ -189,7 +244,7 @@ void ManagePosition(const ulong ticket, const double rsiLast)
   }
 
 //+------------------------------------------------------------------+
-void OpenBuy()
+void OpenBuy(const double atr)
   {
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double swing;
@@ -198,7 +253,15 @@ void OpenBuy()
       Print("BUY saltato: nessuno swing low trovato");
       return;
      }
-   double sl = NormalizeDouble(swing - InpSLBufferPips * InpPipPoints * _Point, _Digits);
+   double dist = ask - (swing - InpSLAtrMult * atr);
+   if(InpSLMinAtr > 0.0 && dist < InpSLMinAtr * atr)
+      dist = InpSLMinAtr * atr;
+   if(InpSLMaxAtr > 0.0 && dist > InpSLMaxAtr * atr)
+     {
+      Print("BUY saltato: SL oltre ", InpSLMaxAtr, " x ATR");
+      return;
+     }
+   double sl = NormalizeDouble(ask - dist, _Digits);
    if(ask - sl <= StopsDistance())
      {
       Print("BUY saltato: SL troppo vicino al prezzo");
@@ -209,7 +272,7 @@ void OpenBuy()
   }
 
 //+------------------------------------------------------------------+
-void OpenSell()
+void OpenSell(const double atr)
   {
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double swing;
@@ -218,7 +281,15 @@ void OpenSell()
       Print("SELL saltato: nessuno swing high trovato");
       return;
      }
-   double sl = NormalizeDouble(swing + InpSLBufferPips * InpPipPoints * _Point, _Digits);
+   double dist = (swing + InpSLAtrMult * atr) - bid;
+   if(InpSLMinAtr > 0.0 && dist < InpSLMinAtr * atr)
+      dist = InpSLMinAtr * atr;
+   if(InpSLMaxAtr > 0.0 && dist > InpSLMaxAtr * atr)
+     {
+      Print("SELL saltato: SL oltre ", InpSLMaxAtr, " x ATR");
+      return;
+     }
+   double sl = NormalizeDouble(bid + dist, _Digits);
    if(sl - bid <= StopsDistance())
      {
       Print("SELL saltato: SL troppo vicino al prezzo");
