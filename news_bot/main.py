@@ -96,7 +96,7 @@ class NewsBot:
             return
 
         # Controlliamo tutte le storie recenti non ancora inviate: così una notizia
-        # rimandata per il limite orario, o confermata più tardi da altre fonti,
+        # confermata più tardi da altre fonti
         # può partire al giro successivo.
         since = time.time() - config.MAX_INSTANT_AGE_HOURS * 3600
         recent_ids = [s["id"] for s in self.storage.stories_since(since)]
@@ -105,11 +105,6 @@ class NewsBot:
             if self.storage.alerts_sent_since(midnight) >= config.MAX_ALERTS_PER_DAY:
                 log.info("Già inviate %d ultim'ora oggi: le altre vanno nel riepilogo di domani.",
                          config.MAX_ALERTS_PER_DAY)
-                break
-            gap = config.MIN_MINUTES_BETWEEN_ALERTS * 60
-            if self.storage.alerts_sent_since(time.time() - gap) > 0:
-                log.info("Ultima ultim'ora inviata da meno di %d minuti, attendo.",
-                         config.MIN_MINUTES_BETWEEN_ALERTS)
                 break
             title_it = await asyncio.to_thread(to_italian, info["title"])
             summary_it = await asyncio.to_thread(to_italian, info["summary"]) if info["summary"] else ""
