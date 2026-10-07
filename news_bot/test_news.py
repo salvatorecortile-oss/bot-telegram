@@ -39,6 +39,41 @@ def test_classifier():
     assert classifier.classify("Gold price prediction for next week") == "info"
 
 
+def test_real_headlines():
+    """Titoli veri dai test del 7 ottobre 2026."""
+    import config
+
+    def score(title, tier, sources):
+        return classifier.base_score(title, tier) + classifier.confirm_bonus(sources)
+
+    not_instant = [
+        ("US military aid to Israel continues three years into Gaza genocide", 2, 2),
+        ("Russia ‘pursuing strategy of terror’, EU’s von der Leyen says after deadly strikes on Ukraine – Europe live", 2, 1),
+        ("Ukrainian drones kill two, hit fuel hub in one of biggest attacks on Moscow region, Russia", 1, 1),
+        ("Fed minutes could detail rate-hike decision, policy path", 2, 2),
+    ]
+    for title, tier, sources in not_instant:
+        assert score(title, tier, sources) < config.INSTANT_THRESHOLD, title
+    discarded = [
+        ("Ghana inflation accelerates for second month in September", 1, 2),
+        ("Spanish Inflation Climbs to Three-And-a-Half Year High", 2, 3),
+        ("Candles lit in memory of those killed in October 7 attacks", 2, 1),
+        ("CPI Card Reports Q2 2026 Results: Full Earnings Call Transcript", 3, 1),
+        ("How has Israel’s genocide changed Gaza?", 2, 1),
+    ]
+    for title, tier, sources in discarded:
+        assert score(title, tier, sources) < config.RECAP_THRESHOLD, title
+    instant = [
+        ("Fed cuts rates by 50 basis points in surprise move", 1, 3),
+        ("Fed holds rates steady, Powell signals cuts later this year", 1, 2),
+        ("US CPI rises 0.4% in September, above expectations", 1, 2),
+        ("Gold hits record high above $4,500 as Iran tensions escalate", 2, 2),
+        ("Iran launches missiles at US base in Iraq", 1, 2),
+    ]
+    for title, tier, sources in instant:
+        assert score(title, tier, sources) >= config.INSTANT_THRESHOLD, title
+
+
 def test_parse_feed():
     now = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime())
     items = parse_feed(RSS.format(now=now).encode(), {"name": "GN", "tier": 1, "category": "macro"})
@@ -108,6 +143,6 @@ def test_messages():
 
 
 if __name__ == "__main__":
-    for test in (test_classifier, test_parse_feed, test_engine, test_translator, test_messages):
+    for test in (test_classifier, test_real_headlines, test_parse_feed, test_engine, test_translator, test_messages):
         test()
         print("OK", test.__name__)

@@ -20,7 +20,7 @@ CRITICAL = [
     # --- da World Monitor ---
     "nuclear strike", "nuclear attack", "nuclear war", "invasion",
     "declaration of war", "declares war", "declared war", "all-out war",
-    "full-scale war", "martial law", "coup", "genocide", "ethnic cleansing",
+    "full-scale war", "martial law", "coup",
     "chemical attack", "biological attack", "dirty bomb", "mass casualty",
     "massive strikes", "military strikes", "retaliatory strikes",
     "launches strikes", "strikes on iran", "strikes iran", "attack on iran",
@@ -45,7 +45,7 @@ HIGH = [
     "troops deployed", "military escalation", "military operation",
     "ground offensive", "war with iran", "war on iran", "bombing", "bombardment", "shelling", "casualties",
     "killed in", "hostage", "terrorist", "terror attack", "assassination",
-    "cyber attack", "cyberattack", "earthquake",
+    "genocide", "ethnic cleansing", "earthquake",
     "tsunami", "hurricane", "typhoon", "strike on", "strikes on", "attack on",
     "attacks on", "launched attack", "launches attack", "explosions",
     "retaliatory strike", "retaliatory attack", "preemptive strike",
@@ -76,7 +76,7 @@ MEDIUM = [
     "war", "sanctions", "embargo", "fomc", "rate decision", "rate cut",
     "rate cuts", "rate hike", "rate hikes", "lagarde", "cpi", "pce",
     "payrolls", "safe haven", "safe-haven", "gold reserves",
-    "central bank gold", "opec+",
+    "central bank gold", "opec+", "cyber attack", "cyberattack",
 ]
 
 LOW = [
@@ -99,8 +99,33 @@ EXCLUSIONS = [
     "star wars", "war of words", "price war", "culture war", "bidding war",
     # articoli che non sono notizie nuove
     "earnings call", "transcript", "quarterly results", "dies at", "obituary",
-    "live updates", "explained", "explainer",
+    "live updates", "explained", "explainer", "as it happened",
+    "in memory", "anniversary", "memorial", "commemorat",
 ]
+
+# Live blog (es. "... – Europe live"): non sono notizie singole.
+LIVE_BLOG = re.compile(r"\blive$")
+
+# Articoli "in attesa di..." o ipotesi: valgono meno di un fatto avvenuto.
+PREVIEW = re.compile(
+    r"\b(could|might|ahead of|in focus|braces? for|awaits?|set to|expected to|"
+    r"likely to|eyes|looms?|preview)\b"
+)
+PREVIEW_PENALTY = 20
+
+# Notizie economiche: contano solo se riguardano i grandi mercati che muovono l'oro.
+# "L'inflazione in Ghana" o "la banca centrale del Vietnam" restano fuori.
+ECONOMIC = re.compile(
+    r"\b(inflation|cpi|pce|gdp|rates?|central bank|yields?|bonds?|tariffs?|"
+    r"payrolls|jobs|unemployment|recession|monetary|currency)\b"
+)
+MAJOR_MARKETS = re.compile(
+    r"\b(us|u\.s\.|usa|united states|america|american|fed|federal reserve|fomc|"
+    r"powell|treasury|treasuries|dollar|wall street|trump|white house|ecb|"
+    r"lagarde|euro ?zone|china|chinese|beijing|pboc|japan|boj|opec|gold|bullion|"
+    r"oil|crude|global|world)\b"
+)
+MINOR_MARKET_PENALTY = 20
 
 # Titoli che iniziano così sono approfondimenti, video o opinioni.
 EXCLUDED_STARTS = (
@@ -139,7 +164,8 @@ _ESCALATION_ACTIONS = re.compile(
     r"bombing|missile|missiles|retaliates|retaliation|invaded|invades)\b"
 )
 _ESCALATION_TARGETS = re.compile(
-    r"\b(iran|tehran|russia|moscow|china|beijing|taiwan|north korea|"
+    # Russia/Ucraina non c'è: gli attacchi lì sono quotidiani e non sono "ultim'ora".
+    r"\b(iran|tehran|china|beijing|taiwan|north korea|"
     r"pyongyang|nato|us base|us forces|us military)\b"
 )
 
@@ -149,7 +175,8 @@ def classify(title):
     lower = title.lower()
     if any(ex in lower for ex in EXCLUSIONS):
         return "info"
-    if lower.rstrip().endswith("?") or lower.startswith(EXCLUDED_STARTS):
+    stripped = lower.rstrip()
+    if stripped.endswith("?") or lower.startswith(EXCLUDED_STARTS) or LIVE_BLOG.search(stripped):
         return "info"
     for level, patterns in _LEVELS:
         if level == "high" and any(r.search(lower) for r in HIGH_REGEX):
@@ -194,9 +221,14 @@ def is_about_gold(title):
 
 def base_score(title, tier):
     """Punteggio di una singola notizia (senza contare le conferme)."""
+    lower = title.lower()
     score = LEVEL_POINTS[classify(title)] + TIER_POINTS.get(tier, -10)
     if is_about_gold(title):
         score += GOLD_BONUS
+    if PREVIEW.search(lower):
+        score -= PREVIEW_PENALTY
+    if ECONOMIC.search(lower) and not MAJOR_MARKETS.search(lower):
+        score -= MINOR_MARKET_PENALTY
     return score
 
 
@@ -225,4 +257,6 @@ def same_story(words_a, words_b):
     if not words_a or not words_b:
         return False
     common = len(words_a & words_b)
-    return common >= 3 and common / min(len(words_a), len(words_b)) >= 0.6
+    return (common >= 3
+            and common / min(len(words_a), len(words_b)) >= 0.6
+            and common / max(len(words_a), len(words_b)) >= 0.4)
