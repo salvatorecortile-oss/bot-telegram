@@ -3,7 +3,8 @@
 //|  EA per MT5 Strategy Tester - ritracciamenti con RSI + EMA       |
 //|                                                                  |
 //|  Regole (tutto valutato a candela chiusa):                       |
-//|  - Filtro trend: EMA50 < EMA200 -> solo BUY                      |
+//|  - Filtro trend (opzionale, disattivato di default):             |
+//|                  EMA50 < EMA200 -> solo BUY                      |
 //|                  EMA50 > EMA200 -> solo SELL                     |
 //|                  (invertibile con InpInvertTrend)                |
 //|  - BUY : RSI incrocia dal basso il livello 30                    |
@@ -17,7 +18,7 @@
 //|    alle 18:00 chiude tutte le operazioni aperte                  |
 //+------------------------------------------------------------------+
 #property copyright "RSI Retracement M15"
-#property version   "1.10"
+#property version   "1.20"
 
 #include <Trade\Trade.mqh>
 
@@ -45,6 +46,7 @@ input double               InpBuyTP         = 50.0;       // BUY: livello chiusu
 input double               InpSellTP        = 50.0;       // SELL: livello chiusura (TP)
 
 //--- Filtro trend
+input bool                 InpUseTrendFilter= false;      // Usa filtro trend EMA
 input int                  InpEmaFast       = 50;         // EMA veloce
 input int                  InpEmaSlow       = 200;        // EMA lenta
 input bool                 InpInvertTrend   = false;      // Inverti filtro (EMA50>EMA200 -> BUY)
@@ -144,8 +146,8 @@ void OnTick()
    //--- ingressi
    bool upTrend   = emaFast[0] > emaSlow[0];
    bool downTrend = emaFast[0] < emaSlow[0];
-   bool trendBuy  = InpInvertTrend ? upTrend : downTrend;
-   bool trendSell = InpInvertTrend ? downTrend : upTrend;
+   bool trendBuy  = !InpUseTrendFilter || (InpInvertTrend ? upTrend : downTrend);
+   bool trendSell = !InpUseTrendFilter || (InpInvertTrend ? downTrend : upTrend);
    bool allowBuy  = InpDirection != DIR_SELL_ONLY;
    bool allowSell = InpDirection != DIR_BUY_ONLY;
 
