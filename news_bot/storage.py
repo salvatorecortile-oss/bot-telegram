@@ -10,15 +10,6 @@ import time
 
 from config import DB_PATH
 
-AI_COLUMNS = {
-    "ai_score": "INTEGER",      # voto di Claude 1-10 (NULL = non ancora valutata)
-    "ai_category": "TEXT",
-    "ai_title": "TEXT",
-    "ai_text": "TEXT",
-    "ai_impact": "TEXT",
-    "ai_duplicate": "INTEGER",
-}
-
 
 class Storage:
     def __init__(self, path=DB_PATH):
@@ -51,11 +42,6 @@ class Storage:
                 value TEXT
             );
         """)
-        # Colonne aggiunte per Claude (anche su database già esistenti).
-        existing = {row["name"] for row in self.db.execute("PRAGMA table_info(stories)")}
-        for column, kind in AI_COLUMNS.items():
-            if column not in existing:
-                self.db.execute(f"ALTER TABLE stories ADD COLUMN {column} {kind}")
         self.db.commit()
 
     # ---------- meta ----------
@@ -115,39 +101,6 @@ class Storage:
     def mark_sent(self, story_id, when):
         self.db.execute("UPDATE stories SET sent_at=? WHERE id=?", (when, story_id))
         self.db.commit()
-
-    def save_ai(self, story_id, result):
-        self.db.execute(
-            "UPDATE stories SET ai_score=?, ai_category=?, ai_title=?, ai_text=?, "
-            "ai_impact=?, ai_duplicate=? WHERE id=?",
-            (int(result["importanza"]), result["categoria"], result["titolo"],
-             result["testo"], result["impatto_oro"], int(bool(result["doppione"])), story_id),
-        )
-        self.db.commit()
-
-    def sent_titles_since(self, since):
-        rows = self.db.execute(
-            "SELECT id, ai_title FROM stories WHERE sent_at>=? ORDER BY sent_at",
-            (max(since, 1),),
-        ).fetchall()
-        titles = []
-        for row in rows:
-            title = row["ai_title"]
-            if not title:
-                items = self.story_items(row["id"])
-                title = items[0]["title"] if items else ""
-            if title:
-                titles.append(title)
-        return titles
-
-    def count_ai_call(self, day):
-        key = f"ai_calls_{day}"
-        count = int(self.get_meta(key, "0")) + 1
-        self.set_meta(key, count)
-        return count
-
-    def ai_calls(self, day):
-        return int(self.get_meta(f"ai_calls_{day}", "0"))
 
     def alerts_sent_since(self, since):
         # sent_at = 0 indica "segnata come già vista al primo avvio", non un invio reale.

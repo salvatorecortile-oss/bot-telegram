@@ -82,44 +82,18 @@ def test_engine():
         storage.db.close()
 
 
-def test_ai_flow():
-    import config
-    old = config.AI_ENABLED
-    config.AI_ENABLED = True
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            storage = Storage(Path(tmp) / "t.db")
-            engine = NewsEngine(storage)
-            touched = engine.ingest([
-                item("a", "Fed cuts rates by 50 basis points", "Reuters", tier=1, category="macro"),
-                item("b", "Iran launches missiles at US base in Iraq", "Reuters", tier=1),
-                item("c", "Gold steady ahead of FOMC minutes", "FXStreet", tier=3, category="oro"),
-            ])
-            # Prima del voto di Claude nessuna notizia parte
-            assert engine.instant_candidates(touched) == []
-            pending = engine.ai_pending()
-            assert len(pending) >= 2
-            ids = {i["title"]: i["story_id"] for i in pending}
-            storage.save_ai(ids["Fed cuts rates by 50 basis points"], {
-                "importanza": 10, "categoria": "macro", "titolo": "La Fed taglia i tassi di 50 punti",
-                "testo": "Mossa a sorpresa.", "impatto_oro": "Possibile rialzo.", "doppione": False})
-            storage.save_ai(ids["Iran launches missiles at US base in Iraq"], {
-                "importanza": 7, "categoria": "geopolitica", "titolo": "Missili iraniani su base USA",
-                "testo": "", "impatto_oro": "", "doppione": False})
-            assert engine.ai_pending() == [] or all(
-                p["story_id"] not in ids.values() for p in engine.ai_pending())
-            cands = engine.instant_candidates(touched)
-            assert [c["ai_title"] for c in cands] == ["La Fed taglia i tassi di 50 punti"]
-            text = messages.format_ai_alert(cands[0])
-            assert "ULTIM'ORA" in text and "Impatto sull'oro" in text
-            recap = [r["ai_title"] for r in engine.recap()]
-            assert recap == ["La Fed taglia i tassi di 50 punti", "Missili iraniani su base USA"]
-            assert storage.sent_titles_since(0) == []
-            storage.mark_sent(cands[0]["story_id"], time.time())
-            assert storage.sent_titles_since(0) == ["La Fed taglia i tassi di 50 punti"]
-            storage.db.close()
-    finally:
-        config.AI_ENABLED = old
+def test_translator():
+    import translator
+
+    class FakeDeepL:
+        def translate_text(self, text, target_lang):
+            assert target_lang == "IT"
+            return type("R", (), {"text": "La Fed taglia i tassi"})()
+
+    translator._deepl = FakeDeepL()
+    translator._cache.clear()
+    assert translator.to_italian("Fed cuts rates") == "La Fed taglia i tassi"
+    assert translator.to_italian("") == ""
 
 
 def test_messages():
@@ -134,6 +108,6 @@ def test_messages():
 
 
 if __name__ == "__main__":
-    for test in (test_classifier, test_parse_feed, test_engine, test_ai_flow, test_messages):
+    for test in (test_classifier, test_parse_feed, test_engine, test_translator, test_messages):
         test()
         print("OK", test.__name__)

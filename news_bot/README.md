@@ -30,34 +30,29 @@ Ogni notizia riceve un **punteggio**:
 | Ogni fonte in più che riporta la stessa notizia | +10 (max +30) |
 | Parla di oro | +10 |
 
-- punteggio ≥ `INSTANT_THRESHOLD` (75) → inviata **subito**
+- punteggio ≥ `INSTANT_THRESHOLD` (85) → inviata **subito**
 - punteggio ≥ `RECAP_THRESHOLD` (60) → entra nel **riepilogo delle 6:00**
 - sotto → **scartata**
 
 La stessa notizia riportata da più fonti viene inviata **una volta sola**.
-Gossip, sport, articoli "previsioni prezzo" e simili vengono sempre scartati.
+Gossip, sport, articoli "previsioni prezzo", spiegoni ("How…?", "Why…"), trascrizioni,
+risultati aziendali e necrologi vengono sempre scartati.
 Anti-spam: al massimo `MAX_ALERTS_PER_HOUR` notizie istantanee all'ora.
 
-## Redattore AI (Claude)
+## Traduzione in italiano: DeepL API Free (gratis)
 
-Se nel `.env` c'è `ANTHROPIC_API_KEY`, la scelta finale la fa **Claude**:
+Il bot traduce **solo le notizie che pubblica** (titolo e, se c'è, il breve riassunto).
 
-1. il filtro a parole chiave fa una prima scrematura gratuita (`AI_PREFILTER`);
-2. le notizie rimaste vengono mandate a Claude in un'unica chiamata (fino a 25 alla volta);
-3. Claude dà a ognuna un **voto da 1 a 10** per la community, scrive **titolo e testo in italiano**,
-   aggiunge quando è chiaro l'**impatto sull'oro** e segnala i **doppioni** di notizie già pubblicate;
-4. voto ≥ `AI_INSTANT_MIN` (9) → pubblicata subito; voto ≥ `AI_RECAP_MIN` (7) → riepilogo delle 6:00.
+1. Vai su <https://www.deepl.com/pro-api> e scegli il piano **DeepL API Free** (0 €).
+   DeepL chiede una carta solo per verificare l'identità: il piano Free **non addebita nulla**
+   e quando finisce la quota mensile si ferma, non passa a pagamento.
+2. Nel tuo account DeepL apri **API Keys** e copia la chiave (finisce con `:fx`).
+3. Incollala nel `.env`: `DEEPL_API_KEY=...:fx`
+4. Prova: `python prova_filtro.py --traduci`
 
-Come attivarlo:
-1. vai su <https://console.anthropic.com>, crea un account e aggiungi del credito (Billing);
-2. **Settings → API Keys → Create Key**, copia la chiave (inizia con `sk-ant-`);
-3. incollala nel `.env`: `ANTHROPIC_API_KEY=sk-ant-...`;
-4. prova senza pubblicare: `python prova_filtro.py --ai`.
-
-Costo indicativo: qualche dollaro al giorno con `claude-opus-5-5`, circa la metà con
-`AI_MODEL=claude-sonnet-5-5`. Puoi mettere un limite di spesa mensile nella console Anthropic
-(Settings → Limits) e il bot ha un tetto di chiamate al giorno (`MAX_AI_CALLS_PER_DAY`).
-Se Claude non risponde, il bot riprova al giro successivo.
+La quota gratuita è di **500.000 caratteri al mese**. Il bot ne usa circa 1.000–3.000 al giorno,
+quindi ne resta in abbondanza. Se la chiave manca o la quota finisce, il bot usa
+Google Translate gratuito; se non funziona neanche quello, pubblica il titolo in inglese.
 
 ## Installazione (Windows)
 
@@ -74,7 +69,8 @@ Apri `.env` e inserisci `TELEGRAM_API_ID` e `TELEGRAM_API_HASH` (gli stessi del 
    ```bat
    python login.py
    ```
-2. Trova l'ID del canale Community e mettilo in `NEWS_CHANNEL` nel `.env`:
+2. Trova l'ID del canale e mettilo in `NEWS_CHANNEL` nel `.env`
+   (per ora il canale di test "news": `-1004400822982`):
    ```bat
    python trova_canale.py
    ```
@@ -82,7 +78,7 @@ Apri `.env` e inserisci `TELEGRAM_API_ID` e `TELEGRAM_API_HASH` (gli stessi del 
 3. (Consigliato) Guarda quali notizie passerebbero il filtro, senza pubblicare nulla:
    ```bat
    python prova_filtro.py
-   python prova_filtro.py --ai
+   python prova_filtro.py --traduci
    ```
 4. Avvia il bot:
    ```bat
@@ -97,8 +93,8 @@ da quel momento invia solo quelle nuove.
 
 ## Regolazioni utili (`.env`)
 
-- Troppe notizie istantanee? Alza `INSTANT_THRESHOLD` (es. 85) o abbassa `MAX_ALERTS_PER_HOUR`.
-- Troppo poche? Abbassa `INSTANT_THRESHOLD` (es. 70).
+- Troppe notizie istantanee? Alza `INSTANT_THRESHOLD` (es. 95) o abbassa `MAX_ALERTS_PER_HOUR`.
+- Troppo poche? Abbassa `INSTANT_THRESHOLD` (es. 75).
 - Vuoi silenzio di notte? `QUIET_HOURS=23-6`.
 - Orario del buongiorno: `MORNING_HOUR` e `MORNING_MINUTE`.
 - Testi del buongiorno e formato dei messaggi: `messages.py`.
@@ -111,7 +107,5 @@ python test_news.py
 
 ## Note
 
-- Con Claude attivo la traduzione la fa Claude. Senza chiave si usa Google Translate gratuito.
-- La traduzione gratuita usa Google Translate (nessuna chiave). Se non funziona, il bot pubblica il titolo originale in inglese.
 - Il bot notizie usa una sessione Telegram separata (`news_bot.session`), quindi può girare insieme al bot MT5.
 - **Non condividere mai** `.env` e `*.session`.

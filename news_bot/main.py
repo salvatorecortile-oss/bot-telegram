@@ -19,7 +19,6 @@ from telethon import TelegramClient, errors
 
 import config
 import messages
-from ai_editor import AIEditor
 from news_engine import NewsEngine, fetch_all
 from storage import Storage
 from translator import to_italian
@@ -60,7 +59,6 @@ class NewsBot:
             connection_retries=5, retry_delay=2, auto_reconnect=True,
         )
         self.channel = None
-        self.editor = AIEditor() if config.AI_ENABLED else None
 
     async def send(self, text):
         if config.DRY_RUN:
@@ -93,8 +91,6 @@ class NewsBot:
             log.info("Primo avvio: notizie attuali memorizzate senza inviarle.")
             return
 
-        await self.evaluate_with_ai()
-
         now_local = datetime.now(TZ)
         if in_quiet_hours(now_local):
             return
@@ -109,41 +105,15 @@ class NewsBot:
             if sent_last_hour >= config.MAX_ALERTS_PER_HOUR:
                 log.info("Limite di %d notizie/ora raggiunto, attendo.", config.MAX_ALERTS_PER_HOUR)
                 break
-            if info["ai_title"]:
-                text = messages.format_ai_alert(info)
-            else:
-                title_it = await asyncio.to_thread(to_italian, info["title"])
-                summary_it = await asyncio.to_thread(to_italian, info["summary"]) if info["summary"] else ""
-                text = messages.format_alert(
-                    info["level"], info["category"], title_it, summary_it,
-                    info["source"], info["num_sources"], info["link"],
-                )
+            title_it = await asyncio.to_thread(to_italian, info["title"])
+            summary_it = await asyncio.to_thread(to_italian, info["summary"]) if info["summary"] else ""
+            text = messages.format_alert(
+                info["level"], info["category"], title_it, summary_it,
+                info["source"], info["num_sources"], info["link"],
+            )
             await self.send(text)
             self.storage.mark_sent(info["story_id"], time.time())
-            log.info("Inviata (score %d, voto AI %s): %s", info["score"], info["ai_score"], info["title"])
-
-    async def evaluate_with_ai(self):
-        """Manda a Claude le notizie nuove che hanno superato il filtro a parole chiave."""
-        if self.editor is None:
-            return
-        pending = self.engine.ai_pending()
-        if not pending:
-            return
-        today = datetime.now(TZ).date().isoformat()
-        sent_titles = self.storage.sent_titles_since(time.time() - 12 * 3600)
-        for start in range(0, len(pending), config.AI_BATCH_SIZE):
-            if self.storage.ai_calls(today) >= config.MAX_AI_CALLS_PER_DAY:
-                log.warning("Raggiunto il limite di %d chiamate a Claude per oggi.",
-                            config.MAX_AI_CALLS_PER_DAY)
-                return
-            batch = pending[start:start + config.AI_BATCH_SIZE]
-            self.storage.count_ai_call(today)
-            results = await asyncio.to_thread(self.editor.evaluate, batch, sent_titles)
-            if results is None:
-                return  # errore: riproviamo al prossimo giro
-            for story_id, result in results.items():
-                self.storage.save_ai(story_id, result)
-                log.info("Voto AI %s/10: %s", result["importanza"], result["titolo"])
+            log.info("Inviata (score %d): %s", info["score"], info["title"])
 
     async def news_loop(self):
         while True:
@@ -156,12 +126,11 @@ class NewsBot:
 
     # ---------- buongiorno delle 6:00 ----------
     async def send_morning(self, now_local):
-        await self.evaluate_with_ai()  # così il riepilogo include anche le ultime notizie
         recap = []
         for info in self.engine.recap():
             recap.append({
-                "category": info["ai_category"] or info["category"],
-                "title_it": info["ai_title"] or await asyncio.to_thread(to_italian, info["title"]),
+                "category": info["category"],
+                "title_it": await asyncio.to_thread(to_italian, info["title"]),
                 "source": info["source"],
                 "link": info["link"],
             })
@@ -203,10 +172,10 @@ class NewsBot:
         log.info("Bot notizie avviato. Canale: %s", getattr(self.channel, "title", config.NEWS_CHANNEL))
         if config.DRY_RUN:
             log.info("Modalità DRY_RUN attiva: nessun messaggio verrà pubblicato.")
-        if config.AI_ENABLED:
-            log.info("Redattore AI attivo: %s (effort %s).", config.CLAUDE_MODEL, config.CLAUDE_EFFORT)
+        if config.DEEPL_API_KEY:
+            log.info("Traduzione: DeepL API Free.")
         else:
-            log.info("ANTHROPIC_API_KEY non impostata: uso solo il filtro a parole chiave.")
+            log.info("DEEPL_API_KEY non impostata: traduzione con Google Translate gratuito.")
 
         await asyncio.gather(self.news_loop(), self.morning_loop())
 

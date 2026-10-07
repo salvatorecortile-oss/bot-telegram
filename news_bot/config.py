@@ -47,7 +47,7 @@ QUIET_HOURS = os.getenv("QUIET_HOURS", "").strip()
 # =========================
 # FILTRO IMPORTANZA
 # =========================
-INSTANT_THRESHOLD = int(os.getenv("INSTANT_THRESHOLD", "75"))
+INSTANT_THRESHOLD = int(os.getenv("INSTANT_THRESHOLD", "85"))
 RECAP_THRESHOLD = int(os.getenv("RECAP_THRESHOLD", "60"))
 MAX_ALERTS_PER_HOUR = int(os.getenv("MAX_ALERTS_PER_HOUR", "4"))
 RECAP_MAX_ITEMS = int(os.getenv("RECAP_MAX_ITEMS", "10"))
@@ -58,21 +58,10 @@ MAX_INSTANT_AGE_HOURS = 3
 RECAP_WINDOW_HOURS = 24
 
 # =========================
-# CLAUDE (redattore AI)
+# TRADUZIONE (DeepL API Free)
 # =========================
-# Senza chiave il bot funziona lo stesso, con il solo filtro a parole chiave
-# e la traduzione gratuita di Google.
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
-AI_ENABLED = bool(ANTHROPIC_API_KEY)
-CLAUDE_MODEL = os.getenv("AI_MODEL", "claude-opus-5-5")
-CLAUDE_EFFORT = os.getenv("AI_EFFORT", "low")
-# Solo le notizie con punteggio parole chiave >= AI_PREFILTER vanno a Claude.
-AI_PREFILTER = int(os.getenv("AI_PREFILTER", "50"))
-# Voto Claude (1-10) minimo per l'invio immediato e per il riepilogo.
-AI_INSTANT_MIN = int(os.getenv("AI_INSTANT_MIN", "9"))
-AI_RECAP_MIN = int(os.getenv("AI_RECAP_MIN", "7"))
-# Notizie mandate a Claude in una sola chiamata, e tetto di chiamate al giorno.
-AI_BATCH_SIZE = 25
-MAX_AI_CALLS_PER_DAY = int(os.getenv("MAX_AI_CALLS_PER_DAY", "150"))
+# Chiave gratuita da https://www.deepl.com/pro-api (piano "DeepL API Free").
+# Se manca, o se la quota mensile gratuita finisce, si usa Google Translate gratuito.
+DEEPL_API_KEY = os.getenv("DEEPL_API_KEY", "").strip()
 
 DRY_RUN = _bool("DRY_RUN", "false")
