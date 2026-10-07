@@ -56,6 +56,27 @@ def format_alert(level, category, title_it, summary_it, source, num_sources, lin
     return "\n".join(lines)
 
 
+def format_ai_alert(info):
+    """Notizia importante scritta da Claude."""
+    if (info["ai_score"] or 0) >= 10:
+        header = "🚨 <b>ULTIM'ORA</b>"
+    else:
+        header = "⚡️ <b>NOTIZIA IMPORTANTE</b>"
+    label = CATEGORY_LABELS.get(info["ai_category"] or info["category"], "📰 Notizie")
+    lines = [f"{header} · {label}", "", f"<b>{escape(info['ai_title'])}</b>"]
+    if info["ai_text"]:
+        lines += ["", escape(info["ai_text"])]
+    if info["ai_impact"]:
+        lines += ["", f"🥇 <i>Impatto sull'oro:</i> {escape(info['ai_impact'])}"]
+    fonte = f"📰 Fonte: {escape(info['source'])}"
+    if info["num_sources"] > 1:
+        fonte += f" (confermata da {info['num_sources']} fonti)"
+    lines += ["", fonte]
+    if info["link"]:
+        lines.append(f'🔗 <a href="{escape(info["link"], quote=True)}">Leggi la notizia</a>')
+    return "\n".join(lines)
+
+
 def format_morning(now, recap):
     """
     Messaggio del buongiorno + riepilogo.

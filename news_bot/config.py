@@ -57,4 +57,22 @@ MAX_INSTANT_AGE_HOURS = 3
 # Il riepilogo del mattino guarda le notizie delle ultime N ore.
 RECAP_WINDOW_HOURS = 24
 
+# =========================
+# CLAUDE (redattore AI)
+# =========================
+# Senza chiave il bot funziona lo stesso, con il solo filtro a parole chiave
+# e la traduzione gratuita di Google.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "").strip()
+AI_ENABLED = bool(ANTHROPIC_API_KEY)
+CLAUDE_MODEL = os.getenv("AI_MODEL", "claude-opus-5-5")
+CLAUDE_EFFORT = os.getenv("AI_EFFORT", "low")
+# Solo le notizie con punteggio parole chiave >= AI_PREFILTER vanno a Claude.
+AI_PREFILTER = int(os.getenv("AI_PREFILTER", "50"))
+# Voto Claude (1-10) minimo per l'invio immediato e per il riepilogo.
+AI_INSTANT_MIN = int(os.getenv("AI_INSTANT_MIN", "9"))
+AI_RECAP_MIN = int(os.getenv("AI_RECAP_MIN", "7"))
+# Notizie mandate a Claude in una sola chiamata, e tetto di chiamate al giorno.
+AI_BATCH_SIZE = 25
+MAX_AI_CALLS_PER_DAY = int(os.getenv("MAX_AI_CALLS_PER_DAY", "150"))
+
 DRY_RUN = _bool("DRY_RUN", "false")

@@ -38,6 +38,27 @@ La stessa notizia riportata da più fonti viene inviata **una volta sola**.
 Gossip, sport, articoli "previsioni prezzo" e simili vengono sempre scartati.
 Anti-spam: al massimo `MAX_ALERTS_PER_HOUR` notizie istantanee all'ora.
 
+## Redattore AI (Claude)
+
+Se nel `.env` c'è `ANTHROPIC_API_KEY`, la scelta finale la fa **Claude**:
+
+1. il filtro a parole chiave fa una prima scrematura gratuita (`AI_PREFILTER`);
+2. le notizie rimaste vengono mandate a Claude in un'unica chiamata (fino a 25 alla volta);
+3. Claude dà a ognuna un **voto da 1 a 10** per la community, scrive **titolo e testo in italiano**,
+   aggiunge quando è chiaro l'**impatto sull'oro** e segnala i **doppioni** di notizie già pubblicate;
+4. voto ≥ `AI_INSTANT_MIN` (9) → pubblicata subito; voto ≥ `AI_RECAP_MIN` (7) → riepilogo delle 6:00.
+
+Come attivarlo:
+1. vai su <https://console.anthropic.com>, crea un account e aggiungi del credito (Billing);
+2. **Settings → API Keys → Create Key**, copia la chiave (inizia con `sk-ant-`);
+3. incollala nel `.env`: `ANTHROPIC_API_KEY=sk-ant-...`;
+4. prova senza pubblicare: `python prova_filtro.py --ai`.
+
+Costo indicativo: qualche dollaro al giorno con `claude-opus-5-5`, circa la metà con
+`AI_MODEL=claude-sonnet-5-5`. Puoi mettere un limite di spesa mensile nella console Anthropic
+(Settings → Limits) e il bot ha un tetto di chiamate al giorno (`MAX_AI_CALLS_PER_DAY`).
+Se Claude non risponde, il bot riprova al giro successivo.
+
 ## Installazione (Windows)
 
 Dentro la cartella `news_bot`:
@@ -61,6 +82,7 @@ Apri `.env` e inserisci `TELEGRAM_API_ID` e `TELEGRAM_API_HASH` (gli stessi del 
 3. (Consigliato) Guarda quali notizie passerebbero il filtro, senza pubblicare nulla:
    ```bat
    python prova_filtro.py
+   python prova_filtro.py --ai
    ```
 4. Avvia il bot:
    ```bat
@@ -89,6 +111,7 @@ python test_news.py
 
 ## Note
 
-- La traduzione usa Google Translate gratuito (nessuna chiave). Se non funziona, il bot pubblica il titolo originale in inglese.
+- Con Claude attivo la traduzione la fa Claude. Senza chiave si usa Google Translate gratuito.
+- La traduzione gratuita usa Google Translate (nessuna chiave). Se non funziona, il bot pubblica il titolo originale in inglese.
 - Il bot notizie usa una sessione Telegram separata (`news_bot.session`), quindi può girare insieme al bot MT5.
 - **Non condividere mai** `.env` e `*.session`.

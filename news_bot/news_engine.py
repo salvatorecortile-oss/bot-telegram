@@ -69,6 +69,7 @@ class NewsEngine:
         best = rows[0]
         sources = {r["source"].lower() for r in rows}
         score = best["base_score"] + classifier.confirm_bonus(len(sources))
+        story = self.storage.story(story_id)
         return {
             "story_id": story_id,
             "title": best["title"],
@@ -80,7 +81,36 @@ class NewsEngine:
             "num_sources": len(sources),
             "score": score,
             "published": min(r["published"] for r in rows),
+            "sent_at": story["sent_at"],
+            # Valutazione di Claude (None se non ancora fatta o AI disattivata)
+            "ai_score": story["ai_score"],
+            "ai_category": story["ai_category"],
+            "ai_title": story["ai_title"],
+            "ai_text": story["ai_text"],
+            "ai_impact": story["ai_impact"],
+            "ai_duplicate": bool(story["ai_duplicate"]),
         }
+
+    def ai_pending(self, now=None):
+        """Storie delle ultime 24 ore da far valutare a Claude."""
+        now = now or time.time()
+        since = now - config.RECAP_WINDOW_HOURS * 3600
+        out = []
+        for story in self.storage.stories_since(since):
+            if story["ai_score"] is not None:
+                continue
+            info = self.story_info(story["id"])
+            if info and info["score"] >= config.AI_PREFILTER:
+                out.append(info)
+        out.sort(key=lambda i: i["score"], reverse=True)
+        return out
+
+    def _is_instant(self, info):
+        if config.AI_ENABLED:
+            return (info["ai_score"] is not None
+                    and info["ai_score"] >= config.AI_INSTANT_MIN
+                    and not info["ai_duplicate"])
+        return info["score"] >= config.INSTANT_THRESHOLD
 
     def instant_candidates(self, story_ids, now=None):
         """Storie da inviare subito, dalla più importante."""
@@ -91,12 +121,12 @@ class NewsEngine:
             if story is None or story["sent_at"] is not None:
                 continue
             info = self.story_info(sid)
-            if info is None or info["score"] < config.INSTANT_THRESHOLD:
+            if info is None or not self._is_instant(info):
                 continue
             if info["published"] < now - config.MAX_INSTANT_AGE_HOURS * 3600:
                 continue
             out.append(info)
-        out.sort(key=lambda i: i["score"], reverse=True)
+        out.sort(key=lambda i: (i["ai_score"] or 0, i["score"]), reverse=True)
         return out
 
     def recap(self, now=None):
@@ -106,7 +136,14 @@ class NewsEngine:
         infos = []
         for story in self.storage.stories_since(since):
             info = self.story_info(story["id"])
-            if info and info["score"] >= config.RECAP_THRESHOLD:
+            if info is None:
+                continue
+            if config.AI_ENABLED:
+                ok = (info["ai_score"] is not None and info["ai_score"] >= config.AI_RECAP_MIN
+                      and not info["ai_duplicate"])
+            else:
+                ok = info["score"] >= config.RECAP_THRESHOLD
+            if ok:
                 infos.append(info)
-        infos.sort(key=lambda i: i["score"], reverse=True)
+        infos.sort(key=lambda i: (i["ai_score"] or 0, i["score"]), reverse=True)
         return infos[: config.RECAP_MAX_ITEMS]

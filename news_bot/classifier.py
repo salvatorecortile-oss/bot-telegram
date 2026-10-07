@@ -40,26 +40,29 @@ CRITICAL = [
 
 HIGH = [
     # --- da World Monitor ---
-    "war", "armed conflict", "airstrike", "airstrikes", "air strike",
+    "armed conflict", "airstrike", "airstrikes", "air strike",
     "air strikes", "drone strike", "drone strikes", "missile", "missiles",
     "troops deployed", "military escalation", "military operation",
     "ground offensive", "bombing", "bombardment", "shelling", "casualties",
     "killed in", "hostage", "terrorist", "terror attack", "assassination",
-    "cyber attack", "cyberattack", "sanctions", "embargo", "earthquake",
+    "cyber attack", "cyberattack", "earthquake",
     "tsunami", "hurricane", "typhoon", "strike on", "strikes on", "attack on",
     "attacks on", "launched attack", "launches attack", "explosions",
     "retaliatory strike", "retaliatory attack", "preemptive strike",
     "military offensive", "ballistic missile", "cruise missile",
     # --- oro / macro ---
-    "fomc", "rate decision", "rate cut", "rate cuts", "rate hike",
-    "rate hikes", "holds rates", "keeps rates", "leaves rates",
-    "holds interest rates", "keeps interest rates", "powell", "lagarde",
-    "cpi", "consumer price", "nonfarm payrolls", "payrolls", "jobs report",
-    "pce", "gold surges", "gold soars", "gold jumps", "gold plunges",
+    "powell", "us cpi", "u.s. cpi", "cpi data", "cpi report", "core cpi",
+    "consumer price index", "nonfarm payrolls", "jobs report", "core pce",
+    "pce inflation", "gold surges", "gold soars", "gold jumps", "gold plunges",
     "gold tumbles", "gold slumps", "gold crashes", "gold rallies",
-    "gold sinks", "gold spikes", "safe-haven", "safe haven", "opec cut",
-    "opec+", "government shutdown", "debt ceiling", "new tariffs",
-    "tariffs on", "central bank gold", "gold reserves",
+    "gold sinks", "gold spikes", "opec cut", "government shutdown",
+    "debt ceiling", "new tariffs", "tariffs on",
+]
+
+# Decisioni di Fed e BCE (le parole possono non essere vicine nel titolo).
+HIGH_REGEX = [
+    re.compile(r"\b(fed|federal reserve|fomc|ecb|european central bank)\b.*"
+               r"\b(cuts?|hikes?|raises?|holds?|keeps?|leaves?|pauses?|decision)\b"),
 ]
 
 MEDIUM = [
@@ -70,6 +73,10 @@ MEDIUM = [
     "eruption", "outbreak", "epidemic", "oil spill", "pipeline explosion",
     "blackout", "power outage", "internet outage", "treasury yields",
     "dollar index", "gdp", "unemployment", "ecb", "bank of japan",
+    "war", "sanctions", "embargo", "fomc", "rate decision", "rate cut",
+    "rate cuts", "rate hike", "rate hikes", "lagarde", "cpi", "pce",
+    "payrolls", "safe haven", "safe-haven", "gold reserves",
+    "central bank gold", "opec+",
 ]
 
 LOW = [
@@ -90,7 +97,16 @@ EXCLUSIONS = [
     "price prediction", "price forecast", "stocks to buy", "should you buy",
     "how to", "podcast", "quiz", "horoscope", "football", "soccer",
     "star wars", "war of words", "price war", "culture war", "bidding war",
+    # articoli che non sono notizie nuove
+    "earnings call", "transcript", "quarterly results", "dies at", "obituary",
+    "live updates", "explained", "explainer",
 ]
+
+# Titoli che iniziano così sono approfondimenti, video o opinioni.
+EXCLUDED_STARTS = (
+    "how ", "why ", "what ", "who ", "video", "watch", "opinion", "analysis",
+    "explainer", "podcast", "column", "editorial", "letters",
+)
 
 GOLD_WORDS = re.compile(r"\b(gold|xau|xauusd|bullion|precious metals?)\b")
 
@@ -119,9 +135,8 @@ _LEVELS = [
 
 # Come World Monitor: azione militare + obiettivo strategico => critical.
 _ESCALATION_ACTIONS = re.compile(
-    r"\b(attack|attacks|attacked|strike|strikes|struck|bomb|bombs|bombed|"
-    r"bombing|missile|missiles|retaliates|retaliation|killed|offensive|"
-    r"invaded|invades)\b"
+    r"\b(attack|attacks|attacked|strikes|struck|bomb|bombs|bombed|"
+    r"bombing|missile|missiles|retaliates|retaliation|invaded|invades)\b"
 )
 _ESCALATION_TARGETS = re.compile(
     r"\b(iran|tehran|russia|moscow|china|beijing|taiwan|north korea|"
@@ -134,13 +149,43 @@ def classify(title):
     lower = title.lower()
     if any(ex in lower for ex in EXCLUSIONS):
         return "info"
+    if lower.rstrip().endswith("?") or lower.startswith(EXCLUDED_STARTS):
+        return "info"
     for level, patterns in _LEVELS:
+        if level == "high" and any(r.search(lower) for r in HIGH_REGEX):
+            return "high"
         if any(p.search(lower) for p in patterns):
             if (level == "high" and _ESCALATION_ACTIONS.search(lower)
                     and _ESCALATION_TARGETS.search(lower)):
                 return "critical"
             return level
     return "info"
+
+
+# Affidabilità per testata (come i "tier" di World Monitor). Serve per le notizie
+# di Google News, dove la testata reale può essere qualsiasi sito.
+PUBLISHER_TIERS = {
+    "reuters": 1, "associated press": 1, "ap news": 1, "bloomberg": 1,
+    "federal reserve": 1, "european central bank": 1, "european commission": 1,
+    "afp": 1, "iaea": 1, "who": 1, "world health organization": 1,
+    "bbc": 2, "bbc news": 2, "cnn": 2, "cnbc": 2, "financial times": 2,
+    "the wall street journal": 2, "wall street journal": 2, "wsj": 2,
+    "the new york times": 2, "new york times": 2, "the washington post": 2,
+    "the guardian": 2, "al jazeera": 2, "nikkei asia": 2, "the economist": 2,
+    "politico": 2, "axios": 2, "marketwatch": 2, "kitco": 2, "kitco news": 2,
+    "barron's": 2, "fox business": 2, "abc news": 2, "nbc news": 2, "cbs news": 2,
+    "sky news": 2, "euronews": 2, "dw": 2, "france 24": 2, "the telegraph": 2,
+    "fxstreet": 3, "investing.com": 3, "yahoo finance": 3, "seeking alpha": 3,
+    "fxempire": 3, "newsquawk": 3, "forexlive": 3, "benzinga": 3, "business insider": 3,
+}
+
+
+def publisher_tier(publisher, default=4):
+    name = (publisher or "").strip().lower()
+    for suffix in (".com", ".co.uk", ".org"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return PUBLISHER_TIERS.get(name, default)
 
 
 def is_about_gold(title):

@@ -11,6 +11,8 @@ import time
 import feedparser
 import requests
 
+from classifier import publisher_tier
+
 log = logging.getLogger("news_bot")
 
 HEADERS = {
@@ -48,10 +50,13 @@ def parse_feed(content, feed):
         if not title:
             continue
         source = feed["name"]
+        tier = feed["tier"]
         # Google News mette la testata in fondo al titolo: "Titolo - Reuters"
         publisher = (entry.get("source") or {}).get("title")
         if publisher:
             source = publisher
+            # L'affidabilità è quella della testata reale, non della ricerca.
+            tier = publisher_tier(publisher)
             if title.endswith(" - " + publisher):
                 title = title[: -len(" - " + publisher)].strip()
         link = entry.get("link", "")
@@ -65,7 +70,7 @@ def parse_feed(content, feed):
             "summary": summary[:400],
             "link": link,
             "source": source,
-            "tier": feed["tier"],
+            "tier": tier,
             "category": feed["category"],
             "published": _published(entry),
         })
