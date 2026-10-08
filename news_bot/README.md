@@ -40,6 +40,7 @@ risultati aziendali e necrologi vengono sempre scartati.
 Quante notizie arrivano al massimo:
 - **ULTIM'ORA**: al massimo `MAX_ALERTS_PER_DAY` (5) al giorno, inviate appena escono,
   anche a pochi minuti l'una dall'altra. Nelle giornate tranquille anche 0.
+  Con `MAX_ALERTS_PER_DAY=0` non c'è nessun limite.
 - **Riepilogo delle 6:00**: al massimo `RECAP_MAX_ITEMS` (5) notizie, le più importanti di ieri.
 
 ## Traduzione in italiano: DeepL API Free (gratis)

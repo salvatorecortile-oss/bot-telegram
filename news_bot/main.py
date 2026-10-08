@@ -102,7 +102,9 @@ class NewsBot:
         recent_ids = [s["id"] for s in self.storage.stories_since(since)]
         midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
         for info in self.engine.instant_candidates(recent_ids):
-            if self.storage.alerts_sent_since(midnight) >= config.MAX_ALERTS_PER_DAY:
+            # MAX_ALERTS_PER_DAY=0 vuol dire nessun limite.
+            if (config.MAX_ALERTS_PER_DAY > 0
+                    and self.storage.alerts_sent_since(midnight) >= config.MAX_ALERTS_PER_DAY):
                 log.info("Già inviate %d ultim'ora oggi: le altre vanno nel riepilogo di domani.",
                          config.MAX_ALERTS_PER_DAY)
                 break
