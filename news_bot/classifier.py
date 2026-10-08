@@ -45,8 +45,7 @@ HIGH = [
     "troops deployed", "military escalation", "military operation",
     "ground offensive", "war with iran", "war on iran", "bombing", "bombardment", "shelling", "casualties",
     "killed in", "hostage", "terrorist", "terror attack", "assassination",
-    "genocide", "ethnic cleansing", "earthquake",
-    "tsunami", "hurricane", "typhoon", "strike on", "strikes on", "attack on",
+    "genocide", "ethnic cleansing", "strike on", "strikes on", "attack on",
     "attacks on", "launched attack", "launches attack", "explosions",
     "retaliatory strike", "retaliatory attack", "preemptive strike",
     "military offensive", "ballistic missile", "cruise missile",
@@ -63,6 +62,10 @@ HIGH = [
 HIGH_REGEX = [
     re.compile(r"\b(fed|federal reserve|fomc|ecb|european central bank)\b.*"
                r"\b(cuts?|hikes?|raises?|holds?|keeps?|leaves?|pauses?|decision)\b"),
+    # Attacchi a petroliere e navi (muovono subito il petrolio).
+    re.compile(r"\b(attacks?|attacked|strikes?|struck|hits?|seizes?|seized|targets?|targeted)\b.*"
+               r"\b(tankers?|oil ships?|cargo ships?|vessels?|shipping)\b"),
+    re.compile(r"\b(strait of hormuz|hormuz)\b"),
 ]
 
 MEDIUM = [
@@ -77,6 +80,8 @@ MEDIUM = [
     "rate cuts", "rate hike", "rate hikes", "lagarde", "cpi", "pce",
     "payrolls", "safe haven", "safe-haven", "gold reserves",
     "central bank gold", "opec+", "cyber attack", "cyberattack",
+    # catastrofi naturali: contano poco per oro e dollaro
+    "earthquake", "tsunami", "hurricane", "typhoon", "tropical storm",
 ]
 
 LOW = [
@@ -126,6 +131,20 @@ MAJOR_MARKETS = re.compile(
     r"oil|crude|global|world)\b"
 )
 MINOR_MARKET_PENALTY = 20
+
+# Argomenti che muovono oro, dollaro e indici. Una notizia che non ne cita
+# nessuno (es. "golpe in Brasile", "tempesta tropicale") non viene pubblicata.
+MARKET_RELEVANT = re.compile(
+    r"\b(us|u\.s\.|usa|united states|america|american|washington|white house|trump|"
+    r"fed|federal reserve|fomc|powell|treasury|treasuries|dollar|wall street|"
+    r"s&p|nasdaq|dow|stocks?|markets?|gold|xau|bullion|silver|oil|crude|brent|wti|"
+    r"opec|lng|gas prices|tankers?|hormuz|red sea|suez|iran|iranian|tehran|israel|"
+    r"israeli|gaza|hezbollah|houthis?|saudi|riyadh|yemen|lebanon|syria|iraq|"
+    r"middle east|russia|russian|moscow|putin|ukraine|ukrainian|kyiv|nato|china|"
+    r"chinese|beijing|xi|taiwan|north korea|japan|boj|yen|ecb|lagarde|euro ?zone|"
+    r"tariffs?|sanctions|nuclear|pentagon)\b"
+)
+NOT_RELEVANT_CAP = 40
 
 # Titoli che iniziano così sono approfondimenti, video o opinioni.
 EXCLUDED_STARTS = (
@@ -213,6 +232,10 @@ def publisher_tier(publisher, default=4):
         if name.endswith(suffix):
             name = name[: -len(suffix)]
     return PUBLISHER_TIERS.get(name, default)
+
+
+def is_market_relevant(title):
+    return bool(MARKET_RELEVANT.search(title.lower()))
 
 
 def is_about_gold(title):

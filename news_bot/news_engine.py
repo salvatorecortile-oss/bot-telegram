@@ -69,6 +69,9 @@ class NewsEngine:
         best = rows[0]
         sources = {r["source"].lower() for r in rows}
         score = best["base_score"] + classifier.confirm_bonus(len(sources))
+        # Notizie che non riguardano i mercati (oro, USA, Medio Oriente...): fuori.
+        if not classifier.is_market_relevant(best["title"]):
+            score = min(score, classifier.NOT_RELEVANT_CAP)
         category = best["category"]
         # Una notizia arrivata dalle ricerche sull'oro ma che non parla di oro va in Macro.
         if category == "oro" and not classifier.is_about_gold(best["title"]):
@@ -109,6 +112,10 @@ class NewsEngine:
         since = now - config.RECAP_WINDOW_HOURS * 3600
         infos = []
         for story in self.storage.stories_since(since):
+            # Le notizie già uscite come ULTIM'ORA non si ripetono nel riepilogo.
+            # (sent_at = 0 vuol dire solo "vista al primo avvio", non inviata.)
+            if story["sent_at"] is not None and story["sent_at"] >= 1:
+                continue
             info = self.story_info(story["id"])
             if info and info["score"] >= config.RECAP_THRESHOLD:
                 infos.append(info)

@@ -74,6 +74,33 @@ def test_real_headlines():
         assert score(title, tier, sources) >= config.INSTANT_THRESHOLD, title
 
 
+def test_market_relevance():
+    """8 ottobre: golpe in Brasile e tempesta tropicale non interessano la community."""
+    assert not classifier.is_market_relevant("Brazil military stages coup, arrests president")
+    assert not classifier.is_market_relevant("Tropical Storm Isaias to threaten Gulf Coast as a dangerous hurricane")
+    assert classifier.is_market_relevant("Houthis attack oil tankers in the Red Sea")
+    assert classifier.is_market_relevant("Trump says new tariffs on Europe start next week")
+    with tempfile.TemporaryDirectory() as tmp:
+        storage = Storage(Path(tmp) / "t.db")
+        engine = NewsEngine(storage)
+        touched = engine.ingest([
+            item("a", "Brazil military stages coup, arrests president", "Reuters", tier=1),
+            item("b", "Tropical Storm Isaias to threaten Gulf Coast as a dangerous hurricane", "CNN", tier=2),
+            item("c", "Houthis attack oil tankers in the Red Sea", "Reuters", tier=1),
+            item("d", "Fed holds rates steady, Powell signals cuts later this year", "Reuters", tier=1),
+        ])
+        titles = [i["title"] for i in engine.instant_candidates(touched)]
+        assert "Brazil military stages coup, arrests president" not in titles
+        recap = [i["title"] for i in engine.recap()]
+        assert not any("Brazil" in t or "Isaias" in t for t in recap)
+        # Le ULTIM'ORA già inviate non finiscono nel riepilogo del mattino
+        fed = next(i for i in engine.recap() if "Fed" in i["title"])
+        storage.mark_sent(fed["story_id"], time.time())
+        assert all("Fed" not in i["title"] for i in engine.recap())
+        assert any("tankers" in i["title"] for i in engine.recap())
+        storage.db.close()
+
+
 def test_parse_feed():
     now = time.strftime("%a, %d %b %Y %H:%M:%S GMT", time.gmtime())
     items = parse_feed(RSS.format(now=now).encode(), {"name": "GN", "tier": 1, "category": "macro"})
@@ -112,7 +139,7 @@ def test_engine():
         engine.ingest([item("f", "Gold slips ahead of US CPI data", "Kitco", tier=2, category="oro")])
         recap = engine.recap()
         titles = [r["title"] for r in recap]
-        assert any("Lebanon" in t for t in titles)
+        assert not any("Lebanon" in t for t in titles), "già inviata come ULTIM'ORA"
         assert "Celebrity wedding photos" not in titles
         storage.db.close()
 
@@ -144,6 +171,6 @@ def test_messages():
 
 
 if __name__ == "__main__":
-    for test in (test_classifier, test_real_headlines, test_parse_feed, test_engine, test_translator, test_messages):
+    for test in (test_classifier, test_real_headlines, test_market_relevance, test_parse_feed, test_engine, test_translator, test_messages):
         test()
         print("OK", test.__name__)
