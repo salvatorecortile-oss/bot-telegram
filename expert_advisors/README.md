@@ -22,6 +22,7 @@ Nessuna posizione overnight. Nessun segnale Telegram (verrà aggiunto più avant
 | Ampiezza range | Salta se il range è troppo piccolo (< 5% ATR D1) o troppo grande (> 40% ATR D1) |
 | Spread | Opzionale: salta se lo spread supera un massimo |
 | Giorni | Puoi escludere singoli giorni della settimana |
+| Festività USA | Salta le festività della borsa USA e le mezze giornate (`InpSkipUSHolidays`, da mettere a `false` sugli indici europei) |
 
 ### Gestione del rischio
 
@@ -62,9 +63,9 @@ dove volume e volatilità esplodono di colpo. Quella è l'apertura di New York.
 Se non è alle 16:30, sposta di conseguenza tutti e tre gli orari (`InpSessionOpen`,
 `InpLastEntryTime`, `InpCloseTime`).
 
-Controlla anche i **giorni a orario ridotto** (venerdì dopo il Thanksgiving, vigilia di Natale):
-in quei giorni il mercato chiude prima delle 22:45 del server. Disattiva l'EA o escludi
-quei giorni per non rischiare una posizione rimasta aperta.
+Festività USA e giorni a orario ridotto (venerdì dopo il Thanksgiving, vigilia di Natale,
+3 luglio) vengono saltati in automatico (`InpSkipUSHolidays = true`): in quei giorni il CFD
+chiude prima delle 22:45 del server e la posizione resterebbe aperta fino al giorno dopo.
 
 ## Installazione
 

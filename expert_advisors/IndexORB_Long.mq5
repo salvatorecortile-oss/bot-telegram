@@ -4,7 +4,7 @@
 //|  (US500 / NAS100 / US30 CFD). Nessuna posizione overnight.       |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.00"
+#property version   "1.10"
 #property description "ORB long-only intraday su indici USA: range dei primi minuti di New York,"
 #property description "ingresso sulla rottura del massimo, chiusura forzata a fine giornata."
 
@@ -30,6 +30,7 @@ input bool   InpTuesday         = true;    // Opera il martedi
 input bool   InpWednesday       = true;    // Opera il mercoledi
 input bool   InpThursday        = true;    // Opera il giovedi
 input bool   InpFriday          = true;    // Opera il venerdi
+input bool   InpSkipUSHolidays  = true;    // Salta festivita USA e mezze giornate (solo indici USA)
 
 input group "=== Gestione trade ==="
 input double InpEntryBufferFrac = 0.05;    // Buffer sopra il massimo del range (frazione del range)
@@ -195,6 +196,109 @@ void NewDay(const datetime day)
    g_noTradeToday = !allowed;
    if(!allowed)
       g_status = "giorno escluso";
+   else if(InpSkipUSHolidays && (IsUSHoliday(day) || IsUSHalfDay(day)))
+     {
+      // Borsa USA chiusa o a orario ridotto: il CFD chiude prima e la
+      // posizione resterebbe aperta fino al giorno dopo.
+      g_noTradeToday = true;
+      g_status = "festivita USA";
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Calendario borsa USA (NYSE)                                      |
+//+------------------------------------------------------------------+
+datetime MakeDate(const int y, const int m, const int d)
+  {
+   MqlDateTime t;
+   ZeroMemory(t);
+   t.year = y;
+   t.mon  = m;
+   t.day  = d;
+   return StructToTime(t);
+  }
+
+int DayOfWeek(const datetime t)
+  {
+   MqlDateTime s;
+   TimeToStruct(t, s);
+   return s.day_of_week;
+  }
+
+// Giorno del mese dell'n-esimo giorno 'dow' (0=domenica) del mese.
+int NthWeekday(const int y, const int m, const int dow, const int n)
+  {
+   int first = 1 + ((dow - DayOfWeek(MakeDate(y, m, 1)) + 7) % 7);
+   return first + (n - 1) * 7;
+  }
+
+// Giorno del mese dell'ultimo giorno 'dow' del mese.
+int LastWeekday(const int y, const int m, const int dow)
+  {
+   datetime last = (m == 12) ? MakeDate(y + 1, 1, 1) - 86400 : MakeDate(y, m + 1, 1) - 86400;
+   MqlDateTime s;
+   TimeToStruct(last, s);
+   return s.day - ((s.day_of_week - dow + 7) % 7);
+  }
+
+// Festivita a data fissa con spostamento: sabato -> venerdi, domenica -> lunedi.
+bool IsObservedFixed(const datetime day, const int y, const int m, const int d, const bool satToFri)
+  {
+   datetime h = MakeDate(y, m, d);
+   int dow = DayOfWeek(h);
+   if(dow == 6)
+      return satToFri && day == h - 86400;
+   if(dow == 0)
+      return day == h + 86400;
+   return day == h;
+  }
+
+datetime EasterSunday(const int y)
+  {
+   int a = y % 19, b = y / 100, c = y % 100, d = b / 4, e = b % 4;
+   int f = (b + 8) / 25, g = (b - f + 1) / 3;
+   int h = (19 * a + b - d - g + 15) % 30;
+   int i = c / 4, k = c % 4;
+   int l = (32 + 2 * e + 2 * i - h - k) % 7;
+   int m = (a + 11 * h + 22 * l) / 451;
+   int month = (h + l - 7 * m + 114) / 31;
+   int dd    = ((h + l - 7 * m + 114) % 31) + 1;
+   return MakeDate(y, month, dd);
+  }
+
+bool IsUSHoliday(const datetime day)
+  {
+   MqlDateTime s;
+   TimeToStruct(day, s);
+   int y = s.year, m = s.mon, d = s.day;
+
+   if(IsObservedFixed(day, y, 1, 1, false))                return true; // Capodanno
+   if(m == 1 && d == NthWeekday(y, 1, 1, 3))              return true; // Martin Luther King
+   if(m == 2 && d == NthWeekday(y, 2, 1, 3))              return true; // Presidents Day
+   if(day == EasterSunday(y) - 2 * 86400)                 return true; // Venerdi Santo
+   if(m == 5 && d == LastWeekday(y, 5, 1))                return true; // Memorial Day
+   if(y >= 2022 && IsObservedFixed(day, y, 6, 19, true))  return true; // Juneteenth
+   if(IsObservedFixed(day, y, 7, 4, true))                return true; // Indipendenza
+   if(m == 9 && d == NthWeekday(y, 9, 1, 1))              return true; // Labor Day
+   if(m == 11 && d == NthWeekday(y, 11, 4, 4))            return true; // Thanksgiving
+   if(IsObservedFixed(day, y, 12, 25, true))              return true; // Natale
+   // Chiusure straordinarie (lutto nazionale)
+   if(day == MakeDate(2018, 12, 5) || day == MakeDate(2025, 1, 9))
+      return true;
+   return false;
+  }
+
+// Giorni con chiusura anticipata alle 13:00 di New York.
+bool IsUSHalfDay(const datetime day)
+  {
+   MqlDateTime s;
+   TimeToStruct(day, s);
+   if(s.day_of_week == 0 || s.day_of_week == 6 || IsUSHoliday(day))
+      return false;
+   if(s.mon == 11 && s.day == NthWeekday(s.year, 11, 4, 4) + 1) return true; // venerdi dopo Thanksgiving
+   if(s.mon == 12 && s.day == 24)                               return true; // vigilia di Natale
+   if(s.mon == 7 && s.day == 3)                                 return true; // vigilia dell'Indipendenza
+   return false;
   }
 
 //+------------------------------------------------------------------+
