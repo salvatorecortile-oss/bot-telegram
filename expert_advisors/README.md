@@ -1,6 +1,6 @@
 # IndexORB_Long — EA MT5 per indici USA
 
-Expert Advisor **intraday, solo long** per CFD su indici americani (NAS100, US500, US30).
+Expert Advisor **intraday, solo long** per CFD su indici americani (su FPG: USTEC, US500, US30).
 Nessuna posizione overnight. Nessun segnale Telegram (verrà aggiunto più avanti).
 
 ## La strategia: Opening Range Breakout (ORB)
@@ -31,6 +31,25 @@ Nessuna posizione overnight. Nessun segnale Telegram (verrà aggiunto più avant
 - **Stop giornaliero:** -2% nella giornata, poi si chiude tutto fino a domani.
 - **Kill switch:** con un drawdown del **12% dal picco** di equity l'EA si ferma da solo.
   Per riattivarlo imposta `InpResetPeak = true` una volta.
+
+## Simboli FPG e impostazioni
+
+| Simbolo FPG | Indice | Priorità | `InpSessionOpen` | `InpLastEntryTime` | `InpCloseTime` |
+|---|---|---|---|---|---|
+| `USTEC` | Nasdaq 100 | 1 — il più adatto | 16:30 | 19:00 | 22:45 |
+| `US500` | S&P 500 | 2 | 16:30 | 19:00 | 22:45 |
+| `DE40` | DAX 40 | 3 — da testare a parte | 10:00 | 13:00 | 18:15 |
+| `US30` | Dow Jones | 4 | 16:30 | 19:00 | 22:45 |
+| `EU50` | Euro Stoxx 50 | 5 — da testare a parte | 10:00 | 13:00 | 18:15 |
+| `UK100` | FTSE 100 | 6 — poco adatto (poco volatile) | 10:00 | 13:00 | 18:15 |
+
+Gli orari europei presuppongono un server GMT+2/GMT+3 allineato all'ora legale USA.
+Nelle 2–3 settimane l'anno in cui Europa e USA cambiano ora in date diverse (marzo e fine
+ottobre/inizio novembre) l'apertura europea cade alle **11:00** del server: in quelle settimane
+il range verrebbe calcolato un'ora prima, quindi conviene non operare sugli indici europei.
+
+Per usare più simboli insieme: un grafico per simbolo, ognuno con l'EA. Ricorda che gli
+indici sono molto correlati: tre EA attivi possono voler dire tre trade persi nello stesso giorno.
 
 ## ⚠️ Prima cosa da verificare: l'orario del server FPG
 
