@@ -54,33 +54,38 @@ input int    InpRangeBars       = 3;     // Candele che formano il range
 input double InpRangeMaxATR     = 1.0;   // Altezza massima del range (x ATR)
 input double InpRangeMinATR     = 0.2;   // Altezza minima del range (x ATR)
 input int    InpImpulseBars     = 5;     // Candele del movimento prima del range
-input double InpImpulseATR      = 2.0;   // Ampiezza minima del movimento (x ATR)
+input double InpImpulseATR      = 2.5;   // Ampiezza minima del movimento (x ATR)
 input int    InpReactionExpiry  = 30;    // Candele dopo cui la zona scade
 input bool   InpBreakOnClose    = true;  // Breakout solo con chiusura fuori dal range
-input bool   InpOnlyWithTrend   = false; // Segnala solo breakout nella direzione del movimento
+input bool   InpOnlyWithTrend   = true;  // Segnala solo breakout nella direzione del movimento
 
 input group "=== 2) Zone forti ==="
 input bool   InpShowStrong      = true;  // Attiva zone forti
-input int    InpSwingBars       = 3;     // Candele a sx/dx per confermare lo swing
-input double InpStrongATR       = 1.5;   // Inversione minima dopo lo swing (x ATR)
+input int    InpSwingBars       = 5;     // Candele a sx/dx per confermare lo swing
+input double InpStrongATR       = 2.5;   // Inversione minima dopo lo swing (x ATR)
 
 input group "=== 3) Rifiuti ==="
 input bool   InpShowRejection   = true;  // Attiva zone di rifiuto
-input double InpWickBodyRatio   = 2.0;   // Ombra >= N volte il corpo
-input double InpWickMinATR      = 0.8;   // Ombra minima (x ATR)
+input double InpWickBodyRatio   = 3.0;   // Ombra >= N volte il corpo
+input double InpWickMinATR      = 1.2;   // Ombra minima (x ATR)
 
 input group "=== 4) Rimbalzi / Breakout sulle zone ==="
 input bool   InpSignalBounce    = true;  // Segnala rimbalzi
 input bool   InpSignalBreakout  = true;  // Segnala breakout
 input int    InpMinRetestBars   = 3;     // Candele minime prima che la zona sia testabile
-input int    InpMaxBounces      = 3;     // Max rimbalzi segnalati per zona
+input int    InpMaxBounces      = 1;     // Max rimbalzi segnalati per zona
 input int    InpZoneExpiry      = 300;   // Candele di vita di una zona
 input int    InpMaxZones        = 30;    // Max zone forti/rifiuto attive
 input double InpZoneMinATR      = 0.10;  // Spessore minimo zona (x ATR)
 input double InpZoneMaxATR      = 0.60;  // Spessore massimo zona (x ATR)
 
+input group "=== Filtri segnali ==="
+input int    InpCooldownBars    = 8;     // Candele minime tra due segnali
+input int    InpStartHour       = 8;     // Ora inizio segnali (ora server)
+input int    InpEndHour         = 20;    // Ora fine segnali (ora server)
+
 input group "=== Grafica ==="
-input bool   InpShowDeadZones   = true;  // Mostra zone gia' rotte/scadute
+input bool   InpShowDeadZones   = false; // Mostra zone gia' rotte/scadute
 input bool   InpShowSignalText  = true;  // Scritta accanto alle frecce
 input int    InpExtendBars      = 10;    // Prolunga a destra le zone attive
 input color  InpColReaction     = C'95,95,30';    // Zona di reazione
@@ -115,6 +120,7 @@ double   BuyBuf[], SellBuf[], CodeBuf[];
 Zone     g_zones[];
 int      g_zoneCount      = 0;
 int      g_lastReactionEnd = -1;
+int      g_lastSignalBar  = -1000000;
 int      g_atrHandle      = INVALID_HANDLE;
 datetime g_lastBarTime    = 0;
 datetime g_lastAlertTime  = 0;
@@ -217,6 +223,7 @@ void Rebuild(const int rates_total)
    ArrayResize(g_zones, 0, 256);
    g_zoneCount = 0;
    g_lastReactionEnd = -1;
+   g_lastSignalBar = -1000000;
 
    int warmup = InpATRPeriod + InpImpulseBars + RangeBars() + 2 * SwingBars() + 5;
    int first  = MathMax(warmup, rates_total - InpLookback);
@@ -462,6 +469,19 @@ void ProcessSR(Zone &z, const int i)
 //| Helpers                                                          |
 //+------------------------------------------------------------------+
 int RangeBars() { return(MathMax(2, InpRangeBars)); }
+
+//+------------------------------------------------------------------+
+bool HourAllowed(const datetime t)
+  {
+   if(InpStartHour == InpEndHour)
+      return(true);
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   if(InpStartHour < InpEndHour)
+      return(dt.hour >= InpStartHour && dt.hour < InpEndHour);
+   return(dt.hour >= InpStartHour || dt.hour < InpEndHour);   // fascia a cavallo della mezzanotte
+  }
+
 int SwingBars() { return(MathMax(1, InpSwingBars)); }
 
 //+------------------------------------------------------------------+
@@ -570,6 +590,10 @@ string SignalTag(const int code)
 //+------------------------------------------------------------------+
 void AddSignal(const int i, const int code)
   {
+   if(!HourAllowed(g_t[i]) || i - g_lastSignalBar < InpCooldownBars)
+      return;
+   g_lastSignalBar = i;
+
    double off = 0.4 * g_atr[i];
    double price;
    if(code > 0)

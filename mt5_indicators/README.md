@@ -47,26 +47,30 @@ Tutto è misurato in **ATR** (volatilità media), così le regole valgono sia
 su M5 che su M15 e su strumenti diversi.
 
 ### Zona di reazione
-- Prima c'è un **movimento** di almeno `2 × ATR` nelle ultime 5 candele.
+- Prima c'è un **movimento** di almeno `2.5 × ATR` nelle ultime 5 candele.
 - Poi `3` candele con i **corpi compressi** (altezza tra `0.2` e `1 × ATR`).
 - Massimo e minimo della zona = estremi dei **corpi** (come nelle slide, le ombre possono uscire).
-- **Segnale**: la prima candela che **chiude** fuori dal range → BUY sopra, SELL sotto.
+- **Segnale**: la prima candela che **chiude** fuori dal range **nella direzione del movimento** (come a pag. 8 del PDF).
 - Se entro 30 candele non rompe, la zona scade.
 
 ### Zona forte
-- Uno **swing** (minimo/massimo più basso/alto delle 3 candele a sinistra e a destra).
-- Dopo lo swing il prezzo si allontana di almeno `1.5 × ATR` ("inversione forte").
+- Uno **swing** (minimo/massimo più basso/alto delle 5 candele a sinistra e a destra).
+- Dopo lo swing il prezzo si allontana di almeno `2.5 × ATR` ("inversione forte").
 - La zona va dall'**estremo** (ombra) ai **corpi** delle candele dello swing.
 
 ### Zona di rifiuto
-- Una candela con **ombra ≥ 2 volte il corpo** e ≥ `0.8 × ATR`.
+- Una candela con **ombra ≥ 3 volte il corpo** e ≥ `1.2 × ATR`.
 - La zona è l'ombra stessa.
 
 ### Cosa succede quando il prezzo torna su una zona forte/rifiuto
 - **Chiude oltre la zona** → **BO** (breakout), la zona muore.
 - **Tocca la zona e chiude fuori dalla parte giusta** con candela di rifiuto → **RB** (rimbalzo).
-  Massimo 3 rimbalzi segnalati per zona.
+  Solo il **primo** rimbalzo per zona viene segnalato.
 - La zona diventa "testabile" solo dopo 3 candele dalla sua nascita.
+
+### Filtri sui segnali
+- Almeno **8 candele** tra un segnale e il successivo.
+- Segnali solo tra le **8 e le 20 (ora server)**: fuori orario l'oro fa molto rumore.
 
 > Le zone forti si disegnano a partire dallo swing, ma diventano attive **solo dopo**
 > che lo swing è confermato (3 candele dopo). I segnali non usano mai candele future:
@@ -107,15 +111,48 @@ stop e target definiti e misura win rate, profit factor e drawdown.
 | `InpLookback` | 1500 | analizza più storico (più lento) |
 | `InpRangeBars` | 3 | range di reazione più lunghi, meno zone |
 | `InpRangeMaxATR` | 1.0 | accetta range più larghi, più zone |
-| `InpImpulseATR` | 2.0 | richiede un movimento più forte prima del range, meno zone |
+| `InpImpulseATR` | 2.5 | richiede un movimento più forte prima del range, meno zone |
 | `InpBreakOnClose` | true | `false` = segnale appena l'ombra esce (più aggressivo, più falsi) |
-| `InpOnlyWithTrend` | false | `true` = solo breakout nella direzione del movimento (es. PDF pag. 8) |
-| `InpSwingBars` | 3 | swing più "importanti", meno zone forti |
-| `InpStrongATR` | 1.5 | inversioni più forti, meno zone forti |
-| `InpWickBodyRatio` | 2.0 | rifiuti più netti, meno zone di rifiuto |
-| `InpMaxBounces` | 3 | più rimbalzi segnalati sulla stessa zona |
-| `InpShowDeadZones` | true | `false` = grafico più pulito, solo zone attive |
+| `InpOnlyWithTrend` | true | `false` = segnala anche i breakout contro il movimento (più segnali) |
+| `InpSwingBars` | 5 | swing più "importanti", meno zone forti |
+| `InpStrongATR` | 2.5 | inversioni più forti, meno zone forti |
+| `InpWickBodyRatio` | 3.0 | rifiuti più netti, meno zone di rifiuto |
+| `InpMaxBounces` | 1 | più rimbalzi segnalati sulla stessa zona |
+| `InpShowDeadZones` | false | `true` = mostra anche le zone già rotte (utile per studiare lo storico) |
+| `InpCooldownBars` | 8 | meno segnali ravvicinati |
+| `InpStartHour` / `InpEndHour` | 8 / 20 | fascia oraria dei segnali (ora del server del broker); uguali = sempre |
 | `InpAlertPush` | false | `true` = notifica sul telefono (configura l'ID MetaQuotes in Strumenti → Opzioni → Notifiche) |
 
 Se il grafico è troppo pieno: disattiva un tipo di zona alla volta
 (`InpShowReaction`, `InpShowStrong`, `InpShowRejection`) e studiali separatamente.
+
+---
+
+## 6. EA di test: `TRS_Zones_EA.mq5`
+
+Contiene **le stesse regole** dell'indicatore e apre i trade da solo, per misurare
+nello **Strategy Tester** quale setup funziona.
+
+1. Copia `TRS_Zones_EA.mq5` in `MQL5/Experts/` e compilalo (F7).
+2. In MT5: **Visualizza → Tester strategia** (Ctrl+R).
+3. Expert: `TRS_Zones_EA` · Simbolo: `XAUUSD` · Periodo: `M15` · Date: almeno 1–2 anni.
+4. Modellazione: **"Ogni tick basato su tick reali"** (la più fedele).
+5. Avvia. A fine test, nella scheda **Diario**, trovi le statistiche separate per setup:
+
+```
+RZ breakout zona reazione | trade: … | vinti: …% | netto: … | profit factor: …
+BO breakout zona forte    | …
+RB rimbalzo su zona       | …
+```
+
+Regole dei trade:
+- **Ingresso** all'apertura della candela dopo il segnale.
+- **Stop** oltre il lato opposto della zona (+ `0.1 × ATR` di margine), minimo `0.3 × ATR`;
+  se lo stop supera `2 × ATR` il trade viene saltato.
+- **Take profit** a `1.5 R` (`InpRR`).
+- **Rischio** `0.5%` del saldo per trade (`InpRiskPercent`) o lotti fissi (`InpFixedLots`).
+- Max 3 trade e max 2 perdite al giorno, una posizione alla volta, orario 8–20.
+
+Come leggere i risultati: un setup interessa solo se ha **profit factor > 1.3**
+su **almeno 100 trade**. Puoi disattivare i singoli setup (`InpTradeRZ`, `InpTradeBO`,
+`InpTradeRB`) per testarli uno alla volta.
