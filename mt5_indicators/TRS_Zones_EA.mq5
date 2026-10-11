@@ -611,7 +611,7 @@ void OnSignal(const int i, const int code, const Zone &z, const bool live)
    sl = NormalizeDouble(sl, _Digits);
    tp = NormalizeDouble(tp, _Digits);
 
-   double lots = CalcLots(dist);
+   double lots = CalcLots(buy, entry, sl);
    if(lots <= 0.0)
       return;
 
@@ -623,21 +623,19 @@ void OnSignal(const int i, const int code, const Zone &z, const bool live)
   }
 
 //+------------------------------------------------------------------+
-double CalcLots(const double dist)
+double CalcLots(const bool buy, const double entry, const double sl)
   {
    double lots;
    if(InpFixedLots > 0.0)
       lots = InpFixedLots;
    else
      {
-      double risk      = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercent / 100.0;
-      double tickSize  = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
-      double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_LOSS);
-      if(tickValue <= 0.0)
-         tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
-      if(tickSize <= 0.0 || tickValue <= 0.0)
+      //--- perdita reale di 1 lotto dall'ingresso allo stop, calcolata da MT5
+      double risk = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercent / 100.0;
+      double pnl  = 0.0;
+      if(!OrderCalcProfit(buy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, 1.0, entry, sl, pnl))
          return(0.0);
-      double lossPerLot = dist / tickSize * tickValue;
+      double lossPerLot = -pnl;
       if(lossPerLot <= 0.0)
          return(0.0);
       lots = risk / lossPerLot;
