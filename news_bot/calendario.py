@@ -97,10 +97,10 @@ _SOPRA_DOLLARO_SU = ("Sopra le attese: dollaro più forte, oro sotto pressione.\
                      "     Sotto le attese: dollaro più debole, spinta per l'oro.")
 _SOPRA_DOLLARO_GIU = ("Sopra le attese: dollaro più debole, spinta per l'oro.\n"
                       "     Sotto le attese: dollaro più forte, oro sotto pressione.")
-_TONI = ("Più restrittivo delle attese (hawkish): dollaro più forte, oro sotto pressione.\n"
-         "     Più accomodante delle attese (dovish): dollaro più debole, spinta per l'oro.")
-_TASSI = ("Tassi sopra le attese o Fed hawkish: dollaro più forte, oro sotto pressione.\n"
-          "     Tassi sotto le attese o Fed dovish: dollaro più debole, spinta per l'oro.")
+_TONI = ("Più restrittivo delle attese: dollaro più forte, oro sotto pressione.\n"
+         "     Più accomodante delle attese: dollaro più debole, spinta per l'oro.")
+_TASSI = ("Tassi sopra le attese: dollaro più forte, oro sotto pressione.\n"
+          "     Tassi sotto le attese: dollaro più debole, spinta per l'oro.")
 
 SPIEGAZIONI = [
     # (parole nel titolo originale, spiegazione) — vince la prima che corrisponde
