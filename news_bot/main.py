@@ -17,6 +17,7 @@ from zoneinfo import ZoneInfo
 
 from telethon import TelegramClient, errors
 
+import calendario
 import config
 import messages
 from news_engine import NewsEngine, fetch_all
@@ -165,6 +166,31 @@ class NewsBot:
                 log.exception("Errore durante l'invio del buongiorno")
             await asyncio.sleep(30)
 
+    # ---------- calendario economico del lunedì ----------
+    async def weekly_loop(self):
+        while True:
+            wait = 30
+            try:
+                now_local = datetime.now(TZ)
+                start = now_local.replace(
+                    hour=config.WEEKLY_HOUR, minute=config.WEEKLY_MINUTE,
+                    second=0, microsecond=0,
+                )
+                year, week, _ = now_local.isocalendar()
+                week_key = f"{year}-W{week}"
+                # Come il buongiorno: finestra di 1 ora, una sola volta a settimana.
+                if (now_local.weekday() == config.WEEKLY_DAY
+                        and start <= now_local < start + timedelta(hours=1)
+                        and self.storage.get_meta("last_weekly") != week_key):
+                    text = await asyncio.to_thread(calendario.build_weekly_message, now_local)
+                    await self.send(text)
+                    self.storage.set_meta("last_weekly", week_key)
+                    log.info("Calendario economico della settimana inviato.")
+            except Exception:
+                log.exception("Errore durante l'invio del calendario: riprovo tra 5 minuti")
+                wait = 300
+            await asyncio.sleep(wait)
+
     # ---------- avvio ----------
     async def run(self):
         if not config.API_ID or not config.API_HASH:
@@ -195,7 +221,10 @@ class NewsBot:
         else:
             log.info("DEEPL_API_KEY non impostata: traduzione con Google Translate gratuito.")
 
-        await asyncio.gather(self.news_loop(), self.morning_loop())
+        loops = [self.news_loop(), self.morning_loop()]
+        if config.WEEKLY_ENABLED:
+            loops.append(self.weekly_loop())
+        await asyncio.gather(*loops)
 
 
 if __name__ == "__main__":

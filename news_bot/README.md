@@ -7,6 +7,19 @@ Pubblica nel canale Community, con il tuo account Telegram (Telethon, **non** Bo
 - 🚨 **subito**, durante il giorno, ogni notizia davvero importante, tradotta in italiano;
 - 🌙 la sera **nessun** riepilogo.
 
+## Calendario economico del lunedì
+
+Ogni **lunedì alle 10:00** il bot pubblica il calendario dei dati economici USA della settimana
+(impatto 🔴 alto e 🟠 medio, orari italiani), preso gratis da ForexFactory:
+
+- 🔴 **appuntamenti più importanti**: giorno, ora, previsione, dato precedente e cosa succede
+  di solito a dollaro e oro se il dato esce sopra o sotto le attese;
+- 🟠 **altri dati**: elenco giorno per giorno.
+
+Prova senza pubblicare: `python prova_calendario.py` (con `--invia` lo pubblica nel canale).
+Giorno e ora si cambiano nel `.env` (`WEEKLY_DAY`, `WEEKLY_HOUR`, `WEEKLY_MINUTE`);
+`WEEKLY_ENABLED=false` lo disattiva. Testi e spiegazioni sono in `calendario.py`.
+
 ## Da dove arrivano le notizie
 
 Il bot legge direttamente le **stesse fonti RSS di [World Monitor](https://www.worldmonitor.app)**,

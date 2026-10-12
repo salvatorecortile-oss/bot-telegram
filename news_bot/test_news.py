@@ -158,6 +158,36 @@ def test_translator():
     assert translator.to_italian("") == ""
 
 
+def test_calendar():
+    import calendario
+    raw = [  # stesso formato del calendario ForexFactory
+        {"title": "Bank Holiday", "country": "USD", "date": "2026-10-12T00:00:00-04:00",
+         "impact": "Holiday", "forecast": "", "previous": ""},
+        {"title": "CPI m/m", "country": "USD", "date": "2026-10-15T08:30:00-04:00",
+         "impact": "High", "forecast": "0.3%", "previous": "0.4%"},
+        {"title": "Unemployment Claims", "country": "USD", "date": "2026-10-16T08:30:00-04:00",
+         "impact": "Medium", "forecast": "225K", "previous": "219K"},
+        {"title": "FOMC Member Waller Speaks", "country": "USD", "date": "2026-10-16T13:00:00-04:00",
+         "impact": "Medium", "forecast": "", "previous": ""},
+        {"title": "German ZEW Economic Sentiment", "country": "EUR", "date": "2026-10-14T05:00:00-04:00",
+         "impact": "High", "forecast": "", "previous": ""},
+        {"title": "Retail Sales m/m", "country": "USD", "date": "2026-10-16T08:30:00-04:00",
+         "impact": "Low", "forecast": "", "previous": ""},
+    ]
+    events = calendario.usd_events(raw)
+    assert [e["title"] for e in events] == [
+        "Bank Holiday", "CPI m/m", "Unemployment Claims", "FOMC Member Waller Speaks"]
+    assert events[1]["when"].strftime("%H:%M") == "14:30", "orario italiano (08:30 New York = 14:30 Roma)"
+    text = calendario.format_calendar(events, events[0]["when"])
+    assert "Giovedì 15 ore 14:30</b> · CPI (inflazione USA) mensile" in text
+    assert "Previsione 0,3% · Precedente 0,4%" in text
+    assert "oro sotto pressione" in text
+    assert "Festività: banche USA chiuse" in text
+    assert "Discorso di Waller (membro Fed)" in text
+    assert "ZEW" not in text and "Vendite al dettaglio" not in text
+    assert "12 – 16 ottobre 2026" in text
+
+
 def test_messages():
     recap = [{"category": "oro", "title_it": "L'oro <scende>", "source": "Kitco", "link": "https://k"}]
     text = messages.format_morning(datetime(2026, 10, 6, 6, 0), recap)
@@ -171,6 +201,6 @@ def test_messages():
 
 
 if __name__ == "__main__":
-    for test in (test_classifier, test_real_headlines, test_market_relevance, test_parse_feed, test_engine, test_translator, test_messages):
+    for test in (test_classifier, test_real_headlines, test_market_relevance, test_parse_feed, test_engine, test_translator, test_calendar, test_messages):
         test()
         print("OK", test.__name__)

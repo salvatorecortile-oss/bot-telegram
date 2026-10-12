@@ -41,6 +41,14 @@ NEWS_CHANNEL = int(os.getenv("NEWS_CHANNEL", "0"))
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")
 MORNING_HOUR = int(os.getenv("MORNING_HOUR", "6"))
 MORNING_MINUTE = int(os.getenv("MORNING_MINUTE", "0"))
+
+# Calendario economico della settimana (solo USD).
+# WEEKLY_DAY: 0 = lunedì, 1 = martedì, ... 6 = domenica.
+WEEKLY_ENABLED = os.getenv("WEEKLY_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+WEEKLY_DAY = int(os.getenv("WEEKLY_DAY", "0"))
+WEEKLY_HOUR = int(os.getenv("WEEKLY_HOUR", "10"))
+WEEKLY_MINUTE = int(os.getenv("WEEKLY_MINUTE", "0"))
+
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "120"))
 QUIET_HOURS = os.getenv("QUIET_HOURS", "").strip()
 
