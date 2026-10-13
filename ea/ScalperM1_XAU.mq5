@@ -537,7 +537,7 @@ void CreatePanel()
    ObjectSetInteger(0, bg, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, 10);
    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, 20);
-   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 360);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 430);
    ObjectSetInteger(0, bg, OBJPROP_YSIZE, 150);
    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, C'20,24,32');
    ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
@@ -585,11 +585,13 @@ void UpdatePanel()
    string st = "Stato: " + StateText();
    if(g_state == ST_RUNNING && g_blockReason != "")
       st += "  (" + g_blockReason + ")";
+   else if(g_state == ST_STOPPED)
+      st += "  (premi Start)";
    SetText("state", st);
 
    double avg = g_sprN > 0 ? g_sprSum / (double)g_sprN : 0;
-   SetText("spread", StringFormat("Spread: %d   min %d  media %.2f  max %d",
-                                  g_sprNow, g_sprN > 0 ? g_sprMin : 0, avg, g_sprMax));
+   SetText("spread", StringFormat("Spread: %d / limite %d   (visti: min %d  media %.1f  max %d)",
+                                  g_sprNow, InpMaxSpread, g_sprN > 0 ? g_sprMin : 0, avg, g_sprMax));
 
    double wr = g_dayTrades > 0 ? 100.0 * g_dayWins / g_dayTrades : 0;
    SetText("day", StringFormat("Oggi: %d trade  win %.0f%%  P/L netto %.2f",
