@@ -21,9 +21,17 @@ enum ExitMode
    EXIT_FIXED_TP = 1  // TP fisso
   };
 
+enum SignalMode
+  {
+   SIG_FOLLOW = 0, // Normale: segue la candela
+   SIG_FADE   = 1, // Contrario: vende in alto e compra in basso alla candela
+   SIG_INVERT = 2  // Tutto invertito (anche i segnali di inversione)
+  };
+
 //--- parametri ------------------------------------------------------
 input group "Base"
 input double   InpLots          = 0.01;          // Lotti
+input SignalMode InpSignalMode = SIG_FOLLOW;    // Direzione dei trade
 input ExitMode InpExitMode      = EXIT_TRAILING; // Uscita
 input int      InpMaxPositions  = 3;             // Posizioni max PER DIREZIONE (le extra solo con le altre a break-even)
 input bool     InpReversal      = true;          // Apre il trade opposto quando la candela finisce l'estensione (conto hedging)
@@ -408,29 +416,35 @@ void CheckEntry(const MqlTick &tk, int openCount)
       if(g_bias > 0) kSell = 1.0 + InpBiasStrength * g_bias;
      }
 
-   //--- 1) continuazione: segue la candela
+   bool flipCont = (InpSignalMode != SIG_FOLLOW); // segnali di candela al contrario
+   bool flipRev  = (InpSignalMode == SIG_INVERT); // segnali di inversione al contrario
+
+   //--- 1) segnale di candela: la candela M1 si sta muovendo forte in una direzione
+   //    (i moltiplicatori del bias si applicano alla direzione del trade che verra' aperto)
    double thr = MathMax(ENTRY_SPREAD_K * g_sprNorm, ENTRY_ATR_K * atr);
-   bool   buy  = (move >=  thr * kBuy  && push > 0);
-   bool   sell = (move <= -thr * kSell && push < 0);
-   string kind = "candela";
+   bool up   = (move >=  thr * (flipCont ? kSell : kBuy) && push > 0);
+   bool down = (move <= -thr * (flipCont ? kBuy : kSell) && push < 0);
+   bool buy  = flipCont ? down : up;
+   bool sell = flipCont ? up : down;
+   string kind = flipCont ? "contro candela" : "candela";
 
    //--- 2) inversione: la candela si e' estesa e sta tornando indietro
    if(!buy && !sell && InpReversal && g_hedging)
      {
       double pull = MathMax(REV_PULL_ATR * atr, 2.0 * g_sprNorm);
-      if(high0 - open0 >= REV_EXT_ATR * atr && high0 - tk.bid >= pull * kSell && push < 0)
-        { sell = true; kind = "inversione"; }
-      else if(open0 - low0 >= REV_EXT_ATR * atr && tk.bid - low0 >= pull * kBuy && push > 0)
-        { buy = true; kind = "inversione"; }
+      bool fromHigh = (high0 - open0 >= REV_EXT_ATR * atr && high0 - tk.bid >= pull * (flipRev ? kBuy : kSell) && push < 0);
+      bool fromLow  = (open0 - low0 >= REV_EXT_ATR * atr && tk.bid - low0 >= pull * (flipRev ? kSell : kBuy) && push > 0);
+      if(fromHigh)     { if(flipRev) buy = true;  else sell = true; kind = "inversione"; }
+      else if(fromLow) { if(flipRev) sell = true; else buy = true;  kind = "inversione"; }
      }
    if(!buy && !sell)
       return;
 
    //--- niente chiudi-e-riapri: nella stessa candela rientra solo oltre il prezzo di chiusura
    datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
-   if(buy && kind == "candela" && g_rebuyBar == bar0 && tk.bid < g_rebuyAbove)
+   if(buy && kind != "inversione" && g_rebuyBar == bar0 && tk.bid < g_rebuyAbove)
       return;
-   if(sell && kind == "candela" && g_resellBar == bar0 && tk.bid > g_resellBelow)
+   if(sell && kind != "inversione" && g_resellBar == bar0 && tk.bid > g_resellBelow)
       return;
 
    //--- limiti per direzione
@@ -871,7 +885,8 @@ void CreatePanel()
    MakeButton("btnFin",   "Finish",     190, 182, 80, clrSteelBlue);
    MakeButton("btnStop",  "Stop+Close", 275, 182, 85, clrFireBrick);
 
-   ObjectSetString(0, g_pfx + "title", OBJPROP_TEXT, "ScalperM1   " + _Symbol);
+   ObjectSetString(0, g_pfx + "title", OBJPROP_TEXT, "ScalperM1   " + _Symbol +
+                   (InpSignalMode == SIG_FOLLOW ? "" : (InpSignalMode == SIG_FADE ? "   [contrario]" : "   [invertito]")));
    UpdatePanel();
   }
 
