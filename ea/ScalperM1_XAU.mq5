@@ -1,54 +1,92 @@
 //+------------------------------------------------------------------+
 //|                                              ScalperM1_XAU.mq5   |
-//|  Scalper tick-momentum per XAUUSD (replica logica analizzata):   |
+//|  Scalper tick-momentum per XAUUSD                                |
 //|  - una posizione alla volta                                      |
 //|  - ingresso nella direzione del movimento degli ultimi N ms      |
-//|  - TP fisso (50 pt) / SL = 50 pt + spread corrente               |
-//|  - uscita anticipata su inversione o tempo massimo               |
-//|  - filtro spread, filtro orario, limiti giornalieri              |
+//|  - filtri: spread, orario, trend EMA, candela M1, ATR, RSI       |
+//|  - uscita: TP fisso oppure "runner" (break-even veloce +         |
+//|    trailing che chiude appena il prezzo torna indietro)          |
 //|  - pannello con Start / Start One / Finish / Stop                |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.00"
-#property description "Tick-momentum scalper XAUUSD con TP 50pt e SL 50pt+spread"
+#property version   "2.00"
+#property description "Tick-momentum scalper XAUUSD con BE veloce, trailing e filtri trend/ATR"
 
 #include <Trade\Trade.mqh>
 
+enum ExitMode
+  {
+   EXIT_FIXED_TP = 0, // TP fisso
+   EXIT_RUNNER   = 1  // Break-even + trailing (lascia correre)
+  };
+
 //--- parametri ------------------------------------------------------
 input group "Gestione ordine"
-input double InpLots               = 0.10;  // Lotti
-input int    InpTPPoints           = 50;    // Take profit (punti, 50 = 0.50$)
-input int    InpSLPoints           = 50;    // Stop loss base (punti)
-input bool   InpSLAddSpread        = true;  // Aggiungi lo spread corrente allo SL
-input int    InpDeviation          = 10;    // Slippage massimo (punti)
-input long   InpMagic              = 41378;  // Magic number
+input double   InpLots               = 0.01;  // Lotti
+input int      InpSLPoints           = 50;    // Stop loss iniziale (punti, 50 = 0.50$)
+input bool     InpSLAddSpread        = true;  // Aggiungi lo spread corrente allo SL
+input int      InpDeviation          = 10;    // Slippage massimo (punti)
+input long     InpMagic              = 41378; // Magic number
+
+input group "Uscita"
+input ExitMode InpExitMode           = EXIT_RUNNER; // Modalita' di uscita
+input int      InpTPPoints           = 50;    // TP fisso (solo modalita' TP fisso)
+input int      InpRunnerMaxTP        = 400;   // TP di sicurezza in modalita' runner (0 = nessuno)
+input int      InpBEActivatePts      = 25;    // Sposta a break-even dopo +X punti
+input int      InpBELockPts          = 5;     // Punti di profitto bloccati al break-even
+input int      InpTrailStartPts      = 40;    // Trailing attivo dopo +X punti
+input int      InpTrailMinPts        = 15;    // Distanza minima trailing (punti)
+input int      InpTrailPct           = 35;    // Trailing: % del profitto massimo che puo' restituire
+input double   InpExtATRMult         = 1.2;   // "Estensione massima" = profitto >= ATR(M1) x questo (0 = off)
+input int      InpTrailTightPts      = 8;     // Trailing stretto dopo l'estensione massima (punti)
+input int      InpTrailStepPts       = 5;     // Sposta lo SL sul server ogni X punti
+input int      InpMaxHoldSec         = 60;    // Chiude se dopo X secondi non ha raggiunto il BE (0 = off)
+input int      InpReverseActivatePts = 20;    // (TP fisso) uscita su inversione dopo +X punti
+input int      InpReverseExitPoints  = 20;    // (TP fisso) chiudi se ritraccia X punti (0 = off)
 
 input group "Segnale momentum"
-input int    InpMomentumPoints     = 30;    // Movimento minimo nella finestra (punti)
-input int    InpMomentumMs         = 5000;  // Finestra del movimento (millisecondi)
-input int    InpMinTicksInWindow   = 5;     // Tick minimi nella finestra
-input bool   InpRequireExtreme     = true;  // Prezzo deve essere vicino all'estremo della finestra
-input int    InpExtremeTolPoints   = 5;     // Tolleranza dall'estremo (punti)
-input int    InpCooldownMs         = 1000;  // Pausa dopo una chiusura (millisecondi)
+input int      InpMomentumPoints     = 30;    // Movimento minimo nella finestra (punti)
+input int      InpMomentumMs         = 5000;  // Finestra del movimento (millisecondi)
+input int      InpMinTicksInWindow   = 5;     // Tick minimi nella finestra
+input bool     InpRequireExtreme     = true;  // Prezzo deve essere vicino all'estremo della finestra
+input int      InpExtremeTolPoints   = 5;     // Tolleranza dall'estremo (punti)
+input int      InpCooldownMs         = 1000;  // Pausa dopo una chiusura (millisecondi)
 
-input group "Uscita anticipata"
-input int    InpMaxHoldSec         = 60;    // Chiusura dopo X secondi (0 = off)
-input int    InpReverseActivatePts = 20;    // Attiva uscita su inversione dopo +X punti
-input int    InpReverseExitPoints  = 20;    // Chiudi se ritraccia X punti dal massimo (0 = off)
+input group "Filtro trend (EMA)"
+input bool            InpUseTrendFilter = true;      // Opera solo nella direzione del trend
+input ENUM_TIMEFRAMES InpTrendTF        = PERIOD_M5; // Timeframe del trend
+input int             InpTrendFastEMA   = 20;        // EMA veloce
+input int             InpTrendSlowEMA   = 50;        // EMA lenta
 
-input group "Filtri"
-input int    InpMaxSpread          = 18;    // Spread massimo (punti)
-input bool   InpUseTimeFilter      = true;  // Usa filtro orario (ora server)
-input int    InpStartHour          = 9;     // Ora inizio (server)
-input int    InpEndHour            = 21;    // Ora fine (server, esclusa)
+input group "Filtro candela M1"
+input bool     InpUseCandleFilter    = true;  // La candela M1 attuale deve andare nella direzione del trade
+input int      InpMinBodyPts         = 10;    // Corpo minimo della candela (punti)
+
+input group "Filtro volatilita' (ATR M1)"
+input bool     InpUseATRFilter       = true;  // Usa filtro ATR
+input int      InpATRPeriod          = 14;    // Periodo ATR
+input int      InpMinATRPts          = 40;    // ATR minimo (punti): sotto = mercato troppo fermo
+input int      InpMaxATRPts          = 0;     // ATR massimo (punti): sopra = news/caos (0 = off)
+
+input group "Filtro RSI M1"
+input bool     InpUseRSIFilter       = false; // Usa filtro RSI (evita ingressi a fine movimento)
+input int      InpRSIPeriod          = 14;    // Periodo RSI
+input int      InpRSIMaxBuy          = 75;    // Non comprare sopra questo RSI
+input int      InpRSIMinSell         = 25;    // Non vendere sotto questo RSI
+
+input group "Filtri generali"
+input int      InpMaxSpread          = 25;    // Spread massimo (punti)
+input bool     InpUseTimeFilter      = true;  // Usa filtro orario (ora server)
+input int      InpStartHour          = 9;     // Ora inizio (server)
+input int      InpEndHour            = 21;    // Ora fine (server, esclusa)
 
 input group "Limiti giornalieri (valuta conto, 0 = off)"
-input double InpMaxDailyLoss       = 0;     // Perdita massima giornaliera
-input double InpDailyTarget        = 0;     // Obiettivo giornaliero
-input int    InpMaxTradesDay       = 0;     // Numero massimo trade al giorno
+input double   InpMaxDailyLoss       = 0;     // Perdita massima giornaliera
+input double   InpDailyTarget        = 0;     // Obiettivo giornaliero
+input int      InpMaxTradesDay       = 0;     // Numero massimo trade al giorno
 
 input group "Avvio"
-input bool   InpAutoStart          = false; // Parte in RUNNING senza premere Start (sempre attivo nel tester)
+input bool     InpAutoStart          = false; // Parte in RUNNING senza premere Start (sempre attivo nel tester)
 
 //--- stato ------------------------------------------------------------
 enum EAState { ST_STOPPED = 0, ST_RUNNING, ST_FINISHING };
@@ -72,6 +110,15 @@ int      g_sprNow = 0;
 // gestione posizione
 ulong    g_trackTicket = 0;
 double   g_bestFav     = 0;
+bool     g_beDone      = false;
+long     g_lastModifyMs = 0;
+string   g_posInfo     = "nessuna";
+
+// indicatori
+int      g_hFast = INVALID_HANDLE;
+int      g_hSlow = INVALID_HANDLE;
+int      g_hATR  = INVALID_HANDLE;
+int      g_hRSI  = INVALID_HANDLE;
 long     g_lastCloseMs = 0;
 long     g_lastEntryMs = 0;
 
@@ -102,6 +149,17 @@ int OnInit()
       return INIT_PARAMETERS_INCORRECT;
      }
 
+   g_hFast = iMA(_Symbol, InpTrendTF, InpTrendFastEMA, 0, MODE_EMA, PRICE_CLOSE);
+   g_hSlow = iMA(_Symbol, InpTrendTF, InpTrendSlowEMA, 0, MODE_EMA, PRICE_CLOSE);
+   g_hATR  = iATR(_Symbol, PERIOD_M1, InpATRPeriod);
+   g_hRSI  = iRSI(_Symbol, PERIOD_M1, InpRSIPeriod, PRICE_CLOSE);
+   if(g_hFast == INVALID_HANDLE || g_hSlow == INVALID_HANDLE ||
+      g_hATR == INVALID_HANDLE || g_hRSI == INVALID_HANDLE)
+     {
+      Print("Errore creazione indicatori: ", GetLastError());
+      return INIT_FAILED;
+     }
+
    bool tester = (bool)MQLInfoInteger(MQL_TESTER);
    g_state = (InpAutoStart || tester) ? ST_RUNNING : ST_STOPPED;
 
@@ -116,8 +174,9 @@ int OnInit()
    if(!tester || (bool)MQLInfoInteger(MQL_VISUAL_MODE))
       CreatePanel();
 
-   PrintFormat("ScalperM1 avviato su %s: TP=%d SL=%d(+spread=%s) momentum=%dpt/%dms maxSpread=%d",
-               _Symbol, InpTPPoints, InpSLPoints, InpSLAddSpread ? "si" : "no",
+   PrintFormat("ScalperM1 v2 avviato su %s: uscita=%s SL=%d(+spread=%s) BE=%d trail=%d/%d%% momentum=%dpt/%dms maxSpread=%d",
+               _Symbol, InpExitMode == EXIT_RUNNER ? "runner" : "TP fisso", InpSLPoints,
+               InpSLAddSpread ? "si" : "no", InpBEActivatePts, InpTrailStartPts, InpTrailPct,
                InpMomentumPoints, InpMomentumMs, InpMaxSpread);
    return INIT_SUCCEEDED;
   }
@@ -132,6 +191,10 @@ void OnDeinit(const int reason)
   {
    if(reason == REASON_PARAMETERS || reason == REASON_CHARTCHANGE || reason == REASON_RECOMPILE)
       GlobalVariableSet(StateGVName(), (double)g_state);
+   if(g_hFast != INVALID_HANDLE) IndicatorRelease(g_hFast);
+   if(g_hSlow != INVALID_HANDLE) IndicatorRelease(g_hSlow);
+   if(g_hATR  != INVALID_HANDLE) IndicatorRelease(g_hATR);
+   if(g_hRSI  != INVALID_HANDLE) IndicatorRelease(g_hRSI);
    ObjectsDeleteAll(0, g_pfx);
    ChartRedraw();
   }
@@ -155,6 +218,7 @@ void OnTick()
    else
      {
       g_trackTicket = 0;
+      g_posInfo = "nessuna";
       if(g_state == ST_FINISHING)
          g_state = ST_STOPPED;
       if(g_state == ST_RUNNING)
@@ -295,7 +359,85 @@ void CheckEntry(const MqlTick &tk)
       return;
 
    g_lastSignal = StringFormat("%s  delta %+.0f pt in %d ms", buy ? "BUY" : "SELL", delta, InpMomentumMs);
+
+   string why = FilterReject(buy, tk);
+   if(why != "")
+     {
+      g_lastSignal += "  -> scartato: " + why;
+      return;
+     }
    OpenTrade(buy, tk, delta);
+  }
+
+//+------------------------------------------------------------------+
+//| Indicatori e filtri                                              |
+//+------------------------------------------------------------------+
+bool GetBuf(int handle, int shift, double &val)
+  {
+   if(handle == INVALID_HANDLE)
+      return false;
+   double b[];
+   if(CopyBuffer(handle, 0, shift, 1, b) != 1)
+      return false;
+   val = b[0];
+   return true;
+  }
+
+// +1 trend rialzista, -1 ribassista, 0 dati non pronti
+int TrendDir()
+  {
+   double fast, slow;
+   if(!GetBuf(g_hFast, 1, fast) || !GetBuf(g_hSlow, 1, slow))
+      return 0;
+   if(fast > slow) return 1;
+   if(fast < slow) return -1;
+   return 0;
+  }
+
+double ATRPoints()
+  {
+   double v;
+   if(!GetBuf(g_hATR, 1, v))
+      return -1;
+   return v / _Point;
+  }
+
+// Ritorna "" se il segnale passa tutti i filtri, altrimenti il motivo dello scarto.
+string FilterReject(bool isBuy, const MqlTick &tk)
+  {
+   if(InpUseTrendFilter)
+     {
+      int t = TrendDir();
+      if(t == 0)                return "trend non pronto";
+      if(isBuy && t < 0)        return "contro trend";
+      if(!isBuy && t > 0)       return "contro trend";
+     }
+
+   if(InpUseCandleFilter)
+     {
+      double o = iOpen(_Symbol, PERIOD_M1, 0);
+      if(o <= 0)                return "candela non pronta";
+      double body = (tk.bid - o) / _Point;
+      if(isBuy && body < InpMinBodyPts)   return "candela M1 non rialzista";
+      if(!isBuy && -body < InpMinBodyPts) return "candela M1 non ribassista";
+     }
+
+   if(InpUseATRFilter)
+     {
+      double atr = ATRPoints();
+      if(atr < 0)                                return "ATR non pronto";
+      if(atr < InpMinATRPts)                     return StringFormat("ATR basso (%.0f)", atr);
+      if(InpMaxATRPts > 0 && atr > InpMaxATRPts) return StringFormat("ATR alto (%.0f)", atr);
+     }
+
+   if(InpUseRSIFilter)
+     {
+      double rsi;
+      if(!GetBuf(g_hRSI, 0, rsi))         return "RSI non pronto";
+      if(isBuy && rsi > InpRSIMaxBuy)     return StringFormat("RSI %.0f ipercomprato", rsi);
+      if(!isBuy && rsi < InpRSIMinSell)   return StringFormat("RSI %.0f ipervenduto", rsi);
+     }
+   return "";
   }
 
 bool InTradingHours(datetime t)
@@ -331,7 +473,7 @@ double NormPrice(double p)
 void OpenTrade(bool isBuy, const MqlTick &tk, double delta)
   {
    double spread = tk.ask - tk.bid;
-   double tpDist = InpTPPoints * _Point;
+   double tpDist = (InpExitMode == EXIT_FIXED_TP) ? InpTPPoints * _Point : InpRunnerMaxTP * _Point;
    double slDist = InpSLPoints * _Point + (InpSLAddSpread ? spread : 0);
    double lots   = NormalizeLots(InpLots);
 
@@ -339,13 +481,13 @@ void OpenTrade(bool isBuy, const MqlTick &tk, double delta)
    if(isBuy)
      {
       price = tk.ask;
-      tp = NormPrice(price + tpDist);
+      tp = tpDist > 0 ? NormPrice(price + tpDist) : 0;
       sl = NormPrice(price - slDist);
      }
    else
      {
       price = tk.bid;
-      tp = NormPrice(price - tpDist);
+      tp = tpDist > 0 ? NormPrice(price - tpDist) : 0;
       sl = NormPrice(price + slDist);
      }
 
@@ -354,7 +496,7 @@ void OpenTrade(bool isBuy, const MqlTick &tk, double delta)
    if(minDist > 0)
      {
       double closePx = isBuy ? tk.bid : tk.ask;
-      if(MathAbs(tp - closePx) < minDist || MathAbs(closePx - sl) < minDist)
+      if((tp > 0 && MathAbs(tp - closePx) < minDist) || MathAbs(closePx - sl) < minDist)
         {
          g_blockReason = "stops level broker";
          return;
@@ -409,34 +551,126 @@ void ManagePosition(ulong ticket, const MqlTick &tk)
       return;
 
    long   type   = PositionGetInteger(POSITION_TYPE);
+   bool   isBuy  = (type == POSITION_TYPE_BUY);
    double open   = PositionGetDouble(POSITION_PRICE_OPEN);
+   double curSL  = PositionGetDouble(POSITION_SL);
+   double curTP  = PositionGetDouble(POSITION_TP);
    long   openMs = PositionGetInteger(POSITION_TIME_MSC);
 
    if(g_trackTicket != ticket)
      {
       g_trackTicket = ticket;
       g_bestFav = 0;
+      g_beDone = false;
      }
 
-   double fav = (type == POSITION_TYPE_BUY) ? (tk.bid - open) : (open - tk.ask);
+   double fav = isBuy ? (tk.bid - open) : (open - tk.ask);
    if(fav > g_bestFav)
       g_bestFav = fav;
 
-   // uscita su inversione: solo dopo che il trade e' andato in profitto di X punti
-   if(InpReverseExitPoints > 0 &&
-      g_bestFav >= InpReverseActivatePts * _Point &&
-      g_bestFav - fav >= InpReverseExitPoints * _Point)
+   double favPts  = fav / _Point;
+   double peakPts = g_bestFav / _Point;
+   g_posInfo = StringFormat("%s %+.0f pt (max %+.0f)%s", isBuy ? "BUY" : "SELL", favPts, peakPts, g_beDone ? "  BE ok" : "");
+
+   //--- modalita' TP fisso: logica originale
+   if(InpExitMode == EXIT_FIXED_TP)
      {
-      ClosePos(ticket, StringFormat("inversione (max %+.0f, ora %+.0f pt)", g_bestFav / _Point, fav / _Point));
+      if(InpReverseExitPoints > 0 &&
+         peakPts >= InpReverseActivatePts &&
+         peakPts - favPts >= InpReverseExitPoints)
+        {
+         ClosePos(ticket, StringFormat("inversione (max %+.0f, ora %+.0f pt)", peakPts, favPts));
+         return;
+        }
+      if(InpMaxHoldSec > 0 && tk.time_msc - openMs >= (long)InpMaxHoldSec * 1000)
+         ClosePos(ticket, StringFormat("tempo max (%+.0f pt)", favPts));
       return;
      }
 
-   // uscita a tempo
-   if(InpMaxHoldSec > 0 && tk.time_msc - openMs >= (long)InpMaxHoldSec * 1000)
+   //--- modalita' runner
+   // 1) uscita a tempo solo se il trade non e' mai arrivato al break-even
+   if(!g_beDone && peakPts < InpBEActivatePts &&
+      InpMaxHoldSec > 0 && tk.time_msc - openMs >= (long)InpMaxHoldSec * 1000)
      {
-      ClosePos(ticket, StringFormat("tempo max (%+.0f pt)", fav / _Point));
+      ClosePos(ticket, StringFormat("tempo max senza BE (%+.0f pt)", favPts));
       return;
      }
+
+   // 2) break-even appena il trade corre a favore
+   if(peakPts >= InpBEActivatePts)
+     {
+      if(!g_beDone)
+        {
+         double beSL = NormPrice(isBuy ? open + InpBELockPts * _Point : open - InpBELockPts * _Point);
+         if(ModifySL(ticket, isBuy, beSL, curTP, curSL, tk))
+           {
+            g_beDone = true;
+            PrintFormat("Break-even #%I64u: SL=%.2f (max %+.0f pt)", ticket, beSL, peakPts);
+           }
+        }
+      // protezione locale: se torna sotto il livello BE chiude subito (anche se la modifica e' fallita)
+      if(favPts <= InpBELockPts)
+        {
+         ClosePos(ticket, StringFormat("ritorno a break-even (max %+.0f pt)", peakPts));
+         return;
+        }
+     }
+
+   // 3) trailing: chiude appena il prezzo torna indietro dal massimo
+   if(peakPts >= InpTrailStartPts)
+     {
+      double dist = MathMax((double)InpTrailMinPts, peakPts * InpTrailPct / 100.0);
+      bool   ext  = false;
+      if(InpExtATRMult > 0)
+        {
+         double atr = ATRPoints();
+         if(atr > 0 && peakPts >= atr * InpExtATRMult)
+           {
+            dist = MathMin(dist, (double)InpTrailTightPts);
+            ext = true;
+           }
+        }
+      g_posInfo += StringFormat("  trail %.0f%s", dist, ext ? " (estensione)" : "");
+
+      if(peakPts - favPts >= dist)
+        {
+         ClosePos(ticket, StringFormat("trailing%s: max %+.0f, chiuso a %+.0f pt", ext ? " stretto" : "", peakPts, favPts));
+         return;
+        }
+
+      // aggiorna lo SL anche sul server (protezione se la connessione cade)
+      double lockPts = peakPts - dist;
+      double newSL = NormPrice(isBuy ? open + lockPts * _Point : open - lockPts * _Point);
+      bool better = isBuy ? (curSL == 0 || newSL >= curSL + InpTrailStepPts * _Point)
+                          : (curSL == 0 || newSL <= curSL - InpTrailStepPts * _Point);
+      if(better && tk.time_msc - g_lastModifyMs >= 300)
+         ModifySL(ticket, isBuy, newSL, curTP, curSL, tk);
+     }
+  }
+
+// Sposta lo SL rispettando la distanza minima del broker. true se lo SL e' gia' a quel livello o e' stato modificato.
+bool ModifySL(ulong ticket, bool isBuy, double newSL, double tp, double curSL, const MqlTick &tk)
+  {
+   if(curSL != 0 && MathAbs(curSL - newSL) < _Point / 2)
+      return true;
+   if(isBuy && curSL != 0 && newSL < curSL)
+      return true; // mai peggiorare lo SL
+   if(!isBuy && curSL != 0 && newSL > curSL)
+      return true;
+
+   long stopsLvl  = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   long freezeLvl = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_FREEZE_LEVEL);
+   double minDist = (double)(stopsLvl > freezeLvl ? stopsLvl : freezeLvl) * _Point;
+   if(isBuy && tk.bid - newSL < minDist)
+      return false;
+   if(!isBuy && newSL - tk.ask < minDist)
+      return false;
+
+   g_lastModifyMs = tk.time_msc;
+   if(g_trade.PositionModify(ticket, newSL, tp))
+      return true;
+   PrintFormat("Modifica SL #%I64u fallita: %u %s", ticket, g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription());
+   return false;
   }
 
 void ClosePos(ulong ticket, string why)
@@ -537,8 +771,8 @@ void CreatePanel()
    ObjectSetInteger(0, bg, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, 10);
    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, 20);
-   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 430);
-   ObjectSetInteger(0, bg, OBJPROP_YSIZE, 150);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 520);
+   ObjectSetInteger(0, bg, OBJPROP_YSIZE, 186);
    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, C'20,24,32');
    ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, bg, OBJPROP_COLOR, C'70,80,100');
@@ -550,11 +784,13 @@ void CreatePanel()
    MakeLabel("spread", 20,  64,  9, clrOrange);
    MakeLabel("day",    20,  82,  9, clrSilver);
    MakeLabel("signal", 20, 100,  9, clrSilver);
+   MakeLabel("filt",   20, 118,  9, clrKhaki);
+   MakeLabel("pos",    20, 136,  9, clrLime);
 
-   MakeButton("btnStart", "Start",      20, 138, 80, clrDodgerBlue);
-   MakeButton("btnOne",   "Start One", 105, 138, 80, clrDodgerBlue);
-   MakeButton("btnFin",   "Finish",    190, 138, 80, clrSteelBlue);
-   MakeButton("btnStop",  "Stop+Close",275, 138, 85, clrFireBrick);
+   MakeButton("btnStart", "Start",      20, 172, 80, clrDodgerBlue);
+   MakeButton("btnOne",   "Start One", 105, 172, 80, clrDodgerBlue);
+   MakeButton("btnFin",   "Finish",    190, 172, 80, clrSteelBlue);
+   MakeButton("btnStop",  "Stop+Close",275, 172, 85, clrFireBrick);
 
    ObjectSetString(0, g_pfx + "title", OBJPROP_TEXT, "ScalperM1 " + _Symbol);
    UpdatePanel();
@@ -597,6 +833,19 @@ void UpdatePanel()
    SetText("day", StringFormat("Oggi: %d trade  win %.0f%%  P/L netto %.2f",
                                g_dayTrades, wr, g_dayPL));
    SetText("signal", "Ultimo segnale: " + g_lastSignal);
+
+   int    td  = TrendDir();
+   double atr = ATRPoints();
+   double rsi = 0;
+   GetBuf(g_hRSI, 0, rsi);
+   MqlTick tk;
+   double body = 0;
+   if(SymbolInfoTick(_Symbol, tk))
+      body = (tk.bid - iOpen(_Symbol, PERIOD_M1, 0)) / _Point;
+   SetText("filt", StringFormat("Trend %s: %s   ATR %.0f   RSI %.0f   candela %+.0f",
+                                StringSubstr(EnumToString(InpTrendTF), 7),
+                                td > 0 ? "UP" : (td < 0 ? "DOWN" : "-"), atr, rsi, body));
+   SetText("pos", "Posizione: " + g_posInfo);
    ChartRedraw();
   }
 

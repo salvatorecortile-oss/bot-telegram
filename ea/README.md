@@ -1,5 +1,17 @@
 # ScalperM1_XAU — EA MT5
 
+## Novità v2
+
+- **Uscita "runner"** (default): niente TP fisso a 50. Appena il trade fa +25 punti lo SL va a break-even (+5). Da +40 parte il trailing, che restituisce al massimo il 35% del profitto (minimo 15 punti). Quando il movimento arriva all'estensione massima (profitto ≥ 1,2 × ATR M1) il trailing si stringe a 8 punti, così chiude al primo ritorno. Lo SL viene spostato anche sul server.
+- Si chiude a tempo (60 s) solo se il trade non è mai arrivato al break-even.
+- **Filtri:**
+  - trend con EMA 20/50 su M5;
+  - candela M1 nella direzione del trade (corpo ≥ 10 punti);
+  - ATR M1 ≥ 40 punti;
+  - RSI (spento di default).
+- Il pannello mostra trend, ATR, RSI, candela, lo stato della posizione (BE/trailing) e il motivo per cui un segnale viene scartato.
+- Per tornare alla logica originale: `InpExitMode = TP fisso`.
+
 Scalper sui tick per XAUUSD, costruito replicando la logica ricavata dagli screenshot analizzati:
 
 | Regola | Valore di default |
