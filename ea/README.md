@@ -13,7 +13,9 @@ Scalper continuo su M1. Funziona su qualsiasi simbolo (XAU, Forex, indici) e si 
   - quando il movimento è molto esteso il trailing si stringe.
 - **TP fisso:** con `InpExitMode = TP fisso` il TP è uguale allo SL.
 - **Spread e slippage automatici:** il bot impara lo spread normale del simbolo e si mette in pausa solo quando è più del doppio (news, rollover).
-- **Posizioni multiple:** fino a 3 nella stessa direzione. Una nuova si apre solo se le altre sono già a break-even.
+- **Posizioni multiple:** fino a 3 per direzione. Una nuova si apre solo se le altre della stessa direzione sono già a break-even.
+- **Buy e sell insieme** (solo conti hedging): mentre un buy segue la candela, se la candela si è estesa (≥ 0,6 × ATR) e torna indietro dal massimo (≥ 0,2 × ATR, minimo 2 × spread) apre subito un sell, e viceversa. Così quando la candela finisce il sell è già partito. Si spegne con `InpReversal = false`.
+- Usa ordini a mercato lanciati dal bot al livello giusto, non ordini pendenti: è più veloce e non lascia ordini dimenticati sul conto.
 
 Tutte le distanze in punti hanno 0 = automatico. Metti un numero solo se vuoi forzarle.
 

@@ -25,7 +25,8 @@ enum ExitMode
 input group "Base"
 input double   InpLots          = 0.01;          // Lotti
 input ExitMode InpExitMode      = EXIT_TRAILING; // Uscita
-input int      InpMaxPositions  = 3;             // Posizioni contemporanee max (le extra solo con le altre a break-even)
+input int      InpMaxPositions  = 3;             // Posizioni max PER DIREZIONE (le extra solo con le altre a break-even)
+input bool     InpReversal      = true;          // Apre il trade opposto quando la candela finisce l'estensione (conto hedging)
 input bool     InpAutoStart     = true;          // Parte da solo appena attaccato al grafico
 input long     InpMagic         = 41378;         // Magic number
 
@@ -60,7 +61,9 @@ input int      InpMaxTradesDay  = 0;    // Numero massimo trade al giorno
 #define ENTRY_SPREAD_K 2.0   // ingresso: la candela deve essersi mossa di 2 x spread...
 #define ENTRY_ATR_K    0.15  // ...oppure 0.15 x ATR (il maggiore dei due)
 #define MOMENTUM_MS    3000  // il prezzo deve salire/scendere anche negli ultimi 3 s
-#define MAXPOS_LIMIT   20
+#define REV_EXT_ATR    0.6   // inversione: la candela deve essersi estesa di 0.6 x ATR...
+#define REV_PULL_ATR   0.2   // ...e il prezzo deve tornare indietro di 0.2 x ATR dal suo estremo
+#define MAXPOS_LIMIT   40
 
 //--- stato ------------------------------------------------------------
 enum EAState { ST_STOPPED = 0, ST_RUNNING, ST_FINISHING };
@@ -94,10 +97,12 @@ ulong    g_pTicket[MAXPOS_LIMIT];
 double   g_pBest[MAXPOS_LIMIT];
 double   g_pRisk[MAXPOS_LIMIT];
 bool     g_pBE[MAXPOS_LIMIT];
+bool     g_pBuy[MAXPOS_LIMIT];
 int      g_pN = 0;
 
 long     g_lastEntryMs  = 0;
-double   g_lastEntryPx  = 0;
+double   g_lastEntryPxBuy  = 0;
+double   g_lastEntryPxSell = 0;
 long     g_backoffMs    = 0;
 long     g_lastModifyMs = 0;
 
@@ -306,7 +311,8 @@ int MaxPositions()
   {
    if(!g_hedging)
       return 1; // su conto netting le posizioni si sommerebbero
-   return (int)MathMax(1, MathMin(InpMaxPositions, MAXPOS_LIMIT));
+   // per direzione: buy e sell insieme arrivano al massimo al doppio
+   return (int)MathMax(1, MathMin(InpMaxPositions, MAXPOS_LIMIT / 2));
   }
 
 //+------------------------------------------------------------------+
@@ -362,46 +368,63 @@ void CheckEntry(const MqlTick &tk, int openCount)
      { g_blockReason = "target giornaliero"; return; }
    if(InpMaxTradesDay > 0 && g_dayTrades >= InpMaxTradesDay)
      { g_blockReason = "max trade giornalieri"; return; }
-   if(openCount >= MaxPositions())
-      return;
    if(tk.time_msc - g_lastEntryMs < MathMax(InpCooldownMs, 200))
       return;
 
    double open0 = iOpen(_Symbol, PERIOD_M1, 0);
+   double high0 = iHigh(_Symbol, PERIOD_M1, 0);
+   double low0  = iLow(_Symbol, PERIOD_M1, 0);
    double ago;
-   if(open0 <= 0 || !BidAgo(tk.time_msc, MOMENTUM_MS, ago))
+   if(open0 <= 0 || high0 <= 0 || low0 <= 0 || !BidAgo(tk.time_msc, MOMENTUM_MS, ago))
       return;
 
+   double atr  = ATR();
    double move = tk.bid - open0;      // quanto si e' mossa la candela M1 in corso
    double push = tk.bid - ago;        // direzione degli ultimi 3 secondi
-   double thr  = MathMax(ENTRY_SPREAD_K * g_sprNorm, ENTRY_ATR_K * ATR());
 
-   double thrBuy = thr, thrSell = thr;
+   // moltiplicatori del bias: entrare contro la direzione favorita e' piu' difficile
+   double kBuy = 1.0, kSell = 1.0;
    if(InpUseBias)
      {
-      if(g_bias < 0) thrBuy  *= 1.0 + InpBiasStrength * (-g_bias);
-      if(g_bias > 0) thrSell *= 1.0 + InpBiasStrength * g_bias;
+      if(g_bias < 0) kBuy  = 1.0 + InpBiasStrength * (-g_bias);
+      if(g_bias > 0) kSell = 1.0 + InpBiasStrength * g_bias;
      }
 
-   bool buy  = (move >=  thrBuy  && push > 0);
-   bool sell = (move <= -thrSell && push < 0);
+   //--- 1) continuazione: segue la candela
+   double thr = MathMax(ENTRY_SPREAD_K * g_sprNorm, ENTRY_ATR_K * atr);
+   bool   buy  = (move >=  thr * kBuy  && push > 0);
+   bool   sell = (move <= -thr * kSell && push < 0);
+   string kind = "candela";
+
+   //--- 2) inversione: la candela si e' estesa e sta tornando indietro
+   if(!buy && !sell && InpReversal && g_hedging)
+     {
+      double pull = MathMax(REV_PULL_ATR * atr, 2.0 * g_sprNorm);
+      if(high0 - open0 >= REV_EXT_ATR * atr && high0 - tk.bid >= pull * kSell && push < 0)
+        { sell = true; kind = "inversione"; }
+      else if(open0 - low0 >= REV_EXT_ATR * atr && tk.bid - low0 >= pull * kBuy && push > 0)
+        { buy = true; kind = "inversione"; }
+     }
    if(!buy && !sell)
       return;
 
-   // posizioni gia' aperte: aggiungi solo nella stessa direzione, con le altre gia' a break-even
-   if(openCount > 0)
+   //--- limiti per direzione
+   int dir = buy ? 1 : -1;
+   int sameDir = CountDir(dir);
+   if(sameDir >= MaxPositions())
+      return;
+   if(sameDir > 0)
      {
-      int dir = OpenDirection();
-      if((buy && dir != 1) || (sell && dir != -1))
+      if(!AllAtBreakEvenDir(dir))
          return;
-      if(!AllAtBreakEven())
-         return;
-      if(MathAbs(tk.bid - g_lastEntryPx) < 0.5 * SLDist())
+      double lastPx = buy ? g_lastEntryPxBuy : g_lastEntryPxSell;
+      if(MathAbs(tk.bid - lastPx) < 0.5 * SLDist())
          return;
      }
+   if(!g_hedging && openCount > 0)
+      return; // su netting un trade opposto chiuderebbe quello aperto
 
-   g_lastSignal = StringFormat("%s  candela %+.0f pt (soglia %.0f)", buy ? "BUY" : "SELL",
-                               move / _Point, (buy ? thrBuy : thrSell) / _Point);
+   g_lastSignal = StringFormat("%s %s", buy ? "BUY" : "SELL", kind);
    OpenTrade(buy, tk);
   }
 
@@ -455,7 +478,8 @@ void OpenTrade(bool isBuy, const MqlTick &tk)
    uint rc = g_trade.ResultRetcode();
    if(ok && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED || rc == TRADE_RETCODE_DONE_PARTIAL))
      {
-      g_lastEntryPx = tk.bid;
+      if(isBuy) g_lastEntryPxBuy = tk.bid;
+      else      g_lastEntryPxSell = tk.bid;
       PrintFormat("%s %.2f @ %s  SL=%s TP=%s  spread=%.0f bias=%+.0f%%",
                   isBuy ? "BUY" : "SELL", lots, DoubleToString(g_trade.ResultPrice(), _Digits),
                   DoubleToString(sl, _Digits), tp > 0 ? DoubleToString(tp, _Digits) : "-",
@@ -476,7 +500,7 @@ void OpenTrade(bool isBuy, const MqlTick &tk)
 //+------------------------------------------------------------------+
 //| Posizioni                                                        |
 //+------------------------------------------------------------------+
-int TrackIndex(ulong ticket, double open, double sl)
+int TrackIndex(ulong ticket, double open, double sl, bool isBuy)
   {
    for(int i = 0; i < g_pN; i++)
       if(g_pTicket[i] == ticket)
@@ -488,6 +512,7 @@ int TrackIndex(ulong ticket, double open, double sl)
    g_pBest[k]   = 0;
    g_pRisk[k]   = (sl > 0) ? MathAbs(open - sl) : SLDist();
    g_pBE[k]     = false;
+   g_pBuy[k]    = isBuy;
    return k;
   }
 
@@ -498,6 +523,7 @@ void Untrack(int i)
    g_pBest[i]   = g_pBest[g_pN];
    g_pRisk[i]   = g_pRisk[g_pN];
    g_pBE[i]     = g_pBE[g_pN];
+   g_pBuy[i]    = g_pBuy[g_pN];
   }
 
 bool IsMine()
@@ -506,22 +532,25 @@ bool IsMine()
           PositionGetInteger(POSITION_MAGIC) == InpMagic;
   }
 
-// +1 se le posizioni aperte sono buy, -1 se sell, 0 se nessuna
-int OpenDirection()
+// numero di posizioni aperte in una direzione (+1 buy, -1 sell)
+int CountDir(int dir)
   {
+   int n = 0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
       if(PositionGetTicket(i) == 0 || !IsMine())
          continue;
-      return PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? 1 : -1;
+      bool b = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
+      if((dir > 0) == b)
+         n++;
      }
-   return 0;
+   return n;
   }
 
-bool AllAtBreakEven()
+bool AllAtBreakEvenDir(int dir)
   {
    for(int i = 0; i < g_pN; i++)
-      if(!g_pBE[i])
+      if(g_pBuy[i] == (dir > 0) && !g_pBE[i])
          return false;
    return true;
   }
@@ -559,7 +588,7 @@ void ManageOne(ulong ticket, const MqlTick &tk)
    double curTP  = PositionGetDouble(POSITION_TP);
    long   openMs = PositionGetInteger(POSITION_TIME_MSC);
 
-   int k = TrackIndex(ticket, open, curSL);
+   int k = TrackIndex(ticket, open, curSL, isBuy);
    if(k < 0)
       return;
 
@@ -759,7 +788,7 @@ void CreatePanel()
    ObjectSetInteger(0, bg, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, 10);
    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, 20);
-   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 370);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 400);
    ObjectSetInteger(0, bg, OBJPROP_YSIZE, 196);
    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, C'20,24,32');
    ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
@@ -849,8 +878,8 @@ void UpdatePanel()
       nOpen++;
       floating += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
      }
-   SetText("open", StringFormat("Aperte %d    In corso %+.2f    Saldo %.2f",
-                                nOpen, floating, AccountInfoDouble(ACCOUNT_BALANCE)),
+   SetText("open", StringFormat("Aperte %d (%d buy, %d sell)   In corso %+.2f   Saldo %.2f",
+                                nOpen, CountDir(1), CountDir(-1), floating, AccountInfoDouble(ACCOUNT_BALANCE)),
            nOpen > 0 ? PLColor(floating) : clrSilver);
 
    // direzione favorita
