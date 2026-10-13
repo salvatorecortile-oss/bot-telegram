@@ -105,6 +105,14 @@ int OnInit()
    bool tester = (bool)MQLInfoInteger(MQL_TESTER);
    g_state = (InpAutoStart || tester) ? ST_RUNNING : ST_STOPPED;
 
+   // dopo un cambio parametri / timeframe / ricompilazione riprende lo stato precedente
+   string gv = StateGVName();
+   if(!tester && GlobalVariableCheck(gv))
+     {
+      g_state = (EAState)(int)GlobalVariableGet(gv);
+      GlobalVariableDel(gv);
+     }
+
    if(!tester || (bool)MQLInfoInteger(MQL_VISUAL_MODE))
       CreatePanel();
 
@@ -115,8 +123,15 @@ int OnInit()
   }
 
 //+------------------------------------------------------------------+
+string StateGVName()
+  {
+   return StringFormat("SM1_state_%s_%I64d", _Symbol, InpMagic);
+  }
+
 void OnDeinit(const int reason)
   {
+   if(reason == REASON_PARAMETERS || reason == REASON_CHARTCHANGE || reason == REASON_RECOMPILE)
+      GlobalVariableSet(StateGVName(), (double)g_state);
    ObjectsDeleteAll(0, g_pfx);
    ChartRedraw();
   }
