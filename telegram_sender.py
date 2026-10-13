@@ -404,29 +404,10 @@ async def send_good_morning_message():
     )
 
 
-def format_forced_daily_close_message(closed_operations):
-    """closed_operations: lista di dict {'direction', 'pips' (puo' essere
-    None se non calcolabile), 'source'}, una riga per ogni posizione chiusa
-    alle 22:45."""
-    lines = []
-    for op in closed_operations:
-        pips = op.get("pips")
-        if pips is None:
-            pips_text = "N/D"
-            emoji = "ℹ️"
-        else:
-            pips_text = f"{_format_signed_pips(pips)} PIPS"
-            emoji = "✅" if pips >= 0 else "❌"
-        lines.append(
-            f"{emoji} XAUUSD {op['direction']} ({op['source']}) — {pips_text}"
-        )
-    return FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE.format(operations="\n".join(lines))
-
-
-async def send_forced_daily_close_message(closed_operations):
+async def send_forced_daily_close_message():
     return await client.send_message(
         DESTINATION_CHAT,
-        format_forced_daily_close_message(closed_operations),
+        FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE,
         parse_mode="html",
         silent=True,
     )
@@ -636,4 +617,27 @@ async def send_bltech_sl_hit_message(pips, reply_to=None):
         parse_mode="html",
         silent=True,
         reply_to=reply_to,
+    )
+
+def format_forced_daily_close_message(closed_operations):
+    lines = []
+    for op in closed_operations:
+        pips = op.get("pips")
+        if pips is None:
+            pips_text = "N/D"
+            emoji = "ℹ️"
+        else:
+            pips_text = f"{_format_signed_pips(pips)} PIPS"
+            emoji = "✅" if pips >= 0 else "❌"
+        lines.append(
+            f"{emoji} XAUUSD {op['direction']} ({op['source']}) — {pips_text}"
+        )
+    return FORCED_DAILY_CLOSE_MESSAGE_TEMPLATE.format(operations="\n".join(lines))
+
+async def send_forced_daily_close_message(closed_operations):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        format_forced_daily_close_message(closed_operations),
+        parse_mode="html",
+        silent=True,
     )

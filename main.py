@@ -891,30 +891,16 @@ async def new_message_handler(event):
 
 @client.on(events.NewMessage(chats=SOURCE_CHAT_BLTECH))
 async def bltech_message_handler(event):
+    if BOT_STATE == "STOPPED":
+        return
+
     message = event.message
     source_message_id = message.id
     raw_text = message.text or ""
 
-    # Log diagnostico di ogni messaggio ricevuto da BL Tech Pro (anche quelli
-    # poi ignorati): senza questo non si distingue "il messaggio non è mai
-    # arrivato al bot" da "è arrivato ma non è stato riconosciuto".
-    logger.info(
-        "📥 BL TECH PRO MESSAGGIO RICEVUTO #%s | %s",
-        source_message_id,
-        (raw_text[:80].replace("\n", " ") if raw_text else "[VUOTO]"),
-    )
-
-    if BOT_STATE == "STOPPED":
-        logger.info("⏭️ BL TECH PRO IGNORATO (BOT_STATE=STOPPED) | #%s", source_message_id)
-        return
-
     signal = parse_bltech_signal(raw_text)
     if signal is None:
-        # Non-XAUUSD o formato non riconosciuto.
-        logger.info(
-            "⏭️ BL TECH PRO IGNORATO (non XAU o formato non riconosciuto) | #%s",
-            source_message_id,
-        )
+        # Non-XAUUSD o formato non riconosciuto: ignorato silenziosamente.
         return
 
     message_lock = get_message_lock(("bltech", source_message_id))
@@ -1785,10 +1771,12 @@ def _calculate_position_profit_pips(position):
 # Ogni voce e' (trigger_pips, protected_pips): al raggiungimento di
 # trigger_pips di profitto, lo SL viene spostato a protected_pips.
 LIVE_PROTECTION_LEVELS = (
-    (90.0, 10.0),
-    (125.0, 45.0),
-    (150.0, 70.0),
-    (175.0, 95.0),
+    (50.0, 20.0),
+    (80.0, 40.0),
+    (100.0, 70.0),
+    (125.0, 85.0),
+    (150.0, 100.0),
+    (175.0, 115.0),
     (200.0, 130.0),
     (225.0, 160.0),
     (250.0, 190.0),
@@ -1811,7 +1799,7 @@ def _live_protection_step(profit_pips):
     """
     Determina il livello di protezione SL da applicare in base al profitto
     live (in PIPS) della posizione, seguendo la tabella:
-        +90   -> SL +10 (BE)
+        +80   -> SL +10 (BE)
         +125  -> SL +50
         +150  -> SL +80
         +175  -> SL +110
@@ -2747,7 +2735,7 @@ async def monitor_trailing_sl_closures(stop_event):
     Gestione autonoma dello SL basata sul prezzo LIVE di MT5.
 
     Il prezzo live di MT5 governa tutta la gestione dello SL.
-    A +90 PIPS scatta la prima protezione (+10 PIPS).
+    A +50 PIPS scatta la prima protezione (+20 PIPS).
     Quando il livello TAKE PROFIT (TP3 del segnale) viene raggiunto,
     l'operazione NON viene chiusa: viene notificato il raggiungimento e
     si attiva il trailing dinamico al 15% di ritracciamento.
@@ -2821,21 +2809,21 @@ async def monitor_trailing_sl_closures(stop_event):
                             get_last_pips_notified, position_ticket
                         )
 
-                        if profit_pips >= 90.0 and last_notified < 90:
+                        if profit_pips >= 50.0 and last_notified < 50:
                             await asyncio.to_thread(
                                 set_last_pips_notified,
                                 position_ticket,
                                 trade_source_chat,
                                 original_message_id,
-                                90,
+                                50,
                             )
                             try:
                                 sent = await send_be_applied_message(
-                                    pips=90,
+                                    pips=50,
                                     reply_to=destination_message_id,
                                 )
                                 logger.info(
-                                    "📈 AGGIORNAMENTO PIPS | Position=%s | +90 PIPS (BE) | Destination #%s",
+                                    "📈 AGGIORNAMENTO PIPS | Position=%s | +50 PIPS (BE) | Destination #%s",
                                     position_ticket, sent.id,
                                 )
                             except Exception:
@@ -2978,7 +2966,7 @@ async def monitor_trailing_sl_closures(stop_event):
 
                         new_sl = float(result["sl"])
 
-                        if trigger_pips == 90.0:
+                        if trigger_pips == 50.0:
                             await asyncio.to_thread(
                                 mark_automatic_breakeven,
                                 position_ticket,
@@ -3521,10 +3509,12 @@ async def main():
     logger.info("TRAILING TELEGRAM   : DISABILITATO")
     logger.info("")
     logger.info("🛡️ GESTIONE SL LIVE")
-    logger.info("+90 PIPS            : SL +10 (BE) DA MT5")
-    logger.info("+125 PIPS           : SL +45")
-    logger.info("+150 PIPS           : SL +70")
-    logger.info("+175 PIPS           : SL +95")
+    logger.info("+50 PIPS            : SL +20 (BE) DA MT5")
+    logger.info("+80 PIPS            : SL +40")
+    logger.info("+100 PIPS           : SL +70")
+    logger.info("+125 PIPS           : SL +85")
+    logger.info("+150 PIPS           : SL +100")
+    logger.info("+175 PIPS           : SL +115")
     logger.info("+200 PIPS           : SL +130")
     logger.info("+225 PIPS           : SL +160")
     logger.info("+250 PIPS           : SL +190")
