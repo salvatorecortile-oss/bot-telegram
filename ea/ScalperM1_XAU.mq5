@@ -104,6 +104,7 @@ long     g_lastEntryMs  = 0;
 double   g_lastEntryPxBuy  = 0;
 double   g_lastEntryPxSell = 0;
 long     g_backoffMs    = 0;
+string   g_lastReject   = "";
 long     g_lastModifyMs = 0;
 
 // statistiche giornaliere
@@ -359,7 +360,7 @@ void CheckEntry(const MqlTick &tk, int openCount)
    if(!(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !(bool)MQLInfoInteger(MQL_TRADE_ALLOWED))
      { g_blockReason = "AutoTrading disattivato"; return; }
    if(tk.time_msc < g_backoffMs)
-     { g_blockReason = "attesa dopo ordine rifiutato"; return; }
+     { g_blockReason = "broker ha rifiutato: " + g_lastReject; return; }
    if(g_spr > MaxSpread())
      { g_blockReason = "spread anomalo"; return; }
    if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
@@ -493,7 +494,11 @@ void OpenTrade(bool isBuy, const MqlTick &tk)
    else
      {
       g_backoffMs = tk.time_msc + 5000; // es. mercato chiuso / requote: riprova tra 5 s
-      PrintFormat("Ordine rifiutato: %u %s", rc, g_trade.ResultRetcodeDescription());
+      g_lastReject = StringFormat("%s (%u)", g_trade.ResultRetcodeDescription(), rc);
+      PrintFormat("Ordine rifiutato: %u %s | %s %.2f lotti prezzo=%s SL=%s spread=%.0f stopsLevel=%d",
+                  rc, g_trade.ResultRetcodeDescription(), isBuy ? "BUY" : "SELL", lots,
+                  DoubleToString(price, _Digits), DoubleToString(sl, _Digits), g_spr / _Point,
+                  (int)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL));
      }
   }
 
