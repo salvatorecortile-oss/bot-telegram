@@ -239,13 +239,12 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY)
      {
       double px = HistoryDealGetDouble(trans.deal, DEAL_PRICE);
-      double gap = 0.2 * SLDist();
       datetime bar = iTime(_Symbol, PERIOD_M1, 0);
       // un deal SELL in uscita chiude un buy, un deal BUY in uscita chiude un sell
       if(HistoryDealGetInteger(trans.deal, DEAL_TYPE) == DEAL_TYPE_SELL)
-        { g_rebuyAbove = px + gap; g_rebuyBar = bar; }
+        { g_rebuyAbove = px; g_rebuyBar = bar; }
       else
-        { g_resellBelow = px - gap; g_resellBar = bar; }
+        { g_resellBelow = px; g_resellBar = bar; }
 
       PrintFormat("Chiuso #%I64d prezzo=%s profitto=%.2f",
                   HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID),
@@ -442,9 +441,14 @@ void CheckEntry(const MqlTick &tk, int openCount)
 
    //--- niente chiudi-e-riapri: nella stessa candela rientra solo oltre il prezzo di chiusura
    datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
-   if(buy && kind != "inversione" && g_rebuyBar == bar0 && tk.bid < g_rebuyAbove)
+   //    normale: rientra solo se il prezzo e' andato oltre nella direzione del trade
+   //    contrario: rientra solo a un prezzo migliore (sell piu' in alto, buy piu' in basso)
+   double gap = 0.2 * SLDist();
+   if(buy && kind != "inversione" && g_rebuyBar == bar0 &&
+      (flipCont ? tk.bid > g_rebuyAbove - gap : tk.bid < g_rebuyAbove + gap))
       return;
-   if(sell && kind != "inversione" && g_resellBar == bar0 && tk.bid > g_resellBelow)
+   if(sell && kind != "inversione" && g_resellBar == bar0 &&
+      (flipCont ? tk.bid < g_resellBelow + gap : tk.bid > g_resellBelow - gap))
       return;
 
    //--- limiti per direzione
