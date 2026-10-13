@@ -105,6 +105,12 @@ double   g_lastEntryPxBuy  = 0;
 double   g_lastEntryPxSell = 0;
 long     g_backoffMs    = 0;
 string   g_lastReject   = "";
+// dopo una chiusura non rientra nella stessa direzione, nella stessa candela,
+// finche' il prezzo non supera il livello di chiusura (evita chiudi-riapri inutili)
+double   g_rebuyAbove   = 0;
+double   g_resellBelow  = 0;
+datetime g_rebuyBar     = 0;
+datetime g_resellBar    = 0;
 long     g_lastModifyMs = 0;
 
 // statistiche giornaliere
@@ -223,10 +229,21 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    g_statsDirty = true;
    long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
    if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY)
+     {
+      double px = HistoryDealGetDouble(trans.deal, DEAL_PRICE);
+      double gap = 0.2 * SLDist();
+      datetime bar = iTime(_Symbol, PERIOD_M1, 0);
+      // un deal SELL in uscita chiude un buy, un deal BUY in uscita chiude un sell
+      if(HistoryDealGetInteger(trans.deal, DEAL_TYPE) == DEAL_TYPE_SELL)
+        { g_rebuyAbove = px + gap; g_rebuyBar = bar; }
+      else
+        { g_resellBelow = px - gap; g_resellBar = bar; }
+
       PrintFormat("Chiuso #%I64d prezzo=%s profitto=%.2f",
                   HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID),
-                  DoubleToString(HistoryDealGetDouble(trans.deal, DEAL_PRICE), _Digits),
+                  DoubleToString(px, _Digits),
                   HistoryDealGetDouble(trans.deal, DEAL_PROFIT));
+     }
   }
 
 //+------------------------------------------------------------------+
@@ -407,6 +424,13 @@ void CheckEntry(const MqlTick &tk, int openCount)
         { buy = true; kind = "inversione"; }
      }
    if(!buy && !sell)
+      return;
+
+   //--- niente chiudi-e-riapri: nella stessa candela rientra solo oltre il prezzo di chiusura
+   datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
+   if(buy && kind == "candela" && g_rebuyBar == bar0 && tk.bid < g_rebuyAbove)
+      return;
+   if(sell && kind == "candela" && g_resellBar == bar0 && tk.bid > g_resellBelow)
       return;
 
    //--- limiti per direzione
@@ -637,8 +661,11 @@ void ManageOne(ulong ticket, const MqlTick &tk)
       g_posInfo += StringFormat("%s%s %+.0f%s", g_posInfo == "" ? "" : " | ",
                                 isBuy ? "BUY" : "SELL", fav / _Point, g_pBE[k] ? " BE" : "");
 
-   // 1) chiusura a tempo se non e' mai arrivato al break-even
-   if(!g_pBE[k] && best < BE_TRIGGER_R * r &&
+   // 1) chiusura a tempo: solo se non e' mai arrivato al break-even E la candela M1 ora va contro
+   //    (se la candela e' ancora a favore lo tiene: chiuderlo per riaprirlo costerebbe un altro spread)
+   double o0 = iOpen(_Symbol, PERIOD_M1, 0);
+   bool candleAgainst = (o0 > 0) && (isBuy ? tk.bid < o0 : tk.bid > o0);
+   if(!g_pBE[k] && best < BE_TRIGGER_R * r && candleAgainst &&
       InpMaxHoldSec > 0 && tk.time_msc - openMs >= (long)InpMaxHoldSec * 1000)
      {
       ClosePos(ticket, StringFormat("tempo max senza BE (%+.0f pt)", fav / _Point));
