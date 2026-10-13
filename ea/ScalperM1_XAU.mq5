@@ -440,6 +440,31 @@ double NormalizeLots(double lots)
    return MathMax(vmin, MathMin(vmax, lots));
   }
 
+// Lotto richiesto, ridotto se il margine libero non basta (lascia il 20% di margine di sicurezza).
+// Ritorna 0 se non basta neanche per il lotto minimo.
+double AffordableLots(bool isBuy, double price)
+  {
+   double lots = NormalizeLots(InpLots);
+   double free = AccountInfoDouble(ACCOUNT_MARGIN_FREE) * 0.8;
+   double m1;
+   if(!OrderCalcMargin(isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL, _Symbol, 1.0, price, m1) || m1 <= 0)
+      return lots; // non calcolabile: prova comunque
+   if(lots * m1 <= free)
+      return lots;
+   double vmin = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double fit  = NormalizeLots(free / m1);
+   if(free / m1 < vmin)
+      return 0;
+   static datetime warned = 0;
+   if(TimeCurrent() - warned > 300)
+     {
+      warned = TimeCurrent();
+      PrintFormat("Margine libero %.2f: lotto ridotto da %.2f a %.2f (servono %.2f per lotto)",
+                  AccountInfoDouble(ACCOUNT_MARGIN_FREE), InpLots, fit, m1);
+     }
+   return fit;
+  }
+
 double NormPrice(double p)
   {
    double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
@@ -458,8 +483,13 @@ double StopsMinDist()
 void OpenTrade(bool isBuy, const MqlTick &tk)
   {
    double slDist = MathMax(SLDist(), StopsMinDist() + g_spr + _Point);
-   double lots   = NormalizeLots(InpLots);
    double price  = isBuy ? tk.ask : tk.bid;
+   double lots   = AffordableLots(isBuy, price);
+   if(lots <= 0)
+     {
+      g_blockReason = "margine insufficiente anche per il lotto minimo";
+      return;
+     }
    // SL misurato dal prezzo di chiusura (bid per i buy, ask per i sell)
    double sl = NormPrice(isBuy ? tk.bid - slDist : tk.ask + slDist);
    double tp = 0;
