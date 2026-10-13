@@ -1,5 +1,15 @@
 # ScalperM1_XAU — EA MT5
 
+## Profilo AGGRESSIVO (default)
+
+`InpProfile = Aggressivo` fa lavorare il bot sempre, con tanti trade su ogni candela M1:
+- entra su 15 punti di movimento in 3 secondi;
+- pausa di 0,3 s tra un trade e l'altro;
+- filtri trend, ATR e orario spenti;
+- resta solo la direzione della candela M1, più il limite di spread.
+
+Con `InpProfile = Personalizzato` usa i parametri singoli qui sotto.
+
 ## Novità v2
 
 - **Uscita "runner"** (default): niente TP fisso a 50. Appena il trade fa +25 punti lo SL va a break-even (+5). Da +40 parte il trailing, che restituisce al massimo il 35% del profitto (minimo 15 punti). Quando il movimento arriva all'estensione massima (profitto ≥ 1,2 × ATR M1) il trailing si stringe a 8 punti, così chiude al primo ritorno. Lo SL viene spostato anche sul server.

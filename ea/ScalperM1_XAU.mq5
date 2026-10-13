@@ -14,6 +14,12 @@
 
 #include <Trade\Trade.mqh>
 
+enum TradeProfile
+  {
+   PROFILE_AGGRESSIVE = 0, // Aggressivo: tanti trade, filtri spenti
+   PROFILE_CUSTOM     = 1  // Personalizzato: usa i parametri qui sotto
+  };
+
 enum ExitMode
   {
    EXIT_FIXED_TP = 0, // TP fisso
@@ -21,6 +27,9 @@ enum ExitMode
   };
 
 //--- parametri ------------------------------------------------------
+input group "Profilo"
+input TradeProfile InpProfile        = PROFILE_AGGRESSIVE; // Profilo di trading
+
 input group "Gestione ordine"
 input double   InpLots               = 0.01;  // Lotti
 input int      InpSLPoints           = 50;    // Stop loss iniziale (punti, 50 = 0.50$)
@@ -88,6 +97,19 @@ input int      InpMaxTradesDay       = 0;     // Numero massimo trade al giorno
 input group "Avvio"
 input bool     InpAutoStart          = false; // Parte in RUNNING senza premere Start (sempre attivo nel tester)
 
+//--- valori effettivi (input oppure profilo aggressivo) ---------------
+int      cMomentumPoints;
+int      cMomentumMs;
+int      cMinTicksInWindow;
+bool     cRequireExtreme;
+int      cCooldownMs;
+bool     cUseTrendFilter;
+bool     cUseCandleFilter;
+int      cMinBodyPts;
+bool     cUseATRFilter;
+int      cMinATRPts;
+bool     cUseTimeFilter;
+
 //--- stato ------------------------------------------------------------
 enum EAState { ST_STOPPED = 0, ST_RUNNING, ST_FINISHING };
 
@@ -136,14 +158,45 @@ string   g_lastSignal = "-";
 string   g_blockReason = "";
 
 //+------------------------------------------------------------------+
+void ApplyProfile()
+  {
+   cMomentumPoints   = InpMomentumPoints;
+   cMomentumMs       = InpMomentumMs;
+   cMinTicksInWindow = InpMinTicksInWindow;
+   cRequireExtreme   = InpRequireExtreme;
+   cCooldownMs       = InpCooldownMs;
+   cUseTrendFilter   = InpUseTrendFilter;
+   cUseCandleFilter  = InpUseCandleFilter;
+   cMinBodyPts       = InpMinBodyPts;
+   cUseATRFilter     = InpUseATRFilter;
+   cMinATRPts        = InpMinATRPts;
+   cUseTimeFilter    = InpUseTimeFilter;
+
+   if(InpProfile == PROFILE_AGGRESSIVE)
+     {
+      // entra su movimenti piccoli e veloci, quasi senza filtri: tanti trade su ogni candela M1
+      cMomentumPoints   = 15;
+      cMomentumMs       = 3000;
+      cMinTicksInWindow = 3;
+      cRequireExtreme   = false;
+      cCooldownMs       = 300;
+      cUseTrendFilter   = false;
+      cUseCandleFilter  = true;   // solo direzione della candela M1, senza corpo minimo
+      cMinBodyPts       = 0;
+      cUseATRFilter     = false;
+      cUseTimeFilter    = false;  // lavora sempre; lo spread massimo protegge da rollover e news
+     }
+  }
+
 int OnInit()
   {
+   ApplyProfile();
    g_trade.SetExpertMagicNumber(InpMagic);
    g_trade.SetDeviationInPoints(InpDeviation);
    g_trade.SetTypeFillingBySymbol(_Symbol);
    g_trade.SetAsyncMode(false);
 
-   if(InpTPPoints <= 0 || InpSLPoints <= 0 || InpMomentumMs <= 0)
+   if(InpTPPoints <= 0 || InpSLPoints <= 0 || cMomentumMs <= 0)
      {
       Print("Parametri non validi: TP, SL e finestra devono essere > 0");
       return INIT_PARAMETERS_INCORRECT;
@@ -174,10 +227,10 @@ int OnInit()
    if(!tester || (bool)MQLInfoInteger(MQL_VISUAL_MODE))
       CreatePanel();
 
-   PrintFormat("ScalperM1 v2 avviato su %s: uscita=%s SL=%d(+spread=%s) BE=%d trail=%d/%d%% momentum=%dpt/%dms maxSpread=%d",
-               _Symbol, InpExitMode == EXIT_RUNNER ? "runner" : "TP fisso", InpSLPoints,
+   PrintFormat("ScalperM1 v2 avviato su %s [%s]: uscita=%s SL=%d(+spread=%s) BE=%d trail=%d/%d%% momentum=%dpt/%dms maxSpread=%d",
+               _Symbol, InpProfile == PROFILE_AGGRESSIVE ? "AGGRESSIVO" : "personalizzato", InpExitMode == EXIT_RUNNER ? "runner" : "TP fisso", InpSLPoints,
                InpSLAddSpread ? "si" : "no", InpBEActivatePts, InpTrailStartPts, InpTrailPct,
-               InpMomentumPoints, InpMomentumMs, InpMaxSpread);
+               cMomentumPoints, cMomentumMs, InpMaxSpread);
    return INIT_SUCCEEDED;
   }
 
@@ -321,7 +374,7 @@ void CheckEntry(const MqlTick &tk)
    if(g_sprNow > InpMaxSpread)
      { g_blockReason = "spread alto"; return; }
 
-   if(InpUseTimeFilter && !InTradingHours(tk.time))
+   if(cUseTimeFilter && !InTradingHours(tk.time))
      { g_blockReason = "fuori orario"; return; }
 
    if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
@@ -331,25 +384,25 @@ void CheckEntry(const MqlTick &tk)
    if(InpMaxTradesDay > 0 && g_dayTrades >= InpMaxTradesDay)
      { g_blockReason = "max trade giornalieri"; return; }
 
-   if(tk.time_msc - g_lastCloseMs < InpCooldownMs)
+   if(tk.time_msc - g_lastCloseMs < cCooldownMs)
      { g_blockReason = "cooldown"; return; }
    if(tk.time_msc - g_lastEntryMs < 500) // evita doppi invii
       return;
 
    double bidAgo = 0, hi = 0, lo = 0;
    int ticks = 0;
-   if(!WindowStats(tk.time_msc, InpMomentumMs, bidAgo, hi, lo, ticks))
+   if(!WindowStats(tk.time_msc, cMomentumMs, bidAgo, hi, lo, ticks))
       return;
-   if(ticks < InpMinTicksInWindow)
+   if(ticks < cMinTicksInWindow)
       return;
 
    double delta = (tk.bid - bidAgo) / _Point;
    double tol   = InpExtremeTolPoints * _Point;
 
-   bool buy  = delta >=  InpMomentumPoints;
-   bool sell = delta <= -InpMomentumPoints;
+   bool buy  = delta >=  cMomentumPoints;
+   bool sell = delta <= -cMomentumPoints;
 
-   if(InpRequireExtreme)
+   if(cRequireExtreme)
      {
       if(buy  && tk.bid < hi - tol) buy  = false;
       if(sell && tk.bid > lo + tol) sell = false;
@@ -358,7 +411,7 @@ void CheckEntry(const MqlTick &tk)
    if(!buy && !sell)
       return;
 
-   g_lastSignal = StringFormat("%s  delta %+.0f pt in %d ms", buy ? "BUY" : "SELL", delta, InpMomentumMs);
+   g_lastSignal = StringFormat("%s  delta %+.0f pt in %d ms", buy ? "BUY" : "SELL", delta, cMomentumMs);
 
    string why = FilterReject(buy, tk);
    if(why != "")
@@ -405,7 +458,7 @@ double ATRPoints()
 // Ritorna "" se il segnale passa tutti i filtri, altrimenti il motivo dello scarto.
 string FilterReject(bool isBuy, const MqlTick &tk)
   {
-   if(InpUseTrendFilter)
+   if(cUseTrendFilter)
      {
       int t = TrendDir();
       if(t == 0)                return "trend non pronto";
@@ -413,20 +466,20 @@ string FilterReject(bool isBuy, const MqlTick &tk)
       if(!isBuy && t > 0)       return "contro trend";
      }
 
-   if(InpUseCandleFilter)
+   if(cUseCandleFilter)
      {
       double o = iOpen(_Symbol, PERIOD_M1, 0);
       if(o <= 0)                return "candela non pronta";
       double body = (tk.bid - o) / _Point;
-      if(isBuy && body < InpMinBodyPts)   return "candela M1 non rialzista";
-      if(!isBuy && -body < InpMinBodyPts) return "candela M1 non ribassista";
+      if(isBuy && body < cMinBodyPts)   return "candela M1 non rialzista";
+      if(!isBuy && -body < cMinBodyPts) return "candela M1 non ribassista";
      }
 
-   if(InpUseATRFilter)
+   if(cUseATRFilter)
      {
       double atr = ATRPoints();
       if(atr < 0)                                return "ATR non pronto";
-      if(atr < InpMinATRPts)                     return StringFormat("ATR basso (%.0f)", atr);
+      if(atr < cMinATRPts)                     return StringFormat("ATR basso (%.0f)", atr);
       if(InpMaxATRPts > 0 && atr > InpMaxATRPts) return StringFormat("ATR alto (%.0f)", atr);
      }
 
@@ -792,7 +845,8 @@ void CreatePanel()
    MakeButton("btnFin",   "Finish",    190, 172, 80, clrSteelBlue);
    MakeButton("btnStop",  "Stop+Close",275, 172, 85, clrFireBrick);
 
-   ObjectSetString(0, g_pfx + "title", OBJPROP_TEXT, "ScalperM1 " + _Symbol);
+   ObjectSetString(0, g_pfx + "title", OBJPROP_TEXT, "ScalperM1 " + _Symbol +
+                   (InpProfile == PROFILE_AGGRESSIVE ? "  [AGGRESSIVO]" : "  [personalizzato]"));
    UpdatePanel();
   }
 
