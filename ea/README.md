@@ -36,3 +36,27 @@ Tutte le distanze in punti hanno 0 = automatico. Metti un numero solo se vuoi fo
 3. Parte da solo.
 
 Prima del conto reale fai un backtest con "Every tick based on real ticks".
+
+---
+
+# StraddleM1 — EA MT5 a ordini pendenti
+
+Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre attivi sopra e sotto il prezzo.
+
+- Tiene un **BUY STOP sopra** e un **SELL STOP sotto** il prezzo, a distanza D, ognuno con il suo SL e senza TP.
+- **I pendenti inseguono il prezzo:**
+  - se il prezzo scende, il BUY STOP scende con lui;
+  - se il prezzo sale, il SELL STOP sale;
+  - non si spostano mai quando è il prezzo ad andare verso di loro.
+
+  Così scatta solo il lato in cui parte un movimento veloce.
+- **Trailing:** quando la posizione è in profitto, lo SL la segue a distanza fissa e la chiude appena il prezzo gira.
+- **Inversione:** mentre un BUY è aperto, il SELL STOP resta sotto. Se la candela gira, il buy chiude in trailing e subito dopo scatta il sell, e viceversa.
+- **Valori automatici:** distanze dall'ATR M1, cioè dalla dimensione media delle candele.
+  - pendenti a 0,30 × ATR;
+  - SL a 0,35 × ATR;
+  - trailing a 0,25 × ATR, attivo da +0,30 × ATR.
+
+  Su XAU vuol dire circa 30 / 35 / 25 punti.
+- **Spread:** con spread anomalo cancella i pendenti e li rimette quando lo spread torna normale.
+- **Uscita dal grafico:** se togli l'EA dal grafico cancella i suoi pendenti.
