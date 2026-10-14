@@ -50,14 +50,12 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
   - non si spostano mai quando è il prezzo ad andare verso di loro.
 
   Così scatta solo il lato in cui parte un movimento veloce.
-- **Break-even:** appena il trade fa +0,15 × ATR (≈ 15 punti su XAU) lo SL va all'entrata più mezzo spread, così il trade non può più chiudere in perdita.
-- **Trailing:** da +0,30 × ATR lo SL segue il prezzo a distanza fissa e chiude appena il prezzo gira.
-- **Inversione:** mentre un BUY è aperto, il SELL STOP resta sotto. Se la candela gira, il buy chiude in trailing e subito dopo scatta il sell, e viceversa.
-- **Valori automatici:** distanze dall'ATR M1, cioè dalla dimensione media delle candele.
-  - pendenti a 0,30 × ATR;
-  - SL a 0,35 × ATR;
-  - trailing a 0,25 × ATR, attivo da +0,30 × ATR.
-
-  Su XAU vuol dire circa 30 / 35 / 25 punti.
+- **Distanze automatiche** dall'ATR M1, cioè dalla dimensione media delle candele:
+  - pendenti a 0,50 × ATR (minimo 3 × spread);
+  - SL a 0,50 × ATR (minimo 3 × spread), misurato dal prezzo che lo fa scattare, quindi spread escluso;
+  - break-even da +0,25 × ATR;
+  - trailing a 0,30 × ATR, attivo da +0,40 × ATR.
+- **Pendente opposto oltre lo SL:** mentre un BUY è aperto, il SELL STOP sta sotto lo SL del buy, con mezza distanza D di margine. Scatta solo se il buy è già chiuso e il prezzo continua a scendere: niente buy e sell persi insieme sulla stessa oscillazione.
+- **Pausa anti-laterale:** dopo 2 stop di fila entro 3 minuti, si ferma per 2 minuti.
 - **Spread:** con spread anomalo cancella i pendenti e li rimette quando lo spread torna normale.
 - **Uscita dal grafico:** se togli l'EA dal grafico cancella i suoi pendenti.

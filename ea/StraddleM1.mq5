@@ -24,12 +24,12 @@ input bool   InpAutoStart     = true;  // Parte da solo appena attaccato al graf
 input long   InpMagic         = 52001; // Magic number
 
 input group "Distanze in punti (0 = automatico dall'ATR M1)"
-input int    InpEntryPts      = 0;     // Distanza dei pendenti dal prezzo (auto = 0.30 x ATR)
-input int    InpSLPts         = 0;     // Stop loss iniziale (auto = 0.35 x ATR)
-input int    InpBEPts         = 0;     // Break-even dopo +X punti (auto = 0.15 x ATR)
+input int    InpEntryPts      = 0;     // Distanza dei pendenti dal prezzo (auto = 0.50 x ATR, min 3 x spread)
+input int    InpSLPts         = 0;     // Stop loss: spazio di movimento del prezzo (auto = 0.50 x ATR, min 3 x spread)
+input int    InpBEPts         = 0;     // Break-even dopo +X punti (auto = 0.25 x ATR)
 input int    InpBELockPts     = 0;     // Punti bloccati al break-even (auto = meta' spread, copre la commissione)
-input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.30 x ATR)
-input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.25 x ATR)
+input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.40 x ATR)
+input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.30 x ATR)
 input int    InpMaxSpreadPts  = 0;     // Spread massimo (auto = 2 x spread normale)
 
 input group "Limiti giornalieri (valuta conto, 0 = off)"
@@ -38,11 +38,14 @@ input double InpDailyTarget   = 0;     // Obiettivo giornaliero
 input int    InpMaxTradesDay  = 0;     // Numero massimo trade al giorno
 
 //--- costanti --------------------------------------------------------
-#define K_ENTRY       0.30   // distanza pendenti = 0.30 x ATR
-#define K_SL          0.35   // SL = 0.35 x ATR
-#define K_BE          0.15   // break-even da +0.15 x ATR
-#define K_TRAIL_START 0.30   // trailing da +0.30 x ATR
-#define K_TRAIL_DIST  0.25   // trailing a 0.25 x ATR dal prezzo
+#define K_ENTRY       0.50   // distanza pendenti = 0.50 x ATR (minimo 3 x spread)
+#define K_SL          0.50   // SL = 0.50 x ATR (minimo 3 x spread) + lo spread
+#define K_BE          0.25   // break-even da +0.25 x ATR
+#define K_TRAIL_START 0.40   // trailing da +0.40 x ATR
+#define K_TRAIL_DIST  0.30   // trailing a 0.30 x ATR dal prezzo
+#define CHOP_LOSSES   2      // dopo 2 stop di fila in poco tempo...
+#define CHOP_WINDOW   180    // ...(entro 3 minuti)...
+#define CHOP_PAUSE    120    // ...pausa di 2 minuti: mercato laterale
 #define MOVE_STEP     0.20   // sposta un pendente solo se si e' allontanato del 20% della distanza
 #define MODIFY_MS     800    // minimo tempo tra due modifiche dello stesso tipo
 
@@ -63,6 +66,9 @@ long     g_lastBuyStopMs  = 0;
 long     g_lastSellStopMs = 0;
 long     g_lastTrailMs    = 0;
 long     g_backoffMs      = 0;
+int      g_lossStreak     = 0;
+datetime g_lastLossTime   = 0;
+datetime g_pauseUntil     = 0;
 string   g_lastReject     = "";
 string   g_blockReason    = "";
 
@@ -165,6 +171,26 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       return;
    g_statsDirty = true;
    long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY)
+     {
+      double net = HistoryDealGetDouble(trans.deal, DEAL_PROFIT) +
+                   HistoryDealGetDouble(trans.deal, DEAL_COMMISSION) +
+                   HistoryDealGetDouble(trans.deal, DEAL_SWAP);
+      datetime now = TimeCurrent();
+      if(net < 0)
+        {
+         g_lossStreak = (now - g_lastLossTime <= CHOP_WINDOW) ? g_lossStreak + 1 : 1;
+         g_lastLossTime = now;
+         if(g_lossStreak >= CHOP_LOSSES)
+           {
+            g_pauseUntil = now + CHOP_PAUSE;
+            g_lossStreak = 0;
+            Print("Due stop di fila: mercato laterale, pausa di 2 minuti");
+           }
+        }
+      else
+         g_lossStreak = 0;
+     }
    PrintFormat("%s #%I64d prezzo=%s profitto=%.2f",
                entry == DEAL_ENTRY_IN ? "Aperto" : "Chiuso",
                HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID),
@@ -206,10 +232,10 @@ double Dist(int inputPts, double k, double minSpreadMult)
    return MathMax(d, MathMax(minSpreadMult * g_sprNorm, StopsMinDist() + _Point));
   }
 
-double EntryDist()      { return Dist(InpEntryPts,      K_ENTRY,       2.0); }
+double EntryDist()      { return Dist(InpEntryPts,      K_ENTRY,       3.0); }
 double SLDist()         { return Dist(InpSLPts,         K_SL,          3.0); }
-double TrailStartDist() { return Dist(InpTrailStartPts, K_TRAIL_START, 2.0); }
-double TrailDist()      { return Dist(InpTrailDistPts,  K_TRAIL_DIST,  1.5); }
+double TrailStartDist() { return Dist(InpTrailStartPts, K_TRAIL_START, 2.5); }
+double TrailDist()      { return Dist(InpTrailDistPts,  K_TRAIL_DIST,  2.0); }
 double BEDist()         { return Dist(InpBEPts,         K_BE,          2.0); }
 double BELock()
   {
@@ -268,6 +294,8 @@ bool CanTrade(const MqlTick &tk)
       g_blockReason = "AutoTrading disattivato";
    else if(tk.time_msc < g_backoffMs)
       g_blockReason = "broker ha rifiutato: " + g_lastReject;
+   else if(TimeCurrent() < g_pauseUntil)
+      g_blockReason = StringFormat("mercato laterale, riparte tra %d s", (int)(g_pauseUntil - TimeCurrent()));
    else if(g_spr > MaxSpread())
       g_blockReason = "spread anomalo";
    else if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
@@ -347,11 +375,40 @@ void ManagePendings(const MqlTick &tk, int nBuy, int nSell)
    bool wantBuy  = (nBuy == 0)  && (g_hedging || nSell == 0);
    bool wantSell = (nSell == 0) && (g_hedging || nBuy == 0);
 
-   SyncStop(true,  wantBuy,  NormPrice(tk.ask + d), step, tk);
-   SyncStop(false, wantSell, NormPrice(tk.bid - d), step, tk);
+   double buyT  = tk.ask + d;
+   double sellT = tk.bid - d;
+
+   // con una posizione aperta il pendente opposto sta OLTRE il suo SL:
+   // scatta solo se la posizione e' gia' chiusa e il prezzo continua dall'altra parte
+   double gap = 0.5 * d;
+   double sBuy = PosSL(true), sSell = PosSL(false);
+   if(sBuy > 0)  sellT = MathMin(sellT, sBuy - g_sprNorm - gap);
+   if(sSell > 0) buyT  = MathMax(buyT,  sSell + g_sprNorm + gap);
+
+   SyncStop(true,  wantBuy,  NormPrice(buyT),  step, sSell > 0, tk);
+   SyncStop(false, wantSell, NormPrice(sellT), step, sBuy > 0,  tk);
   }
 
-void SyncStop(bool isBuy, bool want, double target, double step, const MqlTick &tk)
+// SL piu' protettivo delle posizioni aperte in quella direzione (0 se nessuna)
+double PosSL(bool buy)
+  {
+   double res = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == 0 || !IsMinePos())
+         continue;
+      if((PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) != buy)
+         continue;
+      double sl = PositionGetDouble(POSITION_SL);
+      if(sl <= 0)
+         continue;
+      if(res == 0 || (buy ? sl < res : sl > res))
+         res = sl;
+     }
+   return res;
+  }
+
+void SyncStop(bool isBuy, bool want, double target, double step, bool anchored, const MqlTick &tk)
   {
    ENUM_ORDER_TYPE type = isBuy ? ORDER_TYPE_BUY_STOP : ORDER_TYPE_SELL_STOP;
    double cur = 0;
@@ -368,7 +425,8 @@ void SyncStop(bool isBuy, bool want, double target, double step, const MqlTick &
    if(tk.time_msc - last < MODIFY_MS)
       return;
 
-   double sl = NormPrice(isBuy ? target - SLDist() : target + SLDist());
+   // SL misurato dal prezzo che lo fa scattare: il buy chiude sul bid, il sell sull'ask
+   double sl = NormPrice(isBuy ? target - g_sprNorm - SLDist() : target + g_sprNorm + SLDist());
 
    if(t == 0)
      {
@@ -390,7 +448,11 @@ void SyncStop(bool isBuy, bool want, double target, double step, const MqlTick &
 
    // insegue il prezzo solo quando si allontana: il BUY STOP scende se il prezzo scende,
    // il SELL STOP sale se il prezzo sale. Mai il contrario, altrimenti non scatterebbe mai.
+   // senza posizione opposta: insegue solo quando il prezzo si allontana.
+   // con posizione opposta aperta: segue anche il suo SL (puo' allontanarsi).
    bool move = isBuy ? (cur - target >= step) : (target - cur >= step);
+   if(anchored && MathAbs(cur - target) >= step)
+      move = true;
    if(!move)
       return;
 
