@@ -26,6 +26,7 @@ InpRangeBars=15
 InpRangeMaxER=0.25
 InpRangeMinSpr=8
 InpRangeSLPct=0.3
+InpRangeMaxSLPts=40
 InpRangeUseTP=false
 InpRangeTPPct=0.5
 ; Uscita breakout fallito
@@ -36,7 +37,7 @@ InpUseSessions=true
 InpSess1Start=10
 InpSess1End=13
 InpSess2Start=15
-InpSess2End=19
+InpSess2End=17
 ; Registro
 InpLogCSV=true
 ; Limiti giornalieri (valuta conto, 0 = off)

@@ -48,6 +48,7 @@ input int    InpRangeBars     = 15;    // Candele M1 per disegnare il range
 input double InpRangeMaxER    = 0.25;  // Laterale se la direzionalita' e' sotto questo valore
 input int    InpRangeMinSpr   = 8;     // Range minimo = spread x questo (sotto non conviene)
 input double InpRangeSLPct    = 0.30;  // SL oltre il bordo = larghezza del range x questo
+input int    InpRangeMaxSLPts = 40;    // ...ma mai piu' di X punti (0 = nessun limite)
 input bool   InpRangeUseTP    = false; // Metti anche il TP (false = solo break-even + trailing, come gli stop)
 input double InpRangeTPPct    = 0.50;  // TP verso l'altro bordo: 0.5 = meta' range
 
@@ -539,6 +540,8 @@ void ManageRange(const MqlTick &tk)
    double mid = g_rL + InpRangeTPPct * w;          // TP del buy
    double midS = g_rH - InpRangeTPPct * w;         // TP del sell
    double slx = MathMax(InpRangeSLPct * w, 2.0 * g_sprNorm);
+   if(InpRangeMaxSLPts > 0)   // dopo una news il range e' enorme: lo SL non deve diventarlo
+      slx = MathMin(slx, MathMax(InpRangeMaxSLPts * _Point, 2.0 * g_sprNorm));
 
    // SELL LIMIT: scatta quando il bid tocca il massimo; SL e TP valgono sull'ask
    SyncLimit(false, CountRangePos(false) == 0, NormPrice(g_rH),
