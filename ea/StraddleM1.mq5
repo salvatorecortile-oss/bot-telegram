@@ -12,7 +12,7 @@
 //|  - distanze automatiche dall'ATR M1: funziona su ogni simbolo    |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.00"
+#property version   "2.00"
 #property description "Straddle M1: BUY STOP/SELL STOP che seguono il prezzo + trailing stop, auto-regolato"
 
 #include <Trade\Trade.mqh>
@@ -32,6 +32,27 @@ input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.4
 input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.30 x ATR)
 input int    InpMaxSpreadPts  = 0;     // Spread massimo (auto = 2 x spread normale)
 
+input group "Candele grandi"
+input bool   InpBigOnly       = true;  // Lavora solo quando ci sono candele grandi
+input double InpBigK          = 1.0;   // Candela grande = range >= ATR normale x questo
+input int    InpBigSpreadMult = 6;     // ...e range >= spread x questo
+input int    InpActiveSec     = 120;   // Dopo una candela grande resta attivo per X secondi
+input int    InpMaxPerDir     = 2;     // Posizioni max per direzione (la 2a solo con la 1a a break-even)
+
+input group "Uscita breakout fallito"
+input bool   InpFailExit      = true;  // Chiudi subito i breakout falliti
+input int    InpFailSec       = 20;    // ...se dopo X secondi non e' mai andato a favore ed e' in perdita
+
+input group "Filtro orario (ora di MT5, quella del Market Watch)"
+input bool   InpUseSessions   = false; // Lavora solo in queste fasce orarie
+input int    InpSess1Start    = 9;     // Fascia 1: dalle ore
+input int    InpSess1End      = 12;    // Fascia 1: alle ore
+input int    InpSess2Start    = 15;    // Fascia 2: dalle ore
+input int    InpSess2End      = 19;    // Fascia 2: alle ore
+
+input group "Registro"
+input bool   InpLogCSV        = true;  // Salva ogni trade in MQL5/Files/StraddleM1_trades.csv
+
 input group "Limiti giornalieri (valuta conto, 0 = off)"
 input double InpMaxDailyLoss  = 0;     // Perdita massima giornaliera
 input double InpDailyTarget   = 0;     // Obiettivo giornaliero
@@ -43,9 +64,7 @@ input int    InpMaxTradesDay  = 0;     // Numero massimo trade al giorno
 #define K_BE          0.25   // break-even da +0.25 x ATR
 #define K_TRAIL_START 0.40   // trailing da +0.40 x ATR
 #define K_TRAIL_DIST  0.30   // trailing a 0.30 x ATR dal prezzo
-#define CHOP_LOSSES   2      // dopo 2 stop di fila in poco tempo...
-#define CHOP_WINDOW   180    // ...(entro 3 minuti)...
-#define CHOP_PAUSE    120    // ...pausa di 2 minuti: mercato laterale
+#define MAXTRACK      40
 #define MOVE_STEP     0.20   // sposta un pendente solo se si e' allontanato del 20% della distanza
 #define MODIFY_MS     800    // minimo tempo tra due modifiche dello stesso tipo
 
@@ -57,6 +76,15 @@ CTrade   g_pend;      // ordini pendenti
 EAState  g_state   = ST_STOPPED;
 bool     g_hedging = true;
 int      g_hATR    = INVALID_HANDLE;
+int      g_hATRn   = INVALID_HANDLE;  // ATR "normale" (30 candele) per riconoscere le candele grandi
+datetime g_activeUntil = 0;
+string   g_mktInfo     = "-";
+
+// massimo a favore / contro di ogni posizione (punti), per uscita breakout fallito e registro
+ulong    g_tTicket[MAXTRACK];
+double   g_tBest[MAXTRACK];
+double   g_tWorst[MAXTRACK];
+int      g_tN = 0;
 
 double   g_spr      = 0;
 double   g_sprNorm  = 0;
@@ -66,9 +94,6 @@ long     g_lastBuyStopMs  = 0;
 long     g_lastSellStopMs = 0;
 long     g_lastTrailMs    = 0;
 long     g_backoffMs      = 0;
-int      g_lossStreak     = 0;
-datetime g_lastLossTime   = 0;
-datetime g_pauseUntil     = 0;
 string   g_lastReject     = "";
 string   g_blockReason    = "";
 
@@ -92,8 +117,9 @@ int OnInit()
    g_pend.SetTypeFilling(ORDER_FILLING_RETURN);
 
    g_hedging = (AccountInfoInteger(ACCOUNT_MARGIN_MODE) == ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
-   g_hATR = iATR(_Symbol, PERIOD_M1, 14);
-   if(g_hATR == INVALID_HANDLE)
+   g_hATR  = iATR(_Symbol, PERIOD_M1, 14);
+   g_hATRn = iATR(_Symbol, PERIOD_M1, 30);
+   if(g_hATR == INVALID_HANDLE || g_hATRn == INVALID_HANDLE)
      {
       Print("Errore creazione ATR: ", GetLastError());
       return INIT_FAILED;
@@ -128,6 +154,8 @@ void OnDeinit(const int reason)
       DeletePendings(); // EA tolto dal grafico: non lasciare ordini pendenti sul conto
    if(g_hATR != INVALID_HANDLE)
       IndicatorRelease(g_hATR);
+   if(g_hATRn != INVALID_HANDLE)
+      IndicatorRelease(g_hATRn);
    ObjectsDeleteAll(0, g_pfx);
    ChartRedraw();
   }
@@ -142,7 +170,9 @@ void OnTick()
    UpdateSpread(tk);
    RefreshDailyStatsIfNeeded(tk.time);
 
-   TrailPositions(tk);
+   UpdateMarket(tk);
+   UntrackClosed();
+   ManagePositions(tk);
 
    int nBuy = CountPos(true), nSell = CountPos(false);
    if(g_state == ST_FINISHING && nBuy + nSell == 0)
@@ -171,26 +201,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       return;
    g_statsDirty = true;
    long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
-   if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY)
-     {
-      double net = HistoryDealGetDouble(trans.deal, DEAL_PROFIT) +
-                   HistoryDealGetDouble(trans.deal, DEAL_COMMISSION) +
-                   HistoryDealGetDouble(trans.deal, DEAL_SWAP);
-      datetime now = TimeCurrent();
-      if(net < 0)
-        {
-         g_lossStreak = (now - g_lastLossTime <= CHOP_WINDOW) ? g_lossStreak + 1 : 1;
-         g_lastLossTime = now;
-         if(g_lossStreak >= CHOP_LOSSES)
-           {
-            g_pauseUntil = now + CHOP_PAUSE;
-            g_lossStreak = 0;
-            Print("Due stop di fila: mercato laterale, pausa di 2 minuti");
-           }
-        }
-      else
-         g_lossStreak = 0;
-     }
+   if((entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY) && InpLogCSV)
+      LogTrade(trans.deal);
    PrintFormat("%s #%I64d prezzo=%s profitto=%.2f",
                entry == DEAL_ENTRY_IN ? "Aperto" : "Chiuso",
                HistoryDealGetInteger(trans.deal, DEAL_POSITION_ID),
@@ -294,10 +306,12 @@ bool CanTrade(const MqlTick &tk)
       g_blockReason = "AutoTrading disattivato";
    else if(tk.time_msc < g_backoffMs)
       g_blockReason = "broker ha rifiutato: " + g_lastReject;
-   else if(TimeCurrent() < g_pauseUntil)
-      g_blockReason = StringFormat("mercato laterale, riparte tra %d s", (int)(g_pauseUntil - TimeCurrent()));
+   else if(InpUseSessions && !InSession(TimeCurrent()))
+      g_blockReason = "fuori orario";
    else if(g_spr > MaxSpread())
       g_blockReason = "spread anomalo";
+   else if(!MarketActive())
+      g_blockReason = "candele piccole, aspetto una candela grande";
    else if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
       g_blockReason = "perdita max giornaliera";
    else if(InpDailyTarget > 0 && g_dayPL >= InpDailyTarget)
@@ -305,6 +319,56 @@ bool CanTrade(const MqlTick &tk)
    else if(InpMaxTradesDay > 0 && g_dayTrades >= InpMaxTradesDay)
       g_blockReason = "max trade giornalieri";
    return g_blockReason == "";
+  }
+
+bool InSession(datetime t)
+  {
+   MqlDateTime d;
+   TimeToStruct(t, d);
+   return InRange(d.hour, InpSess1Start, InpSess1End) || InRange(d.hour, InpSess2Start, InpSess2End);
+  }
+
+bool InRange(int h, int from, int to)
+  {
+   if(from == to) return false;
+   if(from < to)  return h >= from && h < to;
+   return h >= from || h < to;
+  }
+
+//+------------------------------------------------------------------+
+//| Candele grandi: il mercato e' "attivo"?                          |
+//| Guarda la candela in corso e le ultime 3 chiuse: se una e' grande |
+//| (>= ATR normale e >= 6 spread) il bot resta attivo per 2 minuti.  |
+//+------------------------------------------------------------------+
+double ATRNormal()
+  {
+   double b[];
+   if(CopyBuffer(g_hATRn, 0, 1, 1, b) == 1 && b[0] > 0)
+      return b[0];
+   return ATR();
+  }
+
+void UpdateMarket(const MqlTick &tk)
+  {
+   double big = MathMax(InpBigK * ATRNormal(), InpBigSpreadMult * g_sprNorm);
+   double maxRange = 0;
+   for(int i = 0; i <= 3; i++)
+     {
+      double h = iHigh(_Symbol, PERIOD_M1, i), l = iLow(_Symbol, PERIOD_M1, i);
+      if(h > 0 && l > 0)
+         maxRange = MathMax(maxRange, h - l);
+     }
+   if(maxRange >= big)
+      g_activeUntil = TimeCurrent() + InpActiveSec;
+
+   bool active = !InpBigOnly || TimeCurrent() < g_activeUntil;
+   g_mktInfo = StringFormat("Mercato %s   candela max %.0f / serve %.0f pt",
+                            active ? "ATTIVO" : "calmo", maxRange / _Point, big / _Point);
+  }
+
+bool MarketActive()
+  {
+   return !InpBigOnly || TimeCurrent() < g_activeUntil;
   }
 
 //+------------------------------------------------------------------+
@@ -372,8 +436,9 @@ void ManagePendings(const MqlTick &tk, int nBuy, int nSell)
    double step = MathMax(MOVE_STEP * d, _Point);
 
    // un solo trade aperto per direzione; su conto netting nessun pendente opposto
-   bool wantBuy  = (nBuy == 0)  && (g_hedging || nSell == 0);
-   bool wantSell = (nSell == 0) && (g_hedging || nBuy == 0);
+   int maxDir = g_hedging ? (int)MathMax(1, InpMaxPerDir) : 1;
+   bool wantBuy  = (nBuy == 0  || (nBuy < maxDir  && AllAtBE(true)))  && (g_hedging || nSell == 0);
+   bool wantSell = (nSell == 0 || (nSell < maxDir && AllAtBE(false))) && (g_hedging || nBuy == 0);
 
    double buyT  = tk.ask + d;
    double sellT = tk.bid - d;
@@ -387,6 +452,22 @@ void ManagePendings(const MqlTick &tk, int nBuy, int nSell)
 
    SyncStop(true,  wantBuy,  NormPrice(buyT),  step, sSell > 0, tk);
    SyncStop(false, wantSell, NormPrice(sellT), step, sBuy > 0,  tk);
+  }
+
+// true se tutte le posizioni aperte in quella direzione hanno lo SL gia' oltre l'entrata
+bool AllAtBE(bool buy)
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == 0 || !IsMinePos())
+         continue;
+      if((PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) != buy)
+         continue;
+      double open = PositionGetDouble(POSITION_PRICE_OPEN), sl = PositionGetDouble(POSITION_SL);
+      if(sl <= 0 || (buy ? sl < open : sl > open))
+         return false;
+     }
+   return true;
   }
 
 // SL piu' protettivo delle posizioni aperte in quella direzione (0 se nessuna)
@@ -483,19 +564,53 @@ void Rejected(CTrade &tr, const MqlTick &tk)
   }
 
 //+------------------------------------------------------------------+
-//| Trailing stop sulle posizioni aperte                             |
+//| Posizioni aperte: break-even, trailing, breakout fallito         |
 //+------------------------------------------------------------------+
-void TrailPositions(const MqlTick &tk)
+int TrackIdx(ulong ticket)
   {
-   if(tk.time_msc - g_lastTrailMs < 300)
-      return;
+   for(int i = 0; i < g_tN; i++)
+      if(g_tTicket[i] == ticket)
+         return i;
+   if(g_tN >= MAXTRACK)
+      return -1;
+   g_tTicket[g_tN] = ticket;
+   g_tBest[g_tN] = 0;
+   g_tWorst[g_tN] = 0;
+   return g_tN++;
+  }
 
+void UntrackAt(int i)
+  {
+   g_tN--;
+   g_tTicket[i] = g_tTicket[g_tN];
+   g_tBest[i]   = g_tBest[g_tN];
+   g_tWorst[i]  = g_tWorst[g_tN];
+  }
+
+// pulizia di sicurezza (le posizioni chiuse vengono tolte da LogTrade dopo averle registrate)
+void UntrackClosed()
+  {
+   if(InpLogCSV && g_tN < MAXTRACK / 2)
+      return;
+   for(int i = g_tN - 1; i >= 0; i--)
+      if(!PositionSelectByTicket(g_tTicket[i]))
+        {
+         g_tN--;
+         g_tTicket[i] = g_tTicket[g_tN];
+         g_tBest[i]   = g_tBest[g_tN];
+         g_tWorst[i]  = g_tWorst[g_tN];
+        }
+  }
+
+void ManagePositions(const MqlTick &tk)
+  {
    double beAt  = BEDist();
    double lock  = BELock();
    double start = TrailStartDist();
    double dist  = TrailDist();
    double step  = MathMax(0.1 * dist, _Point);
    double fz    = StopsMinDist();
+   bool   canModify = (tk.time_msc - g_lastTrailMs >= 300);
 
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
@@ -506,8 +621,26 @@ void TrailPositions(const MqlTick &tk)
       double open  = PositionGetDouble(POSITION_PRICE_OPEN);
       double sl    = PositionGetDouble(POSITION_SL);
       double tp    = PositionGetDouble(POSITION_TP);
+      long   age   = (long)(TimeCurrent() - (datetime)PositionGetInteger(POSITION_TIME));
       double fav   = isBuy ? tk.bid - open : open - tk.ask;
-      if(fav < beAt && fav < start)
+
+      int k = TrackIdx(t);
+      if(k >= 0)
+        {
+         g_tBest[k]  = MathMax(g_tBest[k],  fav / _Point);
+         g_tWorst[k] = MathMin(g_tWorst[k], fav / _Point);
+        }
+
+      // breakout fallito: dopo X secondi non e' mai arrivato nemmeno a meta' del break-even ed e' in perdita
+      if(InpFailExit && age >= InpFailSec && k >= 0 &&
+         g_tBest[k] * _Point < 0.5 * beAt && fav < 0)
+        {
+         if(g_trade.PositionClose(t))
+            PrintFormat("Breakout fallito #%I64u chiuso a %+.0f pt dopo %d s", t, fav / _Point, (int)age);
+         continue;
+        }
+
+      if(!canModify || (fav < beAt && fav < start))
          continue;
 
       // 1) break-even: SL all'entrata + qualche punto, appena il trade va a favore
@@ -530,6 +663,70 @@ void TrailPositions(const MqlTick &tk)
             PrintFormat("Trailing #%I64u fallito: %s", t, g_trade.ResultRetcodeDescription());
         }
      }
+  }
+
+//+------------------------------------------------------------------+
+//| Registro CSV: una riga per ogni trade chiuso                     |
+//+------------------------------------------------------------------+
+void LogTrade(ulong deal)
+  {
+   long   posId  = HistoryDealGetInteger(deal, DEAL_POSITION_ID);
+   double exitPx = HistoryDealGetDouble(deal, DEAL_PRICE);
+   double net    = HistoryDealGetDouble(deal, DEAL_PROFIT) + HistoryDealGetDouble(deal, DEAL_COMMISSION) +
+                   HistoryDealGetDouble(deal, DEAL_SWAP);
+   long   reason = HistoryDealGetInteger(deal, DEAL_REASON);
+   datetime tOut = (datetime)HistoryDealGetInteger(deal, DEAL_TIME);
+   bool   wasBuy = HistoryDealGetInteger(deal, DEAL_TYPE) == DEAL_TYPE_SELL; // un SELL in uscita chiude un buy
+
+   double best = 0, worst = 0;
+   for(int i = g_tN - 1; i >= 0; i--)
+      if(g_tTicket[i] == (ulong)posId)
+        {
+         best = g_tBest[i];
+         worst = g_tWorst[i];
+         UntrackAt(i);
+        }
+
+   // prezzo e ora di entrata dalla storia della posizione
+   double entryPx = 0;
+   datetime tIn = 0;
+   if(HistorySelectByPosition(posId))
+      for(int i = 0; i < HistoryDealsTotal(); i++)
+        {
+         ulong d = HistoryDealGetTicket(i);
+         if(HistoryDealGetInteger(d, DEAL_ENTRY) == DEAL_ENTRY_IN)
+           {
+            entryPx = HistoryDealGetDouble(d, DEAL_PRICE);
+            tIn = (datetime)HistoryDealGetInteger(d, DEAL_TIME);
+            net += HistoryDealGetDouble(d, DEAL_COMMISSION);
+           }
+        }
+   g_statsDirty = true; // HistorySelectByPosition ha cambiato la selezione della storia
+
+   string why;
+   if(reason == DEAL_REASON_SL)
+      why = (net < 0) ? "stop loss" : (best * _Point >= TrailStartDist() ? "trailing" : "break-even");
+   else if(reason == DEAL_REASON_TP)
+      why = "take profit";
+   else if(reason == DEAL_REASON_EXPERT)
+      why = "breakout fallito / stop manuale";
+   else
+      why = "manuale";
+
+   string file = "StraddleM1_trades.csv";
+   int h = FileOpen(file, FILE_READ | FILE_WRITE | FILE_CSV | FILE_ANSI | FILE_SHARE_READ, ';');
+   if(h == INVALID_HANDLE)
+      return;
+   if(FileSize(h) == 0)
+      FileWrite(h, "data", "simbolo", "tipo", "entrata", "uscita", "profitto netto", "durata s",
+                "max a favore pt", "max contro pt", "motivo", "spread pt", "ATR pt");
+   FileSeek(h, 0, SEEK_END);
+   FileWrite(h, TimeToString(tOut, TIME_DATE | TIME_SECONDS), _Symbol, wasBuy ? "BUY" : "SELL",
+             DoubleToString(entryPx, _Digits), DoubleToString(exitPx, _Digits),
+             DoubleToString(net, 2), (string)(int)(tIn > 0 ? tOut - tIn : 0),
+             DoubleToString(best, 0), DoubleToString(worst, 0), why,
+             DoubleToString(g_sprNorm / _Point, 0), DoubleToString(ATR() / _Point, 0));
+   FileClose(h);
   }
 
 void CloseAll()
@@ -622,8 +819,8 @@ void CreatePanel()
    ObjectSetInteger(0, bg, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, 10);
    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, 20);
-   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 400);
-   ObjectSetInteger(0, bg, OBJPROP_YSIZE, 196);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 430);
+   ObjectSetInteger(0, bg, OBJPROP_YSIZE, 214);
    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, C'20,24,32');
    ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, bg, OBJPROP_COLOR, C'70,80,100');
@@ -636,11 +833,12 @@ void CreatePanel()
    MakeLabel("stats", 20, 100,  9, clrSilver);
    MakeLabel("avg",   20, 118,  9, clrSilver);
    MakeLabel("open",  20, 136,  9, clrSilver);
-   MakeLabel("dist",  20, 154,  9, clrKhaki);
+   MakeLabel("mkt",   20, 154,  9, clrKhaki);
+   MakeLabel("dist",  20, 172,  9, clrGray);
 
-   MakeButton("btnStart", "Start",       20, 182, 80, clrDodgerBlue);
-   MakeButton("btnFin",   "Finish",     105, 182, 80, clrSteelBlue);
-   MakeButton("btnStop",  "Stop+Close", 190, 182, 90, clrFireBrick);
+   MakeButton("btnStart", "Start",       20, 200, 80, clrDodgerBlue);
+   MakeButton("btnFin",   "Finish",     105, 200, 80, clrSteelBlue);
+   MakeButton("btnStop",  "Stop+Close", 190, 200, 90, clrFireBrick);
 
    ObjectSetString(0, g_pfx + "title", OBJPROP_TEXT, "StraddleM1   " + _Symbol);
    UpdatePanel();
@@ -697,6 +895,7 @@ void UpdatePanel()
                                 nOpen, floating, AccountInfoDouble(ACCOUNT_BALANCE)),
            nOpen > 0 ? PLColor(floating) : clrSilver);
 
+   SetText("mkt", g_mktInfo, MarketActive() ? clrLimeGreen : clrKhaki);
    SetText("dist", StringFormat("Pendenti %.0f  SL %.0f  BE da +%.0f  trailing %.0f da +%.0f (punti)",
                                 EntryDist() / _Point, SLDist() / _Point, BEDist() / _Point,
                                 TrailDist() / _Point, TrailStartDist() / _Point));

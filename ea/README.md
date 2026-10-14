@@ -56,6 +56,10 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
   - break-even da +0,25 × ATR;
   - trailing a 0,30 × ATR, attivo da +0,40 × ATR.
 - **Pendente opposto oltre lo SL:** mentre un BUY è aperto, il SELL STOP sta sotto lo SL del buy, con mezza distanza D di margine. Scatta solo se il buy è già chiuso e il prezzo continua a scendere: niente buy e sell persi insieme sulla stessa oscillazione.
-- **Pausa anti-laterale:** dopo 2 stop di fila entro 3 minuti, si ferma per 2 minuti.
+- **Solo candele grandi** (`InpBigOnly`): piazza i pendenti solo se la candela in corso o una delle ultime 3 ha un range ≥ ATR normale (30 candele) e ≥ 6 × spread. Dopo una candela grande resta attivo per 2 minuti, perché le candele grandi arrivano a gruppi. Con candele piccole cancella i pendenti.
+- **2ª posizione nella stessa direzione** (`InpMaxPerDir = 2`): solo quando la prima è già a break-even, così nelle candele lunghe guadagna di più senza rischiare di più.
+- **Uscita breakout fallito:** se dopo 20 s il trade non è mai arrivato nemmeno a metà del break-even ed è in perdita, lo chiude subito invece di aspettare lo stop pieno.
+- **Filtro orario** (spento di default): due fasce orarie, nell'ora di MT5.
+- **Registro CSV:** ogni trade chiuso finisce in `MQL5/Files/StraddleM1_trades.csv` con entrata, uscita, profitto, durata, massimo a favore e contro, e motivo della chiusura.
 - **Spread:** con spread anomalo cancella i pendenti e li rimette quando lo spread torna normale.
 - **Uscita dal grafico:** se togli l'EA dal grafico cancella i suoi pendenti.
