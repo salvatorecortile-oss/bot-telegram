@@ -48,6 +48,7 @@ input int    InpRangeBars     = 15;    // Candele M1 per disegnare il range
 input double InpRangeMaxER    = 0.25;  // Laterale se la direzionalita' e' sotto questo valore
 input int    InpRangeMinSpr   = 8;     // Range minimo = spread x questo (sotto non conviene)
 input double InpRangeSLPct    = 0.30;  // SL oltre il bordo = larghezza del range x questo
+input bool   InpRangeUseTP    = false; // Metti anche il TP (false = solo break-even + trailing, come gli stop)
 input double InpRangeTPPct    = 0.50;  // TP verso l'altro bordo: 0.5 = meta' range
 
 input group "Uscita breakout fallito"
@@ -541,10 +542,10 @@ void ManageRange(const MqlTick &tk)
 
    // SELL LIMIT: scatta quando il bid tocca il massimo; SL e TP valgono sull'ask
    SyncLimit(false, CountRangePos(false) == 0, NormPrice(g_rH),
-             NormPrice(g_rH + slx + g_sprNorm), NormPrice(midS), w, tk);
+             NormPrice(g_rH + slx + g_sprNorm), InpRangeUseTP ? NormPrice(midS) : 0, w, tk);
    // BUY LIMIT: prezzo ask = minimo + spread, cosi' scatta quando il bid tocca il minimo
    SyncLimit(true, CountRangePos(true) == 0, NormPrice(g_rL + g_sprNorm),
-             NormPrice(g_rL - slx), NormPrice(mid), w, tk);
+             NormPrice(g_rL - slx), InpRangeUseTP ? NormPrice(mid) : 0, w, tk);
   }
 
 void SyncLimit(bool isBuy, bool want, double price, double sl, double tp, double w, const MqlTick &tk)
@@ -825,7 +826,10 @@ void ManagePositions(const MqlTick &tk)
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
       ulong t = PositionGetTicket(i);
-      if(t == 0 || !IsMinePos())
+      if(t == 0)
+         continue;
+      bool isRng = IsRangePos();   // trade della modalita' laterale (limit): stesso BE e trailing
+      if(!isRng && !IsMinePos())
          continue;
       bool   isBuy = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY;
       double open  = PositionGetDouble(POSITION_PRICE_OPEN);
@@ -842,7 +846,7 @@ void ManagePositions(const MqlTick &tk)
         }
 
       // breakout fallito: dopo X secondi non e' mai arrivato nemmeno a meta' del break-even ed e' in perdita
-      if(InpFailExit && age >= InpFailSec && k >= 0 &&
+      if(!isRng && InpFailExit && age >= InpFailSec && k >= 0 &&
          g_tBest[k] * _Point < 0.5 * beAt && fav < 0)
         {
          if(g_trade.PositionClose(t))
