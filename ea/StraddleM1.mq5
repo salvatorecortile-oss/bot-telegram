@@ -32,11 +32,14 @@ input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.4
 input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.30 x ATR)
 input int    InpMaxSpreadPts  = 0;     // Spread massimo (auto = 2 x spread normale)
 
-input group "Candele grandi"
-input bool   InpBigOnly       = true;  // Lavora solo quando ci sono candele grandi
-input double InpBigK          = 1.0;   // Candela grande = range >= ATR normale x questo
+input group "Filtro laterale (lavora solo sui movimenti veri)"
+input bool   InpBigOnly       = true;  // Attivo: niente trade quando il mercato lateralizza
+input int    InpERPeriod      = 6;     // Candele per misurare la direzionalita'
+input double InpERMin         = 0.40;  // Direzionalita' minima (0 = laterale puro, 1 = linea dritta)
+input double InpBigK          = 0.8;   // Candela grande = range >= ATR normale x questo
 input int    InpBigSpreadMult = 6;     // ...e range >= spread x questo
-input int    InpActiveSec     = 120;   // Dopo una candela grande resta attivo per X secondi
+input bool   InpTrendSide     = true;  // Pendente solo nella direzione del movimento
+input int    InpActiveSec     = 20;    // Tiene la decisione per X secondi (evita on/off continui)
 input int    InpMaxPerDir     = 2;     // Posizioni max per direzione (la 2a solo con la 1a a break-even)
 
 input group "Uscita breakout fallito"
@@ -78,6 +81,8 @@ bool     g_hedging = true;
 int      g_hATR    = INVALID_HANDLE;
 int      g_hATRn   = INVALID_HANDLE;  // ATR "normale" (30 candele) per riconoscere le candele grandi
 datetime g_activeUntil = 0;
+double   g_er          = 0;   // direzionalita' 0..1
+int      g_trendDir    = 0;   // +1 salita, -1 discesa
 string   g_mktInfo     = "-";
 
 // massimo a favore / contro di ogni posizione (punti), per uscita breakout fallito e registro
@@ -315,7 +320,7 @@ bool CanTrade(const MqlTick &tk)
    else if(g_spr > MaxSpread())
       g_blockReason = "spread anomalo";
    else if(!MarketActive())
-      g_blockReason = "candele piccole, aspetto una candela grande";
+      g_blockReason = "mercato laterale / candele piccole, aspetto un movimento";
    else if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
       g_blockReason = "perdita max giornaliera";
    else if(InpDailyTarget > 0 && g_dayPL >= InpDailyTarget)
@@ -352,22 +357,46 @@ double ATRNormal()
    return ATR();
   }
 
+// Due condizioni insieme, ricalcolate a ogni tick:
+//  1) DIREZIONALITA' (Efficiency Ratio di Kaufman sulle ultime N candele M1):
+//     spostamento netto / somma di tutti i movimenti. In laterale il prezzo va su e giu'
+//     e torna dov'era -> valore basso. In un candelone o in una discesa -> valore alto.
+//  2) CANDELA GRANDE: la candela in corso o l'ultima chiusa e' >= 0.8 x ATR normale
+//     (e >= 6 x spread). Le candeline piccole non bastano.
+// Se una delle due manca il bot cancella i pendenti e aspetta.
 void UpdateMarket(const MqlTick &tk)
   {
-   double big = MathMax(InpBigK * ATRNormal(), InpBigSpreadMult * g_sprNorm);
-   double maxRange = 0;
-   for(int i = 0; i <= 3; i++)
+   int n = (int)MathMax(2, InpERPeriod);
+   double cN = iClose(_Symbol, PERIOD_M1, n);
+   double path = 0, prev = tk.bid;
+   bool ok = cN > 0;
+   for(int i = 1; i <= n && ok; i++)
      {
-      double h = iHigh(_Symbol, PERIOD_M1, i), l = iLow(_Symbol, PERIOD_M1, i);
-      if(h > 0 && l > 0)
-         maxRange = MathMax(maxRange, h - l);
+      double c = iClose(_Symbol, PERIOD_M1, i);
+      if(c <= 0) { ok = false; break; }
+      path += MathAbs(prev - c);
+      prev = c;
      }
-   if(maxRange >= big)
-      g_activeUntil = TimeCurrent() + InpActiveSec;
+   double net = ok ? tk.bid - cN : 0;
+   g_er = (ok && path > 0) ? MathAbs(net) / path : 0;
 
-   bool active = !InpBigOnly || TimeCurrent() < g_activeUntil;
-   g_mktInfo = StringFormat("Mercato %s   candela max %.0f / serve %.0f pt",
-                            active ? "ATTIVO" : "calmo", maxRange / _Point, big / _Point);
+   double big = MathMax(InpBigK * ATRNormal(), InpBigSpreadMult * g_sprNorm);
+   double r0 = iHigh(_Symbol, PERIOD_M1, 0) - iLow(_Symbol, PERIOD_M1, 0);
+   double r1 = iHigh(_Symbol, PERIOD_M1, 1) - iLow(_Symbol, PERIOD_M1, 1);
+   double maxRange = MathMax(r0, r1);
+
+   bool directional = g_er >= InpERMin;
+   bool bigCandle   = maxRange >= big;
+   if(directional && bigCandle)
+     {
+      g_activeUntil = TimeCurrent() + MathMax(1, InpActiveSec);
+      g_trendDir = net > 0 ? 1 : -1;
+     }
+
+   string why = !directional ? "laterale" : (!bigCandle ? "candele piccole" : "");
+   g_mktInfo = StringFormat("Mercato %s   direzione %.2f/%.2f   candela %.0f/%.0f pt",
+                            MarketActive() ? (g_trendDir > 0 ? "ATTIVO in salita" : "ATTIVO in discesa") : StringFormat("FERMO (%s)", why),
+                            g_er, InpERMin, maxRange / _Point, big / _Point);
   }
 
 bool MarketActive()
@@ -443,6 +472,12 @@ void ManagePendings(const MqlTick &tk, int nBuy, int nSell)
    int maxDir = g_hedging ? (int)MathMax(1, InpMaxPerDir) : 1;
    bool wantBuy  = (nBuy == 0  || (nBuy < maxDir  && AllAtBE(true)))  && (g_hedging || nSell == 0);
    bool wantSell = (nSell == 0 || (nSell < maxDir && AllAtBE(false))) && (g_hedging || nBuy == 0);
+   if(InpBigOnly && InpTrendSide)
+     {
+      // solo il pendente nella direzione del movimento in corso
+      wantBuy  = wantBuy  && g_trendDir > 0;
+      wantSell = wantSell && g_trendDir < 0;
+     }
 
    double buyT  = tk.ask + d;
    double sellT = tk.bid - d;
