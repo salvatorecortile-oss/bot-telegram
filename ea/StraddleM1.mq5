@@ -12,7 +12,7 @@
 //|  - distanze automatiche dall'ATR M1: funziona su ogni simbolo    |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "2.00"
+#property version   "3.00"
 #property description "Straddle M1: BUY STOP/SELL STOP che seguono il prezzo + trailing stop, auto-regolato"
 
 #include <Trade\Trade.mqh>
@@ -41,6 +41,14 @@ input int    InpBigSpreadMult = 6;     // ...e range >= spread x questo
 input bool   InpTrendSide     = true;  // Pendente solo nella direzione del movimento
 input int    InpActiveSec     = 20;    // Tiene la decisione per X secondi (evita on/off continui)
 input int    InpMaxPerDir     = 2;     // Posizioni max per direzione (la 2a solo con la 1a a break-even)
+
+input group "Modalita' laterale (limit)"
+input bool   InpRangeMode     = true;  // In laterale usa SELL LIMIT in alto e BUY LIMIT in basso
+input int    InpRangeBars     = 15;    // Candele M1 per disegnare il range
+input double InpRangeMaxER    = 0.25;  // Laterale se la direzionalita' e' sotto questo valore
+input int    InpRangeMinSpr   = 8;     // Range minimo = spread x questo (sotto non conviene)
+input double InpRangeSLPct    = 0.30;  // SL oltre il bordo = larghezza del range x questo
+input double InpRangeTPPct    = 0.50;  // TP verso l'altro bordo: 0.5 = meta' range
 
 input group "Uscita breakout fallito"
 input bool   InpFailExit      = true;  // Chiudi subito i breakout falliti
@@ -75,7 +83,8 @@ input int    InpMaxTradesDay  = 0;     // Numero massimo trade al giorno
 enum EAState { ST_STOPPED = 0, ST_RUNNING, ST_FINISHING };
 
 CTrade   g_trade;     // ordini a mercato / modifiche posizioni
-CTrade   g_pend;      // ordini pendenti
+CTrade   g_pend;      // ordini pendenti breakout (stop)
+CTrade   g_rng;       // ordini e posizioni della modalita' laterale (limit), magic + 1
 EAState  g_state   = ST_STOPPED;
 bool     g_hedging = true;
 int      g_hATR    = INVALID_HANDLE;
@@ -83,7 +92,13 @@ int      g_hATRn   = INVALID_HANDLE;  // ATR "normale" (30 candele) per riconosc
 datetime g_activeUntil = 0;
 double   g_er          = 0;   // direzionalita' 0..1
 int      g_trendDir    = 0;   // +1 salita, -1 discesa
+double   g_rH = 0, g_rL = 0;        // massimo e minimo del range
+bool     g_rangeOK     = false;     // mercato laterale con range abbastanza largo
+string   g_modeInfo    = "-";
+long     g_lastBuyLimMs  = 0;
+long     g_lastSellLimMs = 0;
 string   g_mktInfo     = "-";   // stato del mercato (breve)
+long     g_chartFg     = 0;     // impostazione originale "grafico in primo piano"
 double   g_rangeNow    = 0;     // candela piu' grande tra la corrente e l'ultima chiusa
 double   g_bigNeed     = 0;     // grandezza minima richiesta
 
@@ -122,6 +137,12 @@ int OnInit()
    g_trade.SetTypeFillingBySymbol(_Symbol);
    g_pend.SetExpertMagicNumber(InpMagic);
    g_pend.SetTypeFilling(ORDER_FILLING_RETURN);
+   g_rng.SetExpertMagicNumber(InpMagic + 1);
+   g_rng.SetTypeFilling(ORDER_FILLING_RETURN);
+
+   // grafico dietro agli oggetti: la dashboard copre candele e frecce dei trade
+   g_chartFg = ChartGetInteger(0, CHART_FOREGROUND);
+   ChartSetInteger(0, CHART_FOREGROUND, false);
 
    g_hedging = (AccountInfoInteger(ACCOUNT_MARGIN_MODE) == ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
    g_hATR  = iATR(_Symbol, PERIOD_M1, 14);
@@ -158,7 +179,11 @@ void OnDeinit(const int reason)
    if(reason == REASON_PARAMETERS || reason == REASON_CHARTCHANGE || reason == REASON_RECOMPILE)
       GlobalVariableSet(StateGVName(), (double)g_state);
    else
+     {
       DeletePendings(); // EA tolto dal grafico: non lasciare ordini pendenti sul conto
+      DeleteRangePendings();
+      ChartSetInteger(0, CHART_FOREGROUND, g_chartFg);
+     }
    if(g_hATR != INVALID_HANDLE)
       IndicatorRelease(g_hATR);
    if(g_hATRn != INVALID_HANDLE)
@@ -181,14 +206,25 @@ void OnTick()
    UntrackClosed();
    ManagePositions(tk);
 
+   UpdateRange(tk);
+
    int nBuy = CountPos(true), nSell = CountPos(false);
-   if(g_state == ST_FINISHING && nBuy + nSell == 0)
+   if(g_state == ST_FINISHING && nBuy + nSell + CountRangePos(true) + CountRangePos(false) == 0)
       g_state = ST_STOPPED;
 
-   if(g_state == ST_RUNNING && CanTrade(tk))
-      ManagePendings(tk, nBuy, nSell);
-   else
-      DeletePendings();
+   // movimento -> breakout con gli STOP; laterale -> LIMIT ai bordi del range; altrimenti attesa
+   bool base = (g_state == ST_RUNNING) && CanTrade(tk);
+   bool brk  = base && MarketActive();
+   bool rng  = base && !brk && InpRangeMode && g_rangeOK;
+
+   if(brk) ManagePendings(tk, nBuy, nSell);
+   else    DeletePendings();
+   if(rng) ManageRange(tk);
+   else    DeleteRangePendings();
+
+   if(base && !brk && !rng)
+      g_blockReason = "aspetto un movimento";
+   g_modeInfo = brk ? "BREAKOUT (stop)" : (rng ? "LATERALE (limit)" : "attesa");
 
    if(tk.time_msc - g_lastPanelMs >= 250)
      {
@@ -203,7 +239,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
   {
    if(trans.type != TRADE_TRANSACTION_DEAL_ADD || !HistoryDealSelect(trans.deal))
       return;
-   if(HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != InpMagic ||
+   if(!IsOurMagic(HistoryDealGetInteger(trans.deal, DEAL_MAGIC)) ||
       HistoryDealGetString(trans.deal, DEAL_SYMBOL) != _Symbol)
       return;
    g_statsDirty = true;
@@ -321,8 +357,6 @@ bool CanTrade(const MqlTick &tk)
       g_blockReason = "fuori orario";
    else if(g_spr > MaxSpread())
       g_blockReason = "spread anomalo";
-   else if(!MarketActive())
-      g_blockReason = "aspetto un movimento";
    else if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
       g_blockReason = "perdita max giornaliera";
    else if(InpDailyTarget > 0 && g_dayPL >= InpDailyTarget)
@@ -418,6 +452,140 @@ bool IsMinePos()
 bool IsMineOrder()
   {
    return OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == InpMagic;
+  }
+
+bool IsOurMagic(long m)
+  {
+   return m == InpMagic || m == InpMagic + 1;
+  }
+
+bool IsRangePos()
+  {
+   return PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == InpMagic + 1;
+  }
+
+bool IsRangeOrder()
+  {
+   return OrderGetString(ORDER_SYMBOL) == _Symbol && OrderGetInteger(ORDER_MAGIC) == InpMagic + 1;
+  }
+
+int CountRangePos(bool buy)
+  {
+   int n = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == 0 || !IsRangePos())
+         continue;
+      if((PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) == buy)
+         n++;
+     }
+   return n;
+  }
+
+void DeleteRangePendings()
+  {
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t != 0 && IsRangeOrder())
+         g_rng.OrderDelete(t);
+     }
+  }
+
+ulong FindRangePending(ENUM_ORDER_TYPE type, double &price)
+  {
+   ulong found = 0;
+   for(int i = OrdersTotal() - 1; i >= 0; i--)
+     {
+      ulong t = OrderGetTicket(i);
+      if(t == 0 || !IsRangeOrder() || OrderGetInteger(ORDER_TYPE) != type)
+         continue;
+      if(found == 0)
+        {
+         found = t;
+         price = OrderGetDouble(ORDER_PRICE_OPEN);
+        }
+      else
+         g_rng.OrderDelete(t);
+     }
+   return found;
+  }
+
+//+------------------------------------------------------------------+
+//| Modalita' laterale: SELL LIMIT sul massimo del range, BUY LIMIT  |
+//| sul minimo, TP verso il centro, SL appena fuori dal range.       |
+//+------------------------------------------------------------------+
+void UpdateRange(const MqlTick &tk)
+  {
+   int n = (int)MathMax(5, InpRangeBars);
+   int hi = iHighest(_Symbol, PERIOD_M1, MODE_HIGH, n, 1);
+   int lo = iLowest(_Symbol, PERIOD_M1, MODE_LOW, n, 1);
+   g_rangeOK = false;
+   if(hi < 0 || lo < 0)
+      return;
+   g_rH = iHigh(_Symbol, PERIOD_M1, hi);
+   g_rL = iLow(_Symbol, PERIOD_M1, lo);
+   double w = g_rH - g_rL;
+   bool lateral = g_er < InpRangeMaxER;
+   bool wide    = w >= InpRangeMinSpr * g_sprNorm && w <= 4.0 * ATRNormal();
+   bool inside  = tk.bid < g_rH && tk.bid > g_rL;
+   g_rangeOK = lateral && wide && inside;
+  }
+
+void ManageRange(const MqlTick &tk)
+  {
+   double w   = g_rH - g_rL;
+   double mid = g_rL + InpRangeTPPct * w;          // TP del buy
+   double midS = g_rH - InpRangeTPPct * w;         // TP del sell
+   double slx = MathMax(InpRangeSLPct * w, 2.0 * g_sprNorm);
+
+   // SELL LIMIT: scatta quando il bid tocca il massimo; SL e TP valgono sull'ask
+   SyncLimit(false, CountRangePos(false) == 0, NormPrice(g_rH),
+             NormPrice(g_rH + slx + g_sprNorm), NormPrice(midS), w, tk);
+   // BUY LIMIT: prezzo ask = minimo + spread, cosi' scatta quando il bid tocca il minimo
+   SyncLimit(true, CountRangePos(true) == 0, NormPrice(g_rL + g_sprNorm),
+             NormPrice(g_rL - slx), NormPrice(mid), w, tk);
+  }
+
+void SyncLimit(bool isBuy, bool want, double price, double sl, double tp, double w, const MqlTick &tk)
+  {
+   ENUM_ORDER_TYPE type = isBuy ? ORDER_TYPE_BUY_LIMIT : ORDER_TYPE_SELL_LIMIT;
+   double cur = 0;
+   ulong  t   = FindRangePending(type, cur);
+   if(!want)
+     {
+      if(t != 0) g_rng.OrderDelete(t);
+      return;
+     }
+   long last = isBuy ? g_lastBuyLimMs : g_lastSellLimMs;
+   if(tk.time_msc - last < MODIFY_MS)
+      return;
+
+   // il limit deve stare dalla parte giusta del prezzo, oltre la distanza minima del broker
+   double fz = StopsMinDist();
+   if(isBuy ? (tk.ask - price < fz + _Point) : (price - tk.bid < fz + _Point))
+      return;
+
+   if(isBuy) g_lastBuyLimMs = tk.time_msc; else g_lastSellLimMs = tk.time_msc;
+
+   if(t == 0)
+     {
+      double lots = AffordableLots(isBuy, price);
+      if(lots <= 0)
+         return;
+      ENUM_ORDER_TYPE_TIME tt = (SymbolInfoInteger(_Symbol, SYMBOL_EXPIRATION_MODE) & SYMBOL_EXPIRATION_GTC) != 0
+                                ? ORDER_TIME_GTC : ORDER_TIME_DAY;
+      bool ok = isBuy ? g_rng.BuyLimit(lots, price, _Symbol, sl, tp, tt, 0, "RNG")
+                      : g_rng.SellLimit(lots, price, _Symbol, sl, tp, tt, 0, "RNG");
+      if(!ok || (g_rng.ResultRetcode() != TRADE_RETCODE_DONE && g_rng.ResultRetcode() != TRADE_RETCODE_PLACED))
+         Rejected(g_rng, tk);
+      return;
+     }
+
+   // il range e' cambiato: sposta il limit sul nuovo bordo
+   if(MathAbs(cur - price) >= 0.1 * w)
+      if(!g_rng.OrderModify(t, price, sl, tp, ORDER_TIME_GTC, 0))
+         g_rng.OrderDelete(t);
   }
 
 int CountPos(bool buy)
@@ -763,7 +931,9 @@ void LogTrade(ulong deal)
       FileWrite(h, "data", "simbolo", "tipo", "entrata", "uscita", "profitto netto", "durata s",
                 "max a favore pt", "max contro pt", "motivo", "spread pt", "ATR pt");
    FileSeek(h, 0, SEEK_END);
-   FileWrite(h, TimeToString(tOut, TIME_DATE | TIME_SECONDS), _Symbol, wasBuy ? "BUY" : "SELL",
+   bool isRange = HistoryDealGetInteger(deal, DEAL_MAGIC) == InpMagic + 1;
+   FileWrite(h, TimeToString(tOut, TIME_DATE | TIME_SECONDS), _Symbol,
+             (isRange ? "RANGE " : "") + (wasBuy ? "BUY" : "SELL"),
              DoubleToString(entryPx, _Digits), DoubleToString(exitPx, _Digits),
              DoubleToString(net, 2), (string)(int)(tIn > 0 ? tOut - tIn : 0),
              DoubleToString(best, 0), DoubleToString(worst, 0), why,
@@ -776,7 +946,7 @@ void CloseAll()
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
       ulong t = PositionGetTicket(i);
-      if(t != 0 && IsMinePos())
+      if(t != 0 && (IsMinePos() || IsRangePos()))
          g_trade.PositionClose(t);
      }
   }
@@ -803,7 +973,7 @@ void RefreshDailyStatsIfNeeded(datetime now)
    for(int i = 0; i < n; i++)
      {
       ulong dl = HistoryDealGetTicket(i);
-      if(dl == 0 || HistoryDealGetInteger(dl, DEAL_MAGIC) != InpMagic ||
+      if(dl == 0 || !IsOurMagic(HistoryDealGetInteger(dl, DEAL_MAGIC)) ||
          HistoryDealGetString(dl, DEAL_SYMBOL) != _Symbol)
          continue;
       double profit = HistoryDealGetDouble(dl, DEAL_PROFIT);
@@ -834,6 +1004,8 @@ void MakeLabel(string name, int x, int y, int size, color clr)
    ObjectSetInteger(0, n, OBJPROP_COLOR, clr);
    ObjectSetInteger(0, n, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, n, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, n, OBJPROP_BACK, false);
+   ObjectSetInteger(0, n, OBJPROP_ZORDER, 10);
    ObjectSetString(0, n, OBJPROP_TEXT, " ");
   }
 
@@ -851,6 +1023,8 @@ void MakeButton(string name, string text, int x, int y, int w, color bg)
    ObjectSetInteger(0, n, OBJPROP_FONTSIZE, 9);
    ObjectSetInteger(0, n, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, n, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, n, OBJPROP_BACK, false);
+   ObjectSetInteger(0, n, OBJPROP_ZORDER, 10);
    ObjectSetString(0, n, OBJPROP_TEXT, text);
   }
 
@@ -889,6 +1063,8 @@ void CreatePanel()
    ObjectSetInteger(0, bg, OBJPROP_COLOR, C'70,80,100');
    ObjectSetInteger(0, bg, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, bg, OBJPROP_HIDDEN, true);
+   ObjectSetInteger(0, bg, OBJPROP_BACK, false);
+   ObjectSetInteger(0, bg, OBJPROP_ZORDER, 5);
 
    g_rowY = 30;
    Row("title", 11, clrWhite);
@@ -908,9 +1084,11 @@ void CreatePanel()
    Row("bal",     9, clrSilver);
 
    Section("h3", "MERCATO");
+   Row("mode",    9, clrWhite);
    Row("mkt",     9, clrKhaki);
    Row("dir",     9, clrSilver);
    Row("cand",    9, clrSilver);
+   Row("range",   9, clrSilver);
 
    Section("h4", "DISTANZE (punti)");
    Row("d1",      9, clrGray);
@@ -973,23 +1151,32 @@ void UpdatePanel()
    double floating = 0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      if(PositionGetTicket(i) == 0 || !IsMinePos())
+      if(PositionGetTicket(i) == 0 || !(IsMinePos() || IsRangePos()))
          continue;
       nOpen++;
       floating += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
      }
-   SetText("open",  StringFormat("Aperte %d   (%d buy, %d sell)", nOpen, CountPos(true), CountPos(false)));
+   SetText("open",  StringFormat("Aperte %d   (%d buy, %d sell)", nOpen,
+                                 CountPos(true) + CountRangePos(true), CountPos(false) + CountRangePos(false)));
    SetText("float", StringFormat("In corso   %+.2f", floating), nOpen > 0 ? PLColor(floating) : clrSilver);
    SetText("bal",   StringFormat("Saldo   %.2f %s", AccountInfoDouble(ACCOUNT_BALANCE), cur));
 
    // mercato
    bool okDir  = g_er >= InpERMin;
    bool okCand = g_rangeNow >= g_bigNeed;
+   SetText("mode", "Modalita'  " + g_modeInfo,
+           g_modeInfo == "attesa" ? clrGray : (StringFind(g_modeInfo, "LATERALE") == 0 ? clrDeepSkyBlue : clrLimeGreen));
    SetText("mkt",  g_mktInfo, MarketActive() ? clrLimeGreen : clrKhaki);
    SetText("dir",  StringFormat("Direzione  %.2f  (min %.2f)  %s", g_er, InpERMin, okDir ? "OK" : "NO"),
            okDir ? clrLimeGreen : clrTomato);
    SetText("cand", StringFormat("Candela  %.0f  (min %.0f)  %s", g_rangeNow / _Point, g_bigNeed / _Point, okCand ? "OK" : "NO"),
            okCand ? clrLimeGreen : clrTomato);
+   if(InpRangeMode)
+      SetText("range", StringFormat("Range  %.0f  (min %.0f)  %s", (g_rH - g_rL) / _Point,
+                                    InpRangeMinSpr * g_sprNorm / _Point, g_rangeOK ? "OK" : "-"),
+              g_rangeOK ? clrDeepSkyBlue : clrGray);
+   else
+      SetText("range", "Range  spento", clrGray);
 
    // distanze
    SetText("d1", StringFormat("Pendenti %.0f     SL %.0f", EntryDist() / _Point, SLDist() / _Point));
@@ -1012,6 +1199,7 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
      {
       g_state = ST_STOPPED;
       DeletePendings();
+      DeleteRangePendings();
       CloseAll();
      }
    UpdatePanel();
