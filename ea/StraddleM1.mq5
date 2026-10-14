@@ -238,10 +238,14 @@ double StopsMinDist()
    return (double)(a > b ? a : b) * _Point;
   }
 
+// valore in punti scelto dall'utente: viene usato cosi' com'e' (solo il minimo tecnico del broker);
+// 0 = automatico dall'ATR, con un minimo legato allo spread
 double Dist(int inputPts, double k, double minSpreadMult)
   {
-   double d = inputPts > 0 ? inputPts * _Point : k * ATR();
-   return MathMax(d, MathMax(minSpreadMult * g_sprNorm, StopsMinDist() + _Point));
+   double brokerMin = StopsMinDist() + _Point;
+   if(inputPts > 0)
+      return MathMax(inputPts * _Point, brokerMin);
+   return MathMax(k * ATR(), MathMax(minSpreadMult * g_sprNorm, brokerMin));
   }
 
 double EntryDist()      { return Dist(InpEntryPts,      K_ENTRY,       3.0); }
@@ -251,9 +255,9 @@ double TrailDist()      { return Dist(InpTrailDistPts,  K_TRAIL_DIST,  2.0); }
 double BEDist()         { return Dist(InpBEPts,         K_BE,          2.0); }
 double BELock()
   {
-   if(InpBELockPts > 0)
-      return InpBELockPts * _Point;
-   return MathMax(_Point, 0.5 * g_sprNorm);
+   double lock = (InpBELockPts > 0) ? InpBELockPts * _Point : MathMax(_Point, 0.5 * g_sprNorm);
+   // i punti bloccati devono essere meno del livello di break-even, altrimenti lo SL finirebbe sopra il prezzo
+   return MathMin(lock, MathMax(_Point, 0.5 * BEDist()));
   }
 
 double MaxSpread()
@@ -896,8 +900,8 @@ void UpdatePanel()
            nOpen > 0 ? PLColor(floating) : clrSilver);
 
    SetText("mkt", g_mktInfo, MarketActive() ? clrLimeGreen : clrKhaki);
-   SetText("dist", StringFormat("Pendenti %.0f  SL %.0f  BE da +%.0f  trailing %.0f da +%.0f (punti)",
-                                EntryDist() / _Point, SLDist() / _Point, BEDist() / _Point,
+   SetText("dist", StringFormat("Pendenti %.0f  SL %.0f  BE da +%.0f (blocca %.0f)  trailing %.0f da +%.0f (punti)",
+                                EntryDist() / _Point, SLDist() / _Point, BEDist() / _Point, BELock() / _Point,
                                 TrailDist() / _Point, TrailStartDist() / _Point));
    ChartRedraw();
   }
