@@ -26,6 +26,8 @@ input long   InpMagic         = 52001; // Magic number
 input group "Distanze in punti (0 = automatico dall'ATR M1)"
 input int    InpEntryPts      = 0;     // Distanza dei pendenti dal prezzo (auto = 0.30 x ATR)
 input int    InpSLPts         = 0;     // Stop loss iniziale (auto = 0.35 x ATR)
+input int    InpBEPts         = 0;     // Break-even dopo +X punti (auto = 0.15 x ATR)
+input int    InpBELockPts     = 0;     // Punti bloccati al break-even (auto = meta' spread, copre la commissione)
 input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.30 x ATR)
 input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.25 x ATR)
 input int    InpMaxSpreadPts  = 0;     // Spread massimo (auto = 2 x spread normale)
@@ -38,6 +40,7 @@ input int    InpMaxTradesDay  = 0;     // Numero massimo trade al giorno
 //--- costanti --------------------------------------------------------
 #define K_ENTRY       0.30   // distanza pendenti = 0.30 x ATR
 #define K_SL          0.35   // SL = 0.35 x ATR
+#define K_BE          0.15   // break-even da +0.15 x ATR
 #define K_TRAIL_START 0.30   // trailing da +0.30 x ATR
 #define K_TRAIL_DIST  0.25   // trailing a 0.25 x ATR dal prezzo
 #define MOVE_STEP     0.20   // sposta un pendente solo se si e' allontanato del 20% della distanza
@@ -207,6 +210,13 @@ double EntryDist()      { return Dist(InpEntryPts,      K_ENTRY,       2.0); }
 double SLDist()         { return Dist(InpSLPts,         K_SL,          3.0); }
 double TrailStartDist() { return Dist(InpTrailStartPts, K_TRAIL_START, 2.0); }
 double TrailDist()      { return Dist(InpTrailDistPts,  K_TRAIL_DIST,  1.5); }
+double BEDist()         { return Dist(InpBEPts,         K_BE,          2.0); }
+double BELock()
+  {
+   if(InpBELockPts > 0)
+      return InpBELockPts * _Point;
+   return MathMax(_Point, 0.5 * g_sprNorm);
+  }
 
 double MaxSpread()
   {
@@ -418,6 +428,8 @@ void TrailPositions(const MqlTick &tk)
    if(tk.time_msc - g_lastTrailMs < 300)
       return;
 
+   double beAt  = BEDist();
+   double lock  = BELock();
    double start = TrailStartDist();
    double dist  = TrailDist();
    double step  = MathMax(0.1 * dist, _Point);
@@ -433,10 +445,20 @@ void TrailPositions(const MqlTick &tk)
       double sl    = PositionGetDouble(POSITION_SL);
       double tp    = PositionGetDouble(POSITION_TP);
       double fav   = isBuy ? tk.bid - open : open - tk.ask;
-      if(fav < start)
+      if(fav < beAt && fav < start)
          continue;
 
-      double newSL = NormPrice(isBuy ? tk.bid - dist : tk.ask + dist);
+      // 1) break-even: SL all'entrata + qualche punto, appena il trade va a favore
+      // 2) trailing: SL a distanza fissa dal prezzo (vince il piu' protettivo dei due)
+      double newSL = 0;
+      if(fav >= beAt)
+         newSL = isBuy ? open + lock : open - lock;
+      if(fav >= start)
+        {
+         double tr = isBuy ? tk.bid - dist : tk.ask + dist;
+         newSL = (newSL == 0) ? tr : (isBuy ? MathMax(newSL, tr) : MathMin(newSL, tr));
+        }
+      newSL = NormPrice(newSL);
       bool better = isBuy ? (sl == 0 || newSL >= sl + step) : (sl == 0 || newSL <= sl - step);
       bool legal  = isBuy ? (tk.bid - newSL >= fz) : (newSL - tk.ask >= fz);
       if(better && legal)
@@ -613,8 +635,8 @@ void UpdatePanel()
                                 nOpen, floating, AccountInfoDouble(ACCOUNT_BALANCE)),
            nOpen > 0 ? PLColor(floating) : clrSilver);
 
-   SetText("dist", StringFormat("Pendenti a %.0f pt   SL %.0f   trailing %.0f da +%.0f",
-                                EntryDist() / _Point, SLDist() / _Point,
+   SetText("dist", StringFormat("Pendenti %.0f  SL %.0f  BE da +%.0f  trailing %.0f da +%.0f (punti)",
+                                EntryDist() / _Point, SLDist() / _Point, BEDist() / _Point,
                                 TrailDist() / _Point, TrailStartDist() / _Point));
    ChartRedraw();
   }

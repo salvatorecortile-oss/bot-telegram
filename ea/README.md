@@ -50,7 +50,8 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
   - non si spostano mai quando è il prezzo ad andare verso di loro.
 
   Così scatta solo il lato in cui parte un movimento veloce.
-- **Trailing:** quando la posizione è in profitto, lo SL la segue a distanza fissa e la chiude appena il prezzo gira.
+- **Break-even:** appena il trade fa +0,15 × ATR (≈ 15 punti su XAU) lo SL va all'entrata più mezzo spread, così il trade non può più chiudere in perdita.
+- **Trailing:** da +0,30 × ATR lo SL segue il prezzo a distanza fissa e chiude appena il prezzo gira.
 - **Inversione:** mentre un BUY è aperto, il SELL STOP resta sotto. Se la candela gira, il buy chiude in trailing e subito dopo scatta il sell, e viceversa.
 - **Valori automatici:** distanze dall'ATR M1, cioè dalla dimensione media delle candele.
   - pendenti a 0,30 × ATR;
