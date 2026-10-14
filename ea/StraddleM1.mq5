@@ -83,7 +83,9 @@ int      g_hATRn   = INVALID_HANDLE;  // ATR "normale" (30 candele) per riconosc
 datetime g_activeUntil = 0;
 double   g_er          = 0;   // direzionalita' 0..1
 int      g_trendDir    = 0;   // +1 salita, -1 discesa
-string   g_mktInfo     = "-";
+string   g_mktInfo     = "-";   // stato del mercato (breve)
+double   g_rangeNow    = 0;     // candela piu' grande tra la corrente e l'ultima chiusa
+double   g_bigNeed     = 0;     // grandezza minima richiesta
 
 // massimo a favore / contro di ogni posizione (punti), per uscita breakout fallito e registro
 ulong    g_tTicket[MAXTRACK];
@@ -320,7 +322,7 @@ bool CanTrade(const MqlTick &tk)
    else if(g_spr > MaxSpread())
       g_blockReason = "spread anomalo";
    else if(!MarketActive())
-      g_blockReason = "mercato laterale / candele piccole, aspetto un movimento";
+      g_blockReason = "aspetto un movimento";
    else if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
       g_blockReason = "perdita max giornaliera";
    else if(InpDailyTarget > 0 && g_dayPL >= InpDailyTarget)
@@ -393,10 +395,11 @@ void UpdateMarket(const MqlTick &tk)
       g_trendDir = net > 0 ? 1 : -1;
      }
 
+   g_rangeNow = maxRange;
+   g_bigNeed  = big;
    string why = !directional ? "laterale" : (!bigCandle ? "candele piccole" : "");
-   g_mktInfo = StringFormat("Mercato %s   direzione %.2f/%.2f   candela %.0f/%.0f pt",
-                            MarketActive() ? (g_trendDir > 0 ? "ATTIVO in salita" : "ATTIVO in discesa") : StringFormat("FERMO (%s)", why),
-                            g_er, InpERMin, maxRange / _Point, big / _Point);
+   g_mktInfo = MarketActive() ? (g_trendDir > 0 ? "ATTIVO in salita" : "ATTIVO in discesa")
+                              : "FERMO (" + why + ")";
   }
 
 bool MarketActive()
@@ -851,33 +854,76 @@ void MakeButton(string name, string text, int x, int y, int w, color bg)
    ObjectSetString(0, n, OBJPROP_TEXT, text);
   }
 
+#define PANEL_W  300
+#define ROW_H    17
+
+int g_rowY = 0;
+
+// una riga della dashboard, una sotto l'altra
+void Row(string name, int size, color clr, int extra = 0)
+  {
+   g_rowY += extra;
+   MakeLabel(name, 22, g_rowY, size, clr);
+   g_rowY += ROW_H + (size > 9 ? 5 : 0);
+  }
+
+void Section(string name, string text)
+  {
+   g_rowY += 6;
+   MakeLabel(name, 22, g_rowY, 8, C'110,120,140');
+   ObjectSetString(0, g_pfx + name, OBJPROP_TEXT, text);
+   g_rowY += ROW_H - 2;
+  }
+
 void CreatePanel()
   {
+   // sfondo per primo, cosi' le scritte create dopo restano sopra
    string bg = g_pfx + "bg";
    ObjectCreate(0, bg, OBJ_RECTANGLE_LABEL, 0, 0, 0);
    ObjectSetInteger(0, bg, OBJPROP_CORNER, CORNER_LEFT_UPPER);
    ObjectSetInteger(0, bg, OBJPROP_XDISTANCE, 10);
    ObjectSetInteger(0, bg, OBJPROP_YDISTANCE, 20);
-   ObjectSetInteger(0, bg, OBJPROP_XSIZE, 430);
-   ObjectSetInteger(0, bg, OBJPROP_YSIZE, 214);
+   ObjectSetInteger(0, bg, OBJPROP_XSIZE, PANEL_W);
    ObjectSetInteger(0, bg, OBJPROP_BGCOLOR, C'20,24,32');
    ObjectSetInteger(0, bg, OBJPROP_BORDER_TYPE, BORDER_FLAT);
    ObjectSetInteger(0, bg, OBJPROP_COLOR, C'70,80,100');
    ObjectSetInteger(0, bg, OBJPROP_SELECTABLE, false);
    ObjectSetInteger(0, bg, OBJPROP_HIDDEN, true);
 
-   MakeLabel("title", 20,  28, 11, clrWhite);
-   MakeLabel("state", 20,  50,  9, clrSilver);
-   MakeLabel("pl",    20,  76, 12, clrWhite);
-   MakeLabel("stats", 20, 100,  9, clrSilver);
-   MakeLabel("avg",   20, 118,  9, clrSilver);
-   MakeLabel("open",  20, 136,  9, clrSilver);
-   MakeLabel("mkt",   20, 154,  9, clrKhaki);
-   MakeLabel("dist",  20, 172,  9, clrGray);
+   g_rowY = 30;
+   Row("title", 11, clrWhite);
+   Row("state", 10, clrSilver);
+   Row("reason", 9, clrOrange);
 
-   MakeButton("btnStart", "Start",       20, 200, 80, clrDodgerBlue);
-   MakeButton("btnFin",   "Finish",     105, 200, 80, clrSteelBlue);
-   MakeButton("btnStop",  "Stop+Close", 190, 200, 90, clrFireBrick);
+   Section("h1", "OGGI");
+   Row("pl",     12, clrWhite);
+   Row("trades",  9, clrSilver);
+   Row("wl",      9, clrSilver);
+   Row("avgw",    9, clrSilver);
+   Row("avgl",    9, clrSilver);
+
+   Section("h2", "POSIZIONI");
+   Row("open",    9, clrSilver);
+   Row("float",   9, clrSilver);
+   Row("bal",     9, clrSilver);
+
+   Section("h3", "MERCATO");
+   Row("mkt",     9, clrKhaki);
+   Row("dir",     9, clrSilver);
+   Row("cand",    9, clrSilver);
+
+   Section("h4", "DISTANZE (punti)");
+   Row("d1",      9, clrGray);
+   Row("d2",      9, clrGray);
+   Row("d3",      9, clrGray);
+
+   int by = g_rowY + 8;
+   MakeButton("btnStart", "Start",       22, by, 82, clrDodgerBlue);
+   MakeButton("btnFin",   "Finish",     109, by, 82, clrSteelBlue);
+   MakeButton("btnStop",  "Stop+Close", 196, by, 92, clrFireBrick);
+
+   // altezza dello sfondo in base a quante righe ci sono
+   ObjectSetInteger(0, bg, OBJPROP_YSIZE, by + 24 + 12 - 20);
 
    ObjectSetString(0, g_pfx + "title", OBJPROP_TEXT, "StraddleM1   " + _Symbol);
    UpdatePanel();
@@ -906,21 +952,23 @@ void UpdatePanel()
       return;
 
    string cur = AccountInfoString(ACCOUNT_CURRENCY);
-   if(g_state == ST_STOPPED)        SetText("state", "FERMO  -  premi Start", clrGray);
-   else if(g_state == ST_FINISHING) SetText("state", "IN CHIUSURA  -  nessun nuovo ordine", clrOrange);
-   else if(g_blockReason != "")     SetText("state", "IN PAUSA  -  " + g_blockReason, clrOrange);
-   else                             SetText("state", "ATTIVO", clrLimeGreen);
 
-   SetText("pl", StringFormat("Oggi  %+.2f %s", g_dayPL, cur), PLColor(g_dayPL));
+   // stato + motivo su due righe
+   if(g_state == ST_STOPPED)        { SetText("state", "FERMO", clrGray);          SetText("reason", "premi Start", clrGray); }
+   else if(g_state == ST_FINISHING) { SetText("state", "IN CHIUSURA", clrOrange);  SetText("reason", "nessun nuovo ordine", clrOrange); }
+   else if(g_blockReason != "")     { SetText("state", "IN PAUSA", clrOrange);     SetText("reason", g_blockReason, clrOrange); }
+   else                             { SetText("state", "ATTIVO", clrLimeGreen);    SetText("reason", " "); }
 
+   // oggi
+   SetText("pl", StringFormat("%+.2f %s", g_dayPL, cur), PLColor(g_dayPL));
    int losses = g_dayTrades - g_dayWins;
    double wr = g_dayTrades > 0 ? 100.0 * g_dayWins / g_dayTrades : 0;
-   SetText("stats", StringFormat("Trade %d    Vinti %d    Persi %d    Win rate %.0f%%",
-                                 g_dayTrades, g_dayWins, losses, wr));
-   SetText("avg", StringFormat("Vincita media %+.2f    Perdita media %+.2f",
-                               g_dayWins > 0 ? g_dayWinSum / g_dayWins : 0,
-                               losses > 0 ? g_dayLossSum / losses : 0));
+   SetText("trades", StringFormat("Trade %d     Win rate %.0f%%", g_dayTrades, wr));
+   SetText("wl",     StringFormat("Vinti %d     Persi %d", g_dayWins, losses));
+   SetText("avgw",   StringFormat("Vincita media   %+.2f", g_dayWins > 0 ? g_dayWinSum / g_dayWins : 0), clrLimeGreen);
+   SetText("avgl",   StringFormat("Perdita media   %+.2f", losses > 0 ? g_dayLossSum / losses : 0), clrTomato);
 
+   // posizioni
    int nOpen = 0;
    double floating = 0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -930,14 +978,23 @@ void UpdatePanel()
       nOpen++;
       floating += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
      }
-   SetText("open", StringFormat("Aperte %d   In corso %+.2f   Saldo %.2f",
-                                nOpen, floating, AccountInfoDouble(ACCOUNT_BALANCE)),
-           nOpen > 0 ? PLColor(floating) : clrSilver);
+   SetText("open",  StringFormat("Aperte %d   (%d buy, %d sell)", nOpen, CountPos(true), CountPos(false)));
+   SetText("float", StringFormat("In corso   %+.2f", floating), nOpen > 0 ? PLColor(floating) : clrSilver);
+   SetText("bal",   StringFormat("Saldo   %.2f %s", AccountInfoDouble(ACCOUNT_BALANCE), cur));
 
-   SetText("mkt", g_mktInfo, MarketActive() ? clrLimeGreen : clrKhaki);
-   SetText("dist", StringFormat("Pendenti %.0f  SL %.0f  BE da +%.0f (blocca %.0f)  trailing %.0f da +%.0f (punti)",
-                                EntryDist() / _Point, SLDist() / _Point, BEDist() / _Point, BELock() / _Point,
-                                TrailDist() / _Point, TrailStartDist() / _Point));
+   // mercato
+   bool okDir  = g_er >= InpERMin;
+   bool okCand = g_rangeNow >= g_bigNeed;
+   SetText("mkt",  g_mktInfo, MarketActive() ? clrLimeGreen : clrKhaki);
+   SetText("dir",  StringFormat("Direzione  %.2f  (min %.2f)  %s", g_er, InpERMin, okDir ? "OK" : "NO"),
+           okDir ? clrLimeGreen : clrTomato);
+   SetText("cand", StringFormat("Candela  %.0f  (min %.0f)  %s", g_rangeNow / _Point, g_bigNeed / _Point, okCand ? "OK" : "NO"),
+           okCand ? clrLimeGreen : clrTomato);
+
+   // distanze
+   SetText("d1", StringFormat("Pendenti %.0f     SL %.0f", EntryDist() / _Point, SLDist() / _Point));
+   SetText("d2", StringFormat("Break-even da +%.0f  (blocca %.0f)", BEDist() / _Point, BELock() / _Point));
+   SetText("d3", StringFormat("Trailing %.0f  da +%.0f", TrailDist() / _Point, TrailStartDist() / _Point));
    ChartRedraw();
   }
 
