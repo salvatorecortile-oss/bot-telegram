@@ -31,6 +31,7 @@ input int    InpBELockPts     = 0;     // Punti bloccati al break-even (auto = m
 input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.40 x ATR)
 input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.30 x ATR)
 input int    InpMaxSpreadPts  = 0;     // Spread massimo (auto = 2 x spread normale)
+input int    InpScaleRefATR   = 0;     // Scala le distanze con la volatilita': ATR (punti) per cui valgono i numeri sopra (0 = off)
 
 input group "Filtro laterale (lavora solo sui movimenti veri)"
 input bool   InpBigOnly       = true;  // Attivo: niente trade quando il mercato lateralizza
@@ -285,11 +286,21 @@ double StopsMinDist()
 
 // valore in punti scelto dall'utente: viene usato cosi' com'e' (solo il minimo tecnico del broker);
 // 0 = automatico dall'ATR, con un minimo legato allo spread
+// Con InpScaleRefATR > 0 i valori in punti si allargano/stringono con la volatilita':
+// es. riferimento 150 e ATR normale 450 -> tutte le distanze x3. Limitato tra 0.5x e 4x.
+double VolScale()
+  {
+   if(InpScaleRefATR <= 0)
+      return 1.0;
+   double f = ATRNormal() / (InpScaleRefATR * _Point);
+   return MathMax(0.5, MathMin(4.0, f));
+  }
+
 double Dist(int inputPts, double k, double minSpreadMult)
   {
    double brokerMin = StopsMinDist() + _Point;
    if(inputPts > 0)
-      return MathMax(inputPts * _Point, brokerMin);
+      return MathMax(inputPts * _Point * VolScale(), brokerMin);
    return MathMax(k * ATR(), MathMax(minSpreadMult * g_sprNorm, brokerMin));
   }
 
@@ -1186,7 +1197,8 @@ void UpdatePanel()
       SetText("range", "Range  spento", clrGray);
 
    // distanze
-   SetText("d1", StringFormat("Pendenti %.0f     SL %.0f", EntryDist() / _Point, SLDist() / _Point));
+   SetText("d1", StringFormat("Pendenti %.0f     SL %.0f%s", EntryDist() / _Point, SLDist() / _Point,
+                              InpScaleRefATR > 0 ? StringFormat("   (x%.1f)", VolScale()) : ""));
    SetText("d2", StringFormat("Break-even da +%.0f  (blocca %.0f)", BEDist() / _Point, BELock() / _Point));
    SetText("d3", StringFormat("Trailing %.0f  da +%.0f", TrailDist() / _Point, TrailStartDist() / _Point));
    ChartRedraw();
