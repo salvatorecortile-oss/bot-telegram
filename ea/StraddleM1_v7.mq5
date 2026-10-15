@@ -135,6 +135,7 @@ double   g_dayLossSum = 0;
 double   g_dayLots    = 0;   // lotti chiusi oggi (andata e ritorno = 1 volta il volume)
 
 string   g_pfx         = "STR_";
+bool     g_quiet       = false;  // in ottimizzazione: niente log e niente CSV (evita di riempire il disco)
 long     g_lastPanelMs = 0;
 
 //+------------------------------------------------------------------+
@@ -161,6 +162,7 @@ int OnInit()
      }
 
    bool tester = (bool)MQLInfoInteger(MQL_TESTER);
+   g_quiet = (bool)MQLInfoInteger(MQL_OPTIMIZATION);
    g_state = (InpAutoStart || tester) ? ST_RUNNING : ST_STOPPED;
    string gv = StateGVName();
    if(!tester && GlobalVariableCheck(gv))
@@ -250,6 +252,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       HistoryDealGetString(trans.deal, DEAL_SYMBOL) != _Symbol)
       return;
    g_statsDirty = true;
+   if(g_quiet)
+      return;
    long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
    if((entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY) && InpLogCSV)
       LogTrade(trans.deal);
@@ -789,7 +793,8 @@ void Rejected(CTrade &tr, const MqlTick &tk)
   {
    g_backoffMs  = tk.time_msc + 5000;
    g_lastReject = StringFormat("%s (%u)", tr.ResultRetcodeDescription(), tr.ResultRetcode());
-   PrintFormat("Ordine rifiutato: %s", g_lastReject);
+   if(!g_quiet)
+      PrintFormat("Ordine rifiutato: %s", g_lastReject);
   }
 
 //+------------------------------------------------------------------+
@@ -867,7 +872,7 @@ void ManagePositions(const MqlTick &tk)
       if(!isRng && InpFailExit && age >= InpFailSec && k >= 0 &&
          g_tBest[k] * _Point < 0.5 * beAt && fav < 0)
         {
-         if(g_trade.PositionClose(t))
+         if(g_trade.PositionClose(t) && !g_quiet)
             PrintFormat("Breakout fallito #%I64u chiuso a %+.0f pt dopo %d s", t, fav / _Point, (int)age);
          continue;
         }
@@ -891,7 +896,7 @@ void ManagePositions(const MqlTick &tk)
       if(better && legal)
         {
          g_lastTrailMs = tk.time_msc;
-         if(!g_trade.PositionModify(t, newSL, tp))
+         if(!g_trade.PositionModify(t, newSL, tp) && !g_quiet)
             PrintFormat("Trailing #%I64u fallito: %s", t, g_trade.ResultRetcodeDescription());
         }
      }
