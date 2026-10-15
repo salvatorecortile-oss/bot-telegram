@@ -41,6 +41,8 @@ InpSess2Start=15
 InpSess2End=17
 ; Registro
 InpLogCSV=true
+; Volume / IB
+InpRebatePerLot=10.0
 ; Limiti giornalieri (valuta conto, 0 = off)
 InpMaxDailyLoss=0.0
 InpDailyTarget=0.0

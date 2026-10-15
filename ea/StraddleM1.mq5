@@ -67,6 +67,9 @@ input int    InpSess2End      = 19;    // Fascia 2: alle ore
 input group "Registro"
 input bool   InpLogCSV        = true;  // Salva ogni trade in MQL5/Files/StraddleM1_trades.csv
 
+input group "Volume / IB"
+input double InpRebatePerLot  = 10.0;  // Rebate per lotto (solo per la stima in dashboard, 0 = nascondi)
+
 input group "Limiti giornalieri (valuta conto, 0 = off)"
 input double InpMaxDailyLoss  = 0;     // Perdita massima giornaliera
 input double InpDailyTarget   = 0;     // Obiettivo giornaliero
@@ -129,6 +132,7 @@ int      g_dayTrades  = 0;
 int      g_dayWins    = 0;
 double   g_dayWinSum  = 0;
 double   g_dayLossSum = 0;
+double   g_dayLots    = 0;   // lotti chiusi oggi (andata e ritorno = 1 volta il volume)
 
 string   g_pfx         = "STR_";
 long     g_lastPanelMs = 0;
@@ -983,7 +987,7 @@ void RefreshDailyStatsIfNeeded(datetime now)
 
    g_statsDay = dayStart;
    g_statsDirty = false;
-   g_dayPL = 0; g_dayTrades = 0; g_dayWins = 0; g_dayWinSum = 0; g_dayLossSum = 0;
+   g_dayPL = 0; g_dayTrades = 0; g_dayWins = 0; g_dayWinSum = 0; g_dayLossSum = 0; g_dayLots = 0;
    if(!HistorySelect(dayStart, now + 86400))
       return;
 
@@ -1001,6 +1005,7 @@ void RefreshDailyStatsIfNeeded(datetime now)
       if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY)
         {
          g_dayTrades++;
+         g_dayLots += HistoryDealGetDouble(dl, DEAL_VOLUME);
          if(profit > 0) { g_dayWins++; g_dayWinSum += net; }
          else           g_dayLossSum += net;
         }
@@ -1095,6 +1100,7 @@ void CreatePanel()
    Row("wl",      9, clrSilver);
    Row("avgw",    9, clrSilver);
    Row("avgl",    9, clrSilver);
+   Row("lots",    9, clrSilver);
 
    Section("h2", "POSIZIONI");
    Row("open",    9, clrSilver);
@@ -1163,6 +1169,10 @@ void UpdatePanel()
    SetText("wl",     StringFormat("Vinti %d     Persi %d", g_dayWins, losses));
    SetText("avgw",   StringFormat("Vincita media   %+.2f", g_dayWins > 0 ? g_dayWinSum / g_dayWins : 0), clrLimeGreen);
    SetText("avgl",   StringFormat("Perdita media   %+.2f", losses > 0 ? g_dayLossSum / losses : 0), clrTomato);
+   if(InpRebatePerLot > 0)
+      SetText("lots", StringFormat("Lotti %.2f     Rebate ~%.2f", g_dayLots, g_dayLots * InpRebatePerLot), clrKhaki);
+   else
+      SetText("lots", StringFormat("Lotti %.2f", g_dayLots), clrKhaki);
 
    // posizioni
    int nOpen = 0;
