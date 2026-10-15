@@ -1,0 +1,49 @@
+; StraddleM1 - XAUUSD ottimizzato (ScaleRefATR 250, ERMin 0.40, BigSpreadMult 10)
+; Base
+InpLots=0.01
+InpAutoStart=true
+InpMagic=52001
+; Distanze in punti (0 = automatico dall'ATR M1)
+InpEntryPts=50
+InpSLPts=15
+InpBEPts=30
+InpBELockPts=5
+InpTrailStartPts=35
+InpTrailDistPts=25
+InpMaxSpreadPts=0
+InpScaleRefATR=250
+; Filtro laterale (lavora solo sui movimenti veri)
+InpBigOnly=true
+InpERPeriod=6
+InpERMin=0.4
+InpBigK=0.6
+InpBigSpreadMult=10
+InpTrendSide=false
+InpActiveSec=20
+InpMaxPerDir=2
+; Modalita' laterale (limit)
+InpRangeMode=true
+InpRangeBars=15
+InpRangeMaxER=0.25
+InpRangeMinSpr=8
+InpRangeSLPct=0.3
+InpRangeMaxSLPts=40
+InpRangeUseTP=false
+InpRangeTPPct=0.5
+; Uscita breakout fallito
+InpFailExit=true
+InpFailSec=10
+; Filtro orario (ora di MT5 = ora italiana + 1)
+InpUseSessions=true
+InpSess1Start=10
+InpSess1End=13
+InpSess2Start=15
+InpSess2End=17
+; Registro
+InpLogCSV=true
+; Volume / IB
+InpRebatePerLot=10.0
+; Limiti giornalieri (valuta conto, 0 = off)
+InpMaxDailyLoss=0.0
+InpDailyTarget=0.0
+InpMaxTradesDay=0

@@ -11,6 +11,7 @@ InpBELockPts=5
 InpTrailStartPts=35
 InpTrailDistPts=25
 InpMaxSpreadPts=0
+InpScaleRefATR=0
 ; Filtro laterale (lavora solo sui movimenti veri)
 InpBigOnly=true
 InpERPeriod=6
@@ -40,6 +41,8 @@ InpSess2Start=15
 InpSess2End=17
 ; Registro
 InpLogCSV=true
+; Volume / IB
+InpRebatePerLot=10.0
 ; Limiti giornalieri (valuta conto, 0 = off)
 InpMaxDailyLoss=0.0
 InpDailyTarget=0.0

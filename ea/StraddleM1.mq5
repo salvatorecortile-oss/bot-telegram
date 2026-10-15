@@ -31,6 +31,7 @@ input int    InpBELockPts     = 0;     // Punti bloccati al break-even (auto = m
 input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.40 x ATR)
 input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.30 x ATR)
 input int    InpMaxSpreadPts  = 0;     // Spread massimo (auto = 2 x spread normale)
+input int    InpScaleRefATR   = 0;     // Scala le distanze con la volatilita': ATR (punti) per cui valgono i numeri sopra (0 = off)
 
 input group "Filtro laterale (lavora solo sui movimenti veri)"
 input bool   InpBigOnly       = true;  // Attivo: niente trade quando il mercato lateralizza
@@ -65,6 +66,9 @@ input int    InpSess2End      = 19;    // Fascia 2: alle ore
 
 input group "Registro"
 input bool   InpLogCSV        = true;  // Salva ogni trade in MQL5/Files/StraddleM1_trades.csv
+
+input group "Volume / IB"
+input double InpRebatePerLot  = 10.0;  // Rebate per lotto (solo per la stima in dashboard, 0 = nascondi)
 
 input group "Limiti giornalieri (valuta conto, 0 = off)"
 input double InpMaxDailyLoss  = 0;     // Perdita massima giornaliera
@@ -128,8 +132,10 @@ int      g_dayTrades  = 0;
 int      g_dayWins    = 0;
 double   g_dayWinSum  = 0;
 double   g_dayLossSum = 0;
+double   g_dayLots    = 0;   // lotti chiusi oggi (andata e ritorno = 1 volta il volume)
 
 string   g_pfx         = "STR_";
+bool     g_quiet       = false;  // in ottimizzazione: niente log e niente CSV (evita di riempire il disco)
 long     g_lastPanelMs = 0;
 
 //+------------------------------------------------------------------+
@@ -156,6 +162,7 @@ int OnInit()
      }
 
    bool tester = (bool)MQLInfoInteger(MQL_TESTER);
+   g_quiet = (bool)MQLInfoInteger(MQL_OPTIMIZATION);
    g_state = (InpAutoStart || tester) ? ST_RUNNING : ST_STOPPED;
    string gv = StateGVName();
    if(!tester && GlobalVariableCheck(gv))
@@ -245,6 +252,8 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       HistoryDealGetString(trans.deal, DEAL_SYMBOL) != _Symbol)
       return;
    g_statsDirty = true;
+   if(g_quiet)
+      return;
    long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
    if((entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY) && InpLogCSV)
       LogTrade(trans.deal);
@@ -285,11 +294,21 @@ double StopsMinDist()
 
 // valore in punti scelto dall'utente: viene usato cosi' com'e' (solo il minimo tecnico del broker);
 // 0 = automatico dall'ATR, con un minimo legato allo spread
+// Con InpScaleRefATR > 0 i valori in punti si allargano/stringono con la volatilita':
+// es. riferimento 150 e ATR normale 450 -> tutte le distanze x3. Limitato tra 0.5x e 4x.
+double VolScale()
+  {
+   if(InpScaleRefATR <= 0)
+      return 1.0;
+   double f = ATRNormal() / (InpScaleRefATR * _Point);
+   return MathMax(0.5, MathMin(4.0, f));
+  }
+
 double Dist(int inputPts, double k, double minSpreadMult)
   {
    double brokerMin = StopsMinDist() + _Point;
    if(inputPts > 0)
-      return MathMax(inputPts * _Point, brokerMin);
+      return MathMax(inputPts * _Point * VolScale(), brokerMin);
    return MathMax(k * ATR(), MathMax(minSpreadMult * g_sprNorm, brokerMin));
   }
 
@@ -774,7 +793,8 @@ void Rejected(CTrade &tr, const MqlTick &tk)
   {
    g_backoffMs  = tk.time_msc + 5000;
    g_lastReject = StringFormat("%s (%u)", tr.ResultRetcodeDescription(), tr.ResultRetcode());
-   PrintFormat("Ordine rifiutato: %s", g_lastReject);
+   if(!g_quiet)
+      PrintFormat("Ordine rifiutato: %s", g_lastReject);
   }
 
 //+------------------------------------------------------------------+
@@ -852,7 +872,7 @@ void ManagePositions(const MqlTick &tk)
       if(!isRng && InpFailExit && age >= InpFailSec && k >= 0 &&
          g_tBest[k] * _Point < 0.5 * beAt && fav < 0)
         {
-         if(g_trade.PositionClose(t))
+         if(g_trade.PositionClose(t) && !g_quiet)
             PrintFormat("Breakout fallito #%I64u chiuso a %+.0f pt dopo %d s", t, fav / _Point, (int)age);
          continue;
         }
@@ -876,7 +896,7 @@ void ManagePositions(const MqlTick &tk)
       if(better && legal)
         {
          g_lastTrailMs = tk.time_msc;
-         if(!g_trade.PositionModify(t, newSL, tp))
+         if(!g_trade.PositionModify(t, newSL, tp) && !g_quiet)
             PrintFormat("Trailing #%I64u fallito: %s", t, g_trade.ResultRetcodeDescription());
         }
      }
@@ -972,7 +992,7 @@ void RefreshDailyStatsIfNeeded(datetime now)
 
    g_statsDay = dayStart;
    g_statsDirty = false;
-   g_dayPL = 0; g_dayTrades = 0; g_dayWins = 0; g_dayWinSum = 0; g_dayLossSum = 0;
+   g_dayPL = 0; g_dayTrades = 0; g_dayWins = 0; g_dayWinSum = 0; g_dayLossSum = 0; g_dayLots = 0;
    if(!HistorySelect(dayStart, now + 86400))
       return;
 
@@ -990,6 +1010,7 @@ void RefreshDailyStatsIfNeeded(datetime now)
       if(entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY)
         {
          g_dayTrades++;
+         g_dayLots += HistoryDealGetDouble(dl, DEAL_VOLUME);
          if(profit > 0) { g_dayWins++; g_dayWinSum += net; }
          else           g_dayLossSum += net;
         }
@@ -1084,6 +1105,7 @@ void CreatePanel()
    Row("wl",      9, clrSilver);
    Row("avgw",    9, clrSilver);
    Row("avgl",    9, clrSilver);
+   Row("lots",    9, clrSilver);
 
    Section("h2", "POSIZIONI");
    Row("open",    9, clrSilver);
@@ -1152,6 +1174,10 @@ void UpdatePanel()
    SetText("wl",     StringFormat("Vinti %d     Persi %d", g_dayWins, losses));
    SetText("avgw",   StringFormat("Vincita media   %+.2f", g_dayWins > 0 ? g_dayWinSum / g_dayWins : 0), clrLimeGreen);
    SetText("avgl",   StringFormat("Perdita media   %+.2f", losses > 0 ? g_dayLossSum / losses : 0), clrTomato);
+   if(InpRebatePerLot > 0)
+      SetText("lots", StringFormat("Lotti %.2f     Rebate ~%.2f", g_dayLots, g_dayLots * InpRebatePerLot), clrKhaki);
+   else
+      SetText("lots", StringFormat("Lotti %.2f", g_dayLots), clrKhaki);
 
    // posizioni
    int nOpen = 0;
@@ -1186,7 +1212,8 @@ void UpdatePanel()
       SetText("range", "Range  spento", clrGray);
 
    // distanze
-   SetText("d1", StringFormat("Pendenti %.0f     SL %.0f", EntryDist() / _Point, SLDist() / _Point));
+   SetText("d1", StringFormat("Pendenti %.0f     SL %.0f%s", EntryDist() / _Point, SLDist() / _Point,
+                              InpScaleRefATR > 0 ? StringFormat("   (x%.1f)", VolScale()) : ""));
    SetText("d2", StringFormat("Break-even da +%.0f  (blocca %.0f)", BEDist() / _Point, BELock() / _Point));
    SetText("d3", StringFormat("Trailing %.0f  da +%.0f", TrailDist() / _Point, TrailStartDist() / _Point));
    ChartRedraw();
