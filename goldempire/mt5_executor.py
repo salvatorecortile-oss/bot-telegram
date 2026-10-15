@@ -51,11 +51,27 @@ def connect_mt5():
     _require_mt5()
     with _MT5_LOCK:
         logger.info("🔌 Connessione MT5 | Terminale: %s", MT5_PATH)
-        kwargs = {"path": MT5_PATH} if MT5_PATH else {}
-        if MT5_LOGIN:
-            kwargs.update(login=int(MT5_LOGIN), password=MT5_PASSWORD, server=MT5_SERVER)
-        if not mt5.initialize(**kwargs):
-            logger.error("❌ MT5 initialize fallito: %s", mt5.last_error())
+        base = {"timeout": 20000}
+        if MT5_PATH:
+            base["path"] = MT5_PATH
+        connected = False
+        if MT5_LOGIN and MT5_PASSWORD:
+            connected = mt5.initialize(
+                login=int(MT5_LOGIN), password=MT5_PASSWORD, server=MT5_SERVER, **base
+            )
+            if not connected:
+                logger.warning(
+                    "⚠️ Login MT5 con password fallito (%s): provo ad agganciarmi al terminale gia' loggato.",
+                    mt5.last_error(),
+                )
+                mt5.shutdown()
+        if not connected:
+            connected = mt5.initialize(**base)
+        if not connected:
+            logger.error(
+                "❌ MT5 initialize fallito: %s | Controlla MT5_PATH (terminale Fortune Prime) "
+                "e lancia: python diagnose_mt5.py", mt5.last_error(),
+            )
             return False
 
         account = mt5.account_info()

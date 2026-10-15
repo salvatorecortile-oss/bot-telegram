@@ -35,6 +35,8 @@ Compila `.env`:
 - `MT5_LOGIN`, `MT5_PASSWORD`, `MT5_SERVER`, `MT5_PATH`, `MT5_SYMBOL` (es. `XAUUSD` o `XAUUSD-P` a seconda del broker)
 - `LOT_SIZE`
 
+Se MT5 non si connette (rotellina / timeout): `python diagnose_mt5.py` con MT5 aperto e loggato.
+
 Primo login Telegram: `python telegram_login.py` (QR code) oppure direttamente `python main.py` (chiede numero e codice).
 
 > Se usi **lo stesso conto MT5** degli altri bot va bene: il MAGIC NUMBER diverso tiene separate le posizioni.
