@@ -12,7 +12,7 @@
 //|  - distanze automatiche dall'ATR M1: funziona su ogni simbolo    |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "3.00"
+#property version   "9.00"
 #property description "Straddle M1: BUY STOP/SELL STOP che seguono il prezzo + trailing stop, auto-regolato"
 
 #include <Trade\Trade.mqh>
@@ -32,6 +32,7 @@ input int    InpTrailStartPts = 0;     // Trailing parte da +X punti (auto = 0.4
 input int    InpTrailDistPts  = 0;     // Distanza del trailing (auto = 0.30 x ATR)
 input int    InpMaxSpreadPts  = 0;     // Spread massimo (auto = 2 x spread normale)
 input int    InpScaleRefATR   = 0;     // Scala le distanze con la volatilita': ATR (punti) per cui valgono i numeri sopra (0 = off)
+input double InpMinATRSpr     = 0;     // Lavora solo se ATR normale >= spread x questo (0 = off). Con spread alto evita i mercati lenti
 
 input group "Filtro laterale (lavora solo sui movimenti veri)"
 input bool   InpBigOnly       = true;  // Attivo: niente trade quando il mercato lateralizza
@@ -74,6 +75,12 @@ input group "Limiti giornalieri (valuta conto, 0 = off)"
 input double InpMaxDailyLoss  = 0;     // Perdita massima giornaliera
 input double InpDailyTarget   = 0;     // Obiettivo giornaliero
 input int    InpMaxTradesDay  = 0;     // Numero massimo trade al giorno
+
+input group "Protezione capitale"
+input double InpEquityFloor   = 0;     // Se il capitale scende a questo valore chiude tutto e si ferma (0 = off)
+
+input group "Solo Strategy Tester"
+input int    InpTestExtraSpread = 0;   // Punti di spread in piu' da simulare (es. 30: ticks a 18 -> conto a 48)
 
 //--- costanti --------------------------------------------------------
 #define K_ENTRY       0.50   // distanza pendenti = 0.50 x ATR (minimo 3 x spread)
@@ -136,6 +143,9 @@ double   g_dayLots    = 0;   // lotti chiusi oggi (andata e ritorno = 1 volta il
 
 string   g_pfx         = "STR_";
 bool     g_quiet       = false;  // in ottimizzazione: niente log e niente CSV (evita di riempire il disco)
+double   g_extra       = 0;      // spread simulato in piu' (solo tester), in prezzo
+double   g_simCost     = 0;      // costo dello spread simulato sui trade aperti finora (valuta conto)
+bool     g_floorHit    = false;  // capitale sceso al minimo: bot fermo finche' non premi Start
 long     g_lastPanelMs = 0;
 
 //+------------------------------------------------------------------+
@@ -163,12 +173,18 @@ int OnInit()
 
    bool tester = (bool)MQLInfoInteger(MQL_TESTER);
    g_quiet = (bool)MQLInfoInteger(MQL_OPTIMIZATION);
+   g_extra = tester ? MathMax(0, InpTestExtraSpread) * _Point : 0;
    g_state = (InpAutoStart || tester) ? ST_RUNNING : ST_STOPPED;
    string gv = StateGVName();
    if(!tester && GlobalVariableCheck(gv))
      {
       g_state = (EAState)(int)GlobalVariableGet(gv);
       GlobalVariableDel(gv);
+     }
+   if(!tester && GlobalVariableCheck(FloorGVName()))
+     {
+      g_floorHit = true;   // il minimo di capitale era gia' stato toccato: resta fermo
+      g_state = ST_STOPPED;
      }
 
    if(!tester || (bool)MQLInfoInteger(MQL_VISUAL_MODE))
@@ -181,6 +197,29 @@ int OnInit()
 string StateGVName()
   {
    return StringFormat("STR_state_%s_%I64d", _Symbol, InpMagic);
+  }
+
+string FloorGVName()
+  {
+   return StringFormat("STR_floor_%s_%I64d", _Symbol, InpMagic);
+  }
+
+// capitale sceso al minimo: chiude tutto e si ferma (anche dopo un riavvio, finche' non premi Start)
+void CheckEquityFloor()
+  {
+   if(InpEquityFloor <= 0 || g_floorHit)
+      return;
+   if(AccountInfoDouble(ACCOUNT_EQUITY) - g_simCost > InpEquityFloor)
+      return;
+   g_floorHit = true;
+   g_state = ST_STOPPED;
+   DeletePendings();
+   DeleteRangePendings();
+   CloseAll();
+   if(!MQLInfoInteger(MQL_TESTER))
+      GlobalVariableSet(FloorGVName(), 1);
+   if(!g_quiet)
+      PrintFormat("Capitale al minimo (%.2f): posizioni chiuse, bot fermo", InpEquityFloor);
   }
 
 void OnDeinit(const int reason)
@@ -210,6 +249,7 @@ void OnTick()
 
    UpdateSpread(tk);
    RefreshDailyStatsIfNeeded(tk.time);
+   CheckEquityFloor();
 
    UpdateMarket(tk);
    UntrackClosed();
@@ -252,9 +292,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       HistoryDealGetString(trans.deal, DEAL_SYMBOL) != _Symbol)
       return;
    g_statsDirty = true;
+   long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   if(entry == DEAL_ENTRY_IN && g_extra > 0)
+      g_simCost += g_extra * HistoryDealGetDouble(trans.deal, DEAL_VOLUME) * ValuePerPrice();
    if(g_quiet)
       return;
-   long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
    if((entry == DEAL_ENTRY_OUT || entry == DEAL_ENTRY_OUT_BY) && InpLogCSV)
       LogTrade(trans.deal);
    PrintFormat("%s #%I64d prezzo=%s profitto=%.2f",
@@ -275,6 +317,17 @@ void UpdateSpread(const MqlTick &tk)
    else
       g_sprNorm += (g_spr - g_sprNorm) * (g_sprTicks < 200 ? 0.05 : 0.002);
    g_sprTicks++;
+  }
+
+// spread usato per le decisioni: quello reale + quello simulato nel tester
+double EffSpr() { return g_sprNorm + g_extra; }
+
+// valuta conto per 1 lotto e 1.0 di prezzo
+double ValuePerPrice()
+  {
+   double tv = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   return ts > 0 ? tv / ts : 0;
   }
 
 double ATR()
@@ -309,7 +362,7 @@ double Dist(int inputPts, double k, double minSpreadMult)
    double brokerMin = StopsMinDist() + _Point;
    if(inputPts > 0)
       return MathMax(inputPts * _Point * VolScale(), brokerMin);
-   return MathMax(k * ATR(), MathMax(minSpreadMult * g_sprNorm, brokerMin));
+   return MathMax(k * ATR(), MathMax(minSpreadMult * EffSpr(), brokerMin));
   }
 
 double EntryDist()      { return Dist(InpEntryPts,      K_ENTRY,       3.0); }
@@ -319,7 +372,7 @@ double TrailDist()      { return Dist(InpTrailDistPts,  K_TRAIL_DIST,  2.0); }
 double BEDist()         { return Dist(InpBEPts,         K_BE,          2.0); }
 double BELock()
   {
-   double lock = (InpBELockPts > 0) ? InpBELockPts * _Point : MathMax(_Point, 0.5 * g_sprNorm);
+   double lock = (InpBELockPts > 0) ? InpBELockPts * _Point : MathMax(_Point, 0.5 * EffSpr());
    // i punti bloccati devono essere meno del livello di break-even, altrimenti lo SL finirebbe sopra il prezzo
    return MathMin(lock, MathMax(_Point, 0.5 * BEDist()));
   }
@@ -370,7 +423,9 @@ double AffordableLots(bool isBuy, double price)
 bool CanTrade(const MqlTick &tk)
   {
    g_blockReason = "";
-   if(!(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !(bool)MQLInfoInteger(MQL_TRADE_ALLOWED))
+   if(g_floorHit)
+      g_blockReason = "capitale al minimo: bot fermo";
+   else if(!(bool)TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !(bool)MQLInfoInteger(MQL_TRADE_ALLOWED))
       g_blockReason = "AutoTrading disattivato";
    else if(tk.time_msc < g_backoffMs)
       g_blockReason = "broker ha rifiutato: " + g_lastReject;
@@ -378,6 +433,8 @@ bool CanTrade(const MqlTick &tk)
       g_blockReason = "fuori orario";
    else if(g_spr > MaxSpread())
       g_blockReason = "spread anomalo";
+   else if(InpMinATRSpr > 0 && ATRNormal() < InpMinATRSpr * EffSpr())
+      g_blockReason = "mercato lento per questo spread";
    else if(InpMaxDailyLoss > 0 && g_dayPL <= -InpMaxDailyLoss)
       g_blockReason = "perdita max giornaliera";
    else if(InpDailyTarget > 0 && g_dayPL >= InpDailyTarget)
@@ -437,7 +494,7 @@ void UpdateMarket(const MqlTick &tk)
    double net = ok ? tk.bid - cN : 0;
    g_er = (ok && path > 0) ? MathAbs(net) / path : 0;
 
-   double big = MathMax(InpBigK * ATRNormal(), InpBigSpreadMult * g_sprNorm);
+   double big = MathMax(InpBigK * ATRNormal(), InpBigSpreadMult * EffSpr());
    double r0 = iHigh(_Symbol, PERIOD_M1, 0) - iLow(_Symbol, PERIOD_M1, 0);
    double r1 = iHigh(_Symbol, PERIOD_M1, 1) - iLow(_Symbol, PERIOD_M1, 1);
    double maxRange = MathMax(r0, r1);
@@ -548,7 +605,7 @@ void UpdateRange(const MqlTick &tk)
    g_rL = iLow(_Symbol, PERIOD_M1, lo);
    double w = g_rH - g_rL;
    bool lateral = g_er < InpRangeMaxER;
-   bool wide    = w >= InpRangeMinSpr * g_sprNorm && w <= 4.0 * ATRNormal();
+   bool wide    = w >= InpRangeMinSpr * EffSpr() && w <= 4.0 * ATRNormal();
    bool inside  = tk.bid < g_rH && tk.bid > g_rL;
    g_rangeOK = lateral && wide && inside;
   }
@@ -859,7 +916,8 @@ void ManagePositions(const MqlTick &tk)
       double sl    = PositionGetDouble(POSITION_SL);
       double tp    = PositionGetDouble(POSITION_TP);
       long   age   = (long)(TimeCurrent() - (datetime)PositionGetInteger(POSITION_TIME));
-      double fav   = isBuy ? tk.bid - open : open - tk.ask;
+      // con lo spread simulato il buy entra piu' in alto e il sell esce piu' in alto (ask virtuale)
+      double fav   = isBuy ? tk.bid - (open + g_extra) : open - (tk.ask + g_extra);
 
       int k = TrackIdx(t);
       if(k >= 0)
@@ -884,7 +942,7 @@ void ManagePositions(const MqlTick &tk)
       // 2) trailing: SL a distanza fissa dal prezzo (vince il piu' protettivo dei due)
       double newSL = 0;
       if(fav >= beAt)
-         newSL = isBuy ? open + lock : open - lock;
+         newSL = isBuy ? open + g_extra + lock : open - g_extra - lock;
       if(fav >= start)
         {
          double tr = isBuy ? tk.bid - dist : tk.ask + dist;
@@ -1118,6 +1176,7 @@ void CreatePanel()
    Row("dir",     9, clrSilver);
    Row("cand",    9, clrSilver);
    Row("range",   9, clrSilver);
+   Row("spr",     9, clrSilver);
 
    Section("h4", "DISTANZE (punti)");
    Row("d1",      9, clrGray);
@@ -1206,10 +1265,17 @@ void UpdatePanel()
            okCand ? clrLimeGreen : clrTomato);
    if(InpRangeMode)
       SetText("range", StringFormat("Range  %.0f  (min %.0f)  %s", (g_rH - g_rL) / _Point,
-                                    InpRangeMinSpr * g_sprNorm / _Point, g_rangeOK ? "OK" : "-"),
+                                    InpRangeMinSpr * EffSpr() / _Point, g_rangeOK ? "OK" : "-"),
               g_rangeOK ? clrDeepSkyBlue : clrGray);
    else
       SetText("range", "Range  spento", clrGray);
+
+   bool okVol = InpMinATRSpr <= 0 || ATRNormal() >= InpMinATRSpr * EffSpr();
+   SetText("spr", StringFormat("Spread %.0f%s   ATR %.0f%s", EffSpr() / _Point,
+                               g_extra > 0 ? StringFormat(" (+%d sim)", InpTestExtraSpread) : "",
+                               ATRNormal() / _Point,
+                               InpMinATRSpr > 0 ? StringFormat(" (min %.0f)", InpMinATRSpr * EffSpr() / _Point) : ""),
+           okVol ? clrSilver : clrTomato);
 
    // distanze
    SetText("d1", StringFormat("Pendenti %.0f     SL %.0f%s", EntryDist() / _Point, SLDist() / _Point,
@@ -1226,7 +1292,11 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    ObjectSetInteger(0, sparam, OBJPROP_STATE, false);
 
    if(sparam == g_pfx + "btnStart")
+     {
       g_state = ST_RUNNING;
+      g_floorHit = false;   // ripartenza manuale dopo il minimo di capitale
+      GlobalVariableDel(FloorGVName());
+     }
    else if(sparam == g_pfx + "btnFin")
       g_state = ST_FINISHING;
    else if(sparam == g_pfx + "btnStop")
@@ -1239,3 +1309,51 @@ void OnChartEvent(const int id, const long &lparam, const double &dparam, const 
    UpdatePanel();
   }
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| Risultato per l'ottimizzazione ("Custom max"):                   |
+//| profitto - spread simulato + rebate stimato.                     |
+//| Se il capitale tocca il minimo il passaggio viene scartato.      |
+//+------------------------------------------------------------------+
+double OnTester()
+  {
+   if(!HistorySelect(0, TimeCurrent() + 86400))
+      return 0;
+   double vpp = ValuePerPrice();
+   double bal = TesterStatistics(STAT_INITIAL_DEPOSIT), peak = bal, maxDD = 0;
+   double win = 0, loss = 0, lots = 0;
+   int    trades = 0;
+   for(int i = 0; i < HistoryDealsTotal(); i++)
+     {
+      ulong d = HistoryDealGetTicket(i);
+      if(d == 0 || !IsOurMagic(HistoryDealGetInteger(d, DEAL_MAGIC)))
+         continue;
+      double vol = HistoryDealGetDouble(d, DEAL_VOLUME);
+      double net = HistoryDealGetDouble(d, DEAL_PROFIT) + HistoryDealGetDouble(d, DEAL_COMMISSION) +
+                   HistoryDealGetDouble(d, DEAL_SWAP);
+      long entry = HistoryDealGetInteger(d, DEAL_ENTRY);
+      if(entry == DEAL_ENTRY_IN)
+        {
+         bal += net - g_extra * vol * vpp;
+         continue;
+        }
+      if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY)
+         continue;
+      // il costo simulato lo attribuisco al trade che si chiude (per il profit factor)
+      double adj = net - g_extra * vol * vpp;
+      bal += net;
+      if(adj > 0) win += adj; else loss -= adj;
+      lots += vol;
+      trades++;
+      peak = MathMax(peak, bal);
+      maxDD = MathMax(maxDD, peak - bal);
+     }
+   double profit = win - loss;
+   double rebate = lots * InpRebatePerLot;
+   double pf     = loss > 0 ? win / loss : 0;
+   PrintFormat("RISULTATO con spread +%d pt: trade %d  lotti %.2f  profitto %.2f  PF %.2f  DD max %.2f  rebate %.2f  totale %.2f",
+               InpTestExtraSpread, trades, lots, profit, pf, maxDD, rebate, profit + rebate);
+   if(g_floorHit)
+      return -100000 + profit;   // capitale bruciato: scartato
+   return profit + rebate;
+  }

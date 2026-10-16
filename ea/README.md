@@ -69,3 +69,11 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 - **Registro CSV:** ogni trade chiuso finisce in `MQL5/Files/StraddleM1_trades.csv` con entrata, uscita, profitto, durata, massimo a favore e contro, e motivo della chiusura.
 - **Spread:** con spread anomalo cancella i pendenti e li rimette quando lo spread torna normale.
 - **Uscita dal grafico:** se togli l'EA dal grafico cancella i suoi pendenti.
+
+## v9 — conti con spread alto (48 punti)
+
+- **`InpMinATRSpr`**: lavora solo quando la candela media (ATR 30) è almeno *spread × questo valore*. Con spread 48 e valore 6 serve un ATR di almeno 288 punti, così lo spread pesa poco sul movimento. Lo stesso set funziona anche su un conto a 18: la soglia scende da sola a 108.
+- **`InpEquityFloor`**: se il capitale scende a questo valore il bot chiude tutto e si ferma, anche dopo un riavvio, finché non premi Start. Non è una garanzia al centesimo: gap e slippage possono portarlo un po' sotto.
+- **`InpTestExtraSpread`** (solo nello Strategy Tester): simula punti di spread in più sui tick reali. Ad esempio con 30 i tick Demo2 a 18 diventano un conto a 48. Il bot si comporta come con lo spread largo: entrata, break-even e filtri. Il costo in più però non compare nel report standard: lo trovi nel risultato **Custom** e nella riga `RISULTATO` del journal.
+- **Risultato Custom** (ottimizzazione con "Custom max"): profitto meno lo spread simulato, più il rebate stimato (`InpRebatePerLot` × lotti). Un passaggio che tocca il minimo di capitale viene scartato.
+- Set: `StraddleM1_XAU_spread48.set` (dal vivo) e `StraddleM1_XAU_spread48_ottimizza.set` (ottimizzazione).

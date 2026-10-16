@@ -1,0 +1,55 @@
+; StraddleM1 v9 - conto XAUUSD con spread 48 (0.01 lotti, capitale 100)
+; Per il TEST su ticks a 18 (Demo2) metti InpTestExtraSpread=30. Dal vivo lascialo a 0.
+; Base
+InpLots=0.01
+InpAutoStart=true
+InpMagic=52001
+; Distanze in punti (scalate con la volatilita' da InpScaleRefATR)
+InpEntryPts=60
+InpSLPts=25
+InpBEPts=40
+InpBELockPts=10
+InpTrailStartPts=50
+InpTrailDistPts=30
+InpMaxSpreadPts=0
+InpScaleRefATR=250
+InpMinATRSpr=6
+; Filtro laterale (lavora solo sui movimenti veri)
+InpBigOnly=true
+InpERPeriod=6
+InpERMin=0.5
+InpBigK=1.0
+InpBigSpreadMult=6
+InpTrendSide=false
+InpActiveSec=20
+InpMaxPerDir=1
+; Modalita' laterale (limit): spenta, con spread 48 i range non pagano
+InpRangeMode=false
+InpRangeBars=15
+InpRangeMaxER=0.25
+InpRangeMinSpr=8
+InpRangeSLPct=0.3
+InpRangeMaxSLPts=40
+InpRangeUseTP=false
+InpRangeTPPct=0.5
+; Uscita breakout fallito
+InpFailExit=true
+InpFailSec=20
+; Filtro orario (ora di MT5 = ora italiana + 1)
+InpUseSessions=true
+InpSess1Start=10
+InpSess1End=13
+InpSess2Start=15
+InpSess2End=18
+; Registro
+InpLogCSV=true
+; Volume / IB
+InpRebatePerLot=10.0
+; Limiti giornalieri (valuta conto, 0 = off)
+InpMaxDailyLoss=5.0
+InpDailyTarget=0.0
+InpMaxTradesDay=0
+; Protezione capitale
+InpEquityFloor=90
+; Solo Strategy Tester
+InpTestExtraSpread=0
