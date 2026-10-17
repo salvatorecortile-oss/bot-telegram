@@ -66,7 +66,10 @@ from telegram_sender import (  # noqa: E402
     send_be_applied_message,
     send_close_message,
     send_open_message,
+    send_text,
 )
+import reports  # noqa: E402
+from messages import GOOD_MORNING_MESSAGE_TEMPLATE  # noqa: E402
 import mt5_executor as mt5x  # noqa: E402
 
 
@@ -331,6 +334,43 @@ async def mt5_connection_keeper():
 
 
 # ============================================================
+# REPORT E BUONGIORNO PROGRAMMATI
+# ============================================================
+
+def scheduled_text(kind, day):
+    if kind == "morning":
+        return GOOD_MORNING_MESSAGE_TEMPLATE
+    if kind == "daily":
+        return reports.daily_report_text(day)
+    if kind == "weekly":
+        return reports.weekly_report_text(day)
+    return reports.monthly_report_text(day)
+
+
+async def scheduler():
+    """Buongiorno lun-ven 06:00, giornaliero lun-ven 23:00, settimanale sabato
+    10:00, mensile ultimo giorno del mese 23:00 (ora italiana)."""
+    while True:
+        try:
+            if BOT_STATE != "STOPPED":
+                for key, kind, day in reports.due_messages(reports.now_italy()):
+                    if db.was_sent(key):
+                        continue
+                    # Segnato prima dell'invio: mai due volte, anche se Telegram e' lento.
+                    db.mark_sent(key)
+                    try:
+                        sent = await send_text(scheduled_text(kind, day))
+                        logger.info("📨 %s INVIATO | Destination #%s", kind.upper(), sent.id)
+                    except Exception:
+                        logger.exception("❌ ERRORE INVIO %s", kind.upper())
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ ERRORE SCHEDULER REPORT")
+        await asyncio.sleep(20)
+
+
+# ============================================================
 # COMANDI DA "MESSAGGI SALVATI"
 # ============================================================
 
@@ -407,6 +447,10 @@ async def saved_messages_handler(event):
                 + f"\nScrivi {COMMAND_PREFIX}play per ripartire.",
                 parse_mode="html",
             )
+        elif command in {"report", "reportw", "reportm"}:
+            kind = {"report": "daily", "reportw": "weekly", "reportm": "monthly"}[command]
+            await send_text(scheduled_text(kind, reports.now_italy().date()))
+            await event.reply(f"✅ Report {kind} inviato nel canale.")
         elif command == "status":
             await event.reply(status_text(), parse_mode="html")
         else:
@@ -438,6 +482,8 @@ async def main():
     logger.info("ETA' MAX    : %.0fs | Distanza max ingresso: %s",
                 MAX_SIGNAL_AGE_SECONDS, f"{MAX_ENTRY_DISTANCE:.2f} $" if MAX_ENTRY_DISTANCE else "nessun limite")
     logger.info("COMANDI     : %scomandi (in Messaggi salvati)", COMMAND_PREFIX)
+    logger.info("PROGRAMMATI : buongiorno lun-ven 06:00 | report giornaliero lun-ven 23:00 | "
+                "settimanale sabato 10:00 | mensile ultimo giorno 23:00")
     logger.info("=" * 60)
 
     await client.start()
@@ -457,7 +503,7 @@ async def main():
     client.add_event_handler(source_message_handler, events.NewMessage(chats=SOURCE_CHAT))
     client.add_event_handler(saved_messages_handler, events.NewMessage(chats="me"))
 
-    tasks = [asyncio.create_task(monitor_closures())]
+    tasks = [asyncio.create_task(monitor_closures()), asyncio.create_task(scheduler())]
     if TRADING_ENABLED:
         tasks.append(asyncio.create_task(mt5_connection_keeper()))
 

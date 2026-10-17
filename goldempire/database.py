@@ -186,3 +186,40 @@ def claim_close(source_message_id, close_status, close_price, pips):
             ),
         )
         return cur.rowcount == 1
+
+
+CLOSED_STATUSES = ("CLOSED_TP", "CLOSED_SL", "CLOSED_BE", "CLOSED_MANUAL", "CLOSED_EXTERNAL")
+
+
+def get_closed_between(start_utc, end_utc):
+    """Operazioni chiuse (con pips noti) tra due datetime UTC: [start, end)."""
+    placeholders = ",".join("?" for _ in CLOSED_STATUSES)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM signals
+            WHERE status IN ({placeholders}) AND pips IS NOT NULL
+              AND closed_at >= ? AND closed_at < ?
+            ORDER BY closed_at
+            """,
+            (*CLOSED_STATUSES, start_utc.isoformat(), end_utc.isoformat()),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def _init_sent_messages(conn):
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS sent_messages (key TEXT PRIMARY KEY, sent_at TEXT)"
+    )
+
+
+def was_sent(key):
+    with get_connection() as conn:
+        _init_sent_messages(conn)
+        return conn.execute("SELECT 1 FROM sent_messages WHERE key = ?", (key,)).fetchone() is not None
+
+
+def mark_sent(key):
+    with get_connection() as conn:
+        _init_sent_messages(conn)
+        conn.execute("INSERT OR IGNORE INTO sent_messages (key, sent_at) VALUES (?, ?)", (key, _now()))

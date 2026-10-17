@@ -53,13 +53,27 @@ Con `TRADING_ENABLED=false` il bot legge il canale e pubblica tutti i messaggi n
 usando i prezzi scritti nei messaggi del canale sorgente, **senza** toccare MT5.
 Quando è tutto ok metti `TRADING_ENABLED=true`.
 
+## Messaggi programmati (ora italiana)
+
+| Messaggio | Quando |
+|---|---|
+| Buongiorno | lunedì–venerdì alle 06:00 |
+| Report giornaliero | lunedì–venerdì alle 23:00 (operazioni chiuse oggi) |
+| Report settimanale | sabato alle 10:00 (operazioni chiuse da lunedì) |
+| Report mensile | ultimo giorno del mese alle 23:00 |
+
+Se il PC era spento all'orario previsto, il messaggio parte appena il bot si riavvia (entro 3 ore). Ogni messaggio parte una sola volta.
+I testi si modificano in `messages.py`.
+
 ## Comandi (scrivili in "Messaggi salvati" di Telegram)
 
-`gold_play`, `gold_pausa`, `gold_stop` (chiude tutte le posizioni del bot e si ferma), `gold_status`, `gold_comandi`.
+`gold_play`, `gold_pausa`, `gold_stop` (chiude tutte le posizioni del bot e si ferma), `gold_status`,
+`gold_report` / `gold_reportw` / `gold_reportm` (invia subito il report giornaliero / settimanale / mensile), `gold_comandi`.
 
 ## Test (senza Telegram né MT5)
 
 ```bat
 python tests\test_parser.py
 python tests\test_flow.py
+python tests\test_reports.py
 ```

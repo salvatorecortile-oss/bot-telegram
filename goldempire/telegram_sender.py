@@ -30,3 +30,8 @@ async def send_close_message(close_status, pips, close_price, reply_to=None):
         silent=True,
         reply_to=reply_to,
     )
+
+
+async def send_text(text):
+    """Report e buongiorno."""
+    return await client.send_message(DESTINATION_CHAT, text, parse_mode="html", silent=True)

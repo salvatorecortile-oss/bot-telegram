@@ -101,6 +101,84 @@ def calculate_pips(open_price, close_price, direction, pip_size):
 
 
 # ============================================================
+# REPORT E BUONGIORNO
+# ============================================================
+
+DAILY_REPORT_TEMPLATE = (
+    "📊 <b>YARDFX GOLD MORNING REPORT</b>\n"
+    "💰 <b>RISULTATO GIORNALIERO</b>\n\n"
+
+    "📅 {date}\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+
+    "Operazioni chiuse: {operations}\n"
+    "✅ Vincenti: {wins}\n"
+    "❌ Perse: {losses}\n\n"
+
+    "📈 Win Rate: {win_rate:.1f}%\n"
+    "📊 TOT {pips:+.0f} PIPS\n\n"
+
+    "━━━━━━━━━━━━━━━━━━\n"
+    "Grazie per averci seguito!\n"
+    "Ci sentiamo domani con altre operazioni.\n"
+    "<b>- YardFX</b>"
+)
+
+WEEKLY_REPORT_TEMPLATE = (
+    "📊 <b>YARDFX GOLD MORNING REPORT</b>\n"
+    "📅 <b>RISULTATO SETTIMANALE</b>\n\n"
+
+    "📅 {date_range}\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+
+    "Operazioni chiuse: {operations}\n"
+    "✅ Vincenti: {wins}\n"
+    "❌ Perse: {losses}\n\n"
+
+    "📈 Win Rate: {win_rate:.1f}%\n"
+    "📊 TOT {pips:+.0f} PIPS\n\n"
+
+    "━━━━━━━━━━━━━━━━━━\n"
+    "Grazie per averci seguito e supportato in questi giorni.\n"
+    "Ci sentiamo lunedì con nuove operazioni.\n"
+    "Buon weekend!\n"
+    "<b>- YardFX</b>"
+)
+
+MONTHLY_REPORT_TEMPLATE = (
+    "📊 <b>YARDFX GOLD MORNING REPORT</b>\n"
+    "📅 <b>RISULTATO MENSILE</b>\n\n"
+
+    "📅 {date_range}\n"
+    "━━━━━━━━━━━━━━━━━━\n\n"
+
+    "Operazioni chiuse: {operations}\n"
+    "✅ Vincenti: {wins}\n"
+    "❌ Perse: {losses}\n\n"
+
+    "📈 Win Rate: {win_rate:.1f}%\n"
+    "📊 TOT {pips:+.0f} PIPS\n\n"
+
+    "━━━━━━━━━━━━━━━━━━\n"
+    "Grazie per averci seguito e supportato in questo mese.\n"
+    "<b>- YardFX</b>"
+)
+
+GOOD_MORNING_MESSAGE_TEMPLATE = (
+    "☀️ <b>BUONGIORNO RAGAZZI</b> ☀️\n\n"
+
+    "Una nuova giornata di trading sta per iniziare.\n\n"
+
+    "📩 <b>Hai bisogno di assistenza?</b>\n"
+    "Scrivimi in privato @yard_fx\n\n"
+
+    "Restate pronti e soprattutto disciplinati. 📊\n"
+    "Ci sentiamo tra poco con le operazioni della giornata.\n"
+    "<b>- YardFX</b>"
+)
+
+
+# ============================================================
 # COMANDI (Messaggi salvati)
 # ============================================================
 
@@ -111,5 +189,8 @@ def help_message(prefix):
         f"⏸️ <b>{prefix}pausa</b> — Non apre nuovi trade, gestisce quelli aperti\n"
         f"🛑 <b>{prefix}stop</b> — Chiude tutte le posizioni del bot e si ferma\n"
         f"📊 <b>{prefix}status</b> — Stato del bot e posizioni aperte\n"
+        f"📈 <b>{prefix}report</b> — Invia subito nel canale il report giornaliero\n"
+        f"📅 <b>{prefix}reportw</b> — Invia subito nel canale il report settimanale\n"
+        f"🗓️ <b>{prefix}reportm</b> — Invia subito nel canale il report mensile\n"
         f"❓ <b>{prefix}comandi</b> — Mostra questo elenco"
     )
