@@ -24,6 +24,14 @@ def connect_mt5():
     )
 
 
+def is_connected():
+    return engine.is_connected()
+
+
+def reconnect():
+    return engine.reconnect()
+
+
 def current_price(direction=None):
     return engine.current_price(MT5_SYMBOL, direction)
 

@@ -97,6 +97,17 @@ default `bot5_`):
 Orari personalizzabili nel `.env` (`DAILY_CLOSE_HOUR`, `DAILY_REPORT_HOUR`,
 `GOOD_MORNING_HOUR`, `WEEKLY_REPORT_HOUR`, ecc.).
 
+## Watchdog MT5 (riconnessione automatica)
+
+Il terminale MT5 puo' perdere la connessione IPC con il bot (es. sessione
+RDP disconnessa, problemi di rete, riavvio del terminale) senza che il
+processo Python se ne accorga da solo. Un controllo periodico (ogni
+`MT5_WATCHDOG_INTERVAL_SECONDS`, default 15s) verifica che il terminale
+risponda ancora; se non risponde, tenta automaticamente la riconnessione
+(stesso login/password/server usati all'avvio) finche' non riesce, senza
+bisogno di riavviare il bot a mano. Ogni cambio di stato (persa /
+ristabilita) viene loggato.
+
 ## Recovery automatico all'avvio
 
 Se il bot si riavvia mentre una posizione e' aperta, al successivo avvio

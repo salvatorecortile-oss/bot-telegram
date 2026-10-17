@@ -71,6 +71,11 @@ ORDER_COMMENT = _env("ORDER_COMMENT", "Gold MO Copier")
 # posizioni (TP/SL).
 MONITOR_INTERVAL_SECONDS = float(_env("MONITOR_INTERVAL_SECONDS", "0.5"))
 
+# Intervallo (secondi) del controllo periodico che rileva una
+# disconnessione IPC del terminale MT5 e tenta la riconnessione
+# automatica, senza bisogno di riavviare il bot a mano.
+MT5_WATCHDOG_INTERVAL_SECONDS = float(_env("MT5_WATCHDOG_INTERVAL_SECONDS", "15"))
+
 # =========================
 # COMANDI REMOTI (da "Messaggi Salvati")
 # =========================

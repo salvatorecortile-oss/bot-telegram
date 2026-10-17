@@ -47,6 +47,7 @@ from config import (
     TRADING_ENABLED,
     LOG_DIR,
     MONITOR_INTERVAL_SECONDS,
+    MT5_WATCHDOG_INTERVAL_SECONDS,
     COMMAND_PREFIX,
     DAILY_CLOSE_HOUR,
     DAILY_CLOSE_MINUTE,
@@ -538,6 +539,49 @@ async def recover_orphan_positions():
 
 
 # ============================================================
+# WATCHDOG MT5: rileva una disconnessione IPC del terminale e tenta la
+# riconnessione automatica, senza bisogno di riavviare il bot a mano.
+# ============================================================
+
+async def mt5_watchdog(stop_event):
+    global MT5_READY
+
+    while not stop_event.is_set():
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=MT5_WATCHDOG_INTERVAL_SECONDS)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+        try:
+            connected = await asyncio.to_thread(mt5_executor.is_connected)
+        except Exception:
+            logger.exception("❌ ERRORE WATCHDOG MT5 | Controllo connessione fallito")
+            continue
+
+        if connected:
+            if not MT5_READY:
+                logger.warning("🟢 MT5 WATCHDOG | Connessione tornata attiva.")
+                MT5_READY = True
+            continue
+
+        logger.warning("🔌 MT5 WATCHDOG | Connessione IPC persa, tento la riconnessione...")
+        MT5_READY = False
+
+        try:
+            reconnected = await asyncio.to_thread(mt5_executor.reconnect)
+        except Exception:
+            logger.exception("❌ MT5 WATCHDOG | Errore durante il tentativo di riconnessione")
+            continue
+
+        if reconnected:
+            logger.warning("✅ MT5 WATCHDOG | Riconnessione riuscita.")
+            MT5_READY = True
+        else:
+            logger.error("❌ MT5 WATCHDOG | Riconnessione fallita, riprovo al prossimo giro.")
+
+
+# ============================================================
 # COMANDI DA "MESSAGGI SALVATI"
 # ============================================================
 #
@@ -910,6 +954,7 @@ async def main():
     stop_event = asyncio.Event()
     monitor_task = asyncio.create_task(monitor_loop(stop_event))
     scheduler_task = asyncio.create_task(automatic_scheduler(stop_event))
+    watchdog_task = asyncio.create_task(mt5_watchdog(stop_event))
 
     logger.info("=" * 72)
     logger.info("🤖 GOLD MO BOT AVVIATO | Source=%s | Destination=%s", SOURCE_CHAT, DESTINATION_CHAT)
@@ -919,6 +964,7 @@ async def main():
         GOOD_MORNING_HOUR, GOOD_MORNING_MINUTE, DAILY_CLOSE_HOUR, DAILY_CLOSE_MINUTE,
         DAILY_REPORT_HOUR, DAILY_REPORT_MINUTE, WEEKLY_REPORT_HOUR, WEEKLY_REPORT_MINUTE,
     )
+    logger.info("🔌 MT5 watchdog: controllo connessione ogni %.0fs", MT5_WATCHDOG_INTERVAL_SECONDS)
     logger.info("=" * 72)
 
     try:
@@ -927,6 +973,7 @@ async def main():
         stop_event.set()
         await monitor_task
         await scheduler_task
+        await watchdog_task
 
 
 if __name__ == "__main__":

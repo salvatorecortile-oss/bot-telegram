@@ -27,6 +27,13 @@ def utc_now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
+# Parametri dell'ultima connect_mt5() riuscita, per processo. Usati da
+# reconnect() per ristabilire la connessione senza che il chiamante
+# debba ripassare login/password/server (persi dopo un'eventuale
+# disconnessione IPC del terminale).
+_last_connection_params = {}
+
+
 def connect_mt5(path, login, password, server, symbol, label="MT5"):
     print("=" * 72)
     print(f"🔌 CONNESSIONE {label}")
@@ -78,7 +85,43 @@ def connect_mt5(path, login, password, server, symbol, label="MT5"):
     print(f"Max lot   : {symbol_info.volume_max}")
     print(f"✅ {label} PRONTO.")
     print("=" * 72)
+
+    _last_connection_params.update(
+        path=path, login=login, password=password, server=server, symbol=symbol, label=label,
+    )
     return True
+
+
+def is_connected():
+    """
+    True se il terminale risponde ancora alle chiamate IPC. Un
+    terminal_info() che torna None (o un last_error() che segnala
+    IPC send failed) significa che il canale tra Python e MT5 si e'
+    rotto, anche se initialize() era andato a buon fine in passato.
+    """
+    try:
+        return mt5.terminal_info() is not None
+    except Exception:
+        return False
+
+
+def reconnect():
+    """
+    Ristabilisce la connessione usando gli stessi parametri dell'ultima
+    connect_mt5() riuscita in questo processo. mt5.shutdown() prima di
+    re-inizializzare forza un canale IPC pulito invece di tentare di
+    riusare quello rotto.
+    """
+    if not _last_connection_params:
+        logger.error("❌ Impossibile riconnettersi: nessuna connessione precedente registrata.")
+        return False
+
+    try:
+        mt5.shutdown()
+    except Exception:
+        pass
+
+    return connect_mt5(**_last_connection_params)
 
 
 def _symbol_info(symbol):
