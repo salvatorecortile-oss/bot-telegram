@@ -43,11 +43,14 @@ Ogni notizia riceve un **punteggio**:
 | Ogni fonte in più che riporta la stessa notizia | +10 (max +30) |
 | Parla di oro | +10 |
 
-- punteggio ≥ `INSTANT_THRESHOLD` (85) → inviata **subito**
+- punteggio ≥ `INSTANT_THRESHOLD` (95) → inviata **subito**
 - punteggio ≥ `RECAP_THRESHOLD` (60) → entra nel **riepilogo delle 6:00**
 - sotto → **scartata**
 
-La stessa notizia riportata da più fonti viene inviata **una volta sola**.
+La stessa notizia riportata da più fonti viene inviata **una volta sola**, e prima di ogni
+ULTIM'ORA il bot controlla che non parli di un fatto già inviato nelle ultime 24 ore.
+Se nello stesso momento ci sono più notizie importanti, parte **solo la più importante**:
+le altre finiscono nel riepilogo del mattino.
 Gossip, sport, articoli "previsioni prezzo", spiegoni ("How…?", "Why…"), trascrizioni,
 risultati aziendali e necrologi vengono sempre scartati.
 Quante notizie arrivano al massimo:
@@ -110,8 +113,8 @@ da quel momento invia solo quelle nuove.
 
 ## Regolazioni utili (`.env`)
 
-- Troppe notizie istantanee? Alza `INSTANT_THRESHOLD` (es. 95) o abbassa `MAX_ALERTS_PER_DAY`.
-- Troppo poche? Abbassa `INSTANT_THRESHOLD` (es. 75).
+- Troppe notizie istantanee? Alza `INSTANT_THRESHOLD` (es. 105) o abbassa `MAX_ALERTS_PER_DAY`.
+- Troppo poche? Abbassa `INSTANT_THRESHOLD` (es. 85).
 - Vuoi silenzio di notte? `QUIET_HOURS=23-6`.
 - Orario del buongiorno: `MORNING_HOUR` e `MORNING_MINUTE`.
 - Testi del buongiorno e formato dei messaggi: `messages.py`.

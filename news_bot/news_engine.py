@@ -92,6 +92,8 @@ class NewsEngine:
     def instant_candidates(self, story_ids, now=None):
         """Storie da inviare subito, dalla più importante."""
         now = now or time.time()
+        already_sent = [classifier.keywords(t)
+                        for t in self.storage.sent_titles_since(now - 24 * 3600)]
         out = []
         for sid in story_ids:
             story = self.storage.story(sid)
@@ -101,6 +103,12 @@ class NewsEngine:
             if info is None or info["score"] < config.INSTANT_THRESHOLD:
                 continue
             if info["published"] < now - config.MAX_INSTANT_AGE_HOURS * 3600:
+                continue
+            # Mai due ULTIM'ORA sullo stesso fatto nelle ultime 24 ore.
+            words = set()
+            for row in self.storage.story_items(sid):
+                words |= classifier.keywords(row["title"])
+            if any(classifier.similar_story(words, other) for other in already_sent):
                 continue
             out.append(info)
         out.sort(key=lambda i: i["score"], reverse=True)

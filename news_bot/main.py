@@ -102,28 +102,37 @@ class NewsBot:
         since = time.time() - config.MAX_INSTANT_AGE_HOURS * 3600
         recent_ids = [s["id"] for s in self.storage.stories_since(since)]
         midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-        for info in self.engine.instant_candidates(recent_ids):
-            # MAX_ALERTS_PER_DAY=0 vuol dire nessun limite.
-            if (config.MAX_ALERTS_PER_DAY > 0
-                    and self.storage.alerts_sent_since(midnight) >= config.MAX_ALERTS_PER_DAY):
-                log.info("Già inviate %d ultim'ora oggi: le altre vanno nel riepilogo di domani.",
-                         config.MAX_ALERTS_PER_DAY)
-                break
-            title_it = await asyncio.to_thread(to_italian, info["title"])
-            summary_it = await asyncio.to_thread(to_italian, info["summary"]) if info["summary"] else ""
-            text = messages.format_alert(
-                info["level"], info["category"], title_it, summary_it,
-                info["source"], info["num_sources"], info["link"],
-            )
-            try:
-                await self.send(text)
-            except errors.RPCError as exc:
-                log.error("Telegram non accetta il messaggio nel canale %s: %s. "
-                          "Controlla NEWS_CHANNEL e che il tuo account possa scriverci.",
-                          config.NEWS_CHANNEL, exc.__class__.__name__)
-                return
-            self.storage.mark_sent(info["story_id"], time.time())
-            log.info("Inviata (score %d): %s", info["score"], info["title"])
+        candidates = self.engine.instant_candidates(recent_ids)
+        if not candidates:
+            return
+        # Se arrivano più notizie importanti insieme, parte solo la più importante.
+        # Le altre non vengono più inviate come ULTIM'ORA: restano per il riepilogo.
+        best, others = candidates[0], candidates[1:]
+        for info in others:
+            self.storage.mark_sent(info["story_id"], 0)
+            log.info("Saltata (insieme a una più importante, score %d): %s",
+                     info["score"], info["title"])
+        # MAX_ALERTS_PER_DAY=0 vuol dire nessun limite.
+        if (config.MAX_ALERTS_PER_DAY > 0
+                and self.storage.alerts_sent_since(midnight) >= config.MAX_ALERTS_PER_DAY):
+            log.info("Già inviate %d ultim'ora oggi: le altre vanno nel riepilogo di domani.",
+                     config.MAX_ALERTS_PER_DAY)
+            return
+        title_it = await asyncio.to_thread(to_italian, best["title"])
+        summary_it = await asyncio.to_thread(to_italian, best["summary"]) if best["summary"] else ""
+        text = messages.format_alert(
+            best["level"], best["category"], title_it, summary_it,
+            best["source"], best["num_sources"], best["link"],
+        )
+        try:
+            await self.send(text)
+        except errors.RPCError as exc:
+            log.error("Telegram non accetta il messaggio nel canale %s: %s. "
+                      "Controlla NEWS_CHANNEL e che il tuo account possa scriverci.",
+                      config.NEWS_CHANNEL, exc.__class__.__name__)
+            return
+        self.storage.mark_sent(best["story_id"], time.time())
+        log.info("Inviata (score %d): %s", best["score"], best["title"])
 
     async def news_loop(self):
         while True:

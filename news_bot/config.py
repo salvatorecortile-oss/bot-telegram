@@ -55,10 +55,10 @@ QUIET_HOURS = os.getenv("QUIET_HOURS", "").strip()
 # =========================
 # FILTRO IMPORTANZA
 # =========================
-INSTANT_THRESHOLD = int(os.getenv("INSTANT_THRESHOLD", "85"))
+INSTANT_THRESHOLD = int(os.getenv("INSTANT_THRESHOLD", "95"))
 RECAP_THRESHOLD = int(os.getenv("RECAP_THRESHOLD", "60"))
 # Quante notizie "ULTIM'ORA" al massimo al giorno (dalla mezzanotte). 0 = nessun limite.
-# Nessuna attesa tra una e l'altra: se ne escono due a 2 minuti di distanza, partono entrambe.
+# Se in un controllo ci sono più notizie importanti insieme, parte solo la più importante.
 MAX_ALERTS_PER_DAY = int(os.getenv("MAX_ALERTS_PER_DAY", "5"))
 # Quante notizie al massimo nel riepilogo delle 6:00.
 RECAP_MAX_ITEMS = int(os.getenv("RECAP_MAX_ITEMS", "5"))

@@ -102,6 +102,14 @@ class Storage:
         self.db.execute("UPDATE stories SET sent_at=? WHERE id=?", (when, story_id))
         self.db.commit()
 
+    def sent_titles_since(self, since):
+        """Titoli (di tutte le fonti) delle storie inviate come ULTIM'ORA."""
+        rows = self.db.execute(
+            "SELECT items.title FROM items JOIN stories ON stories.id = items.story_id "
+            "WHERE stories.sent_at>=?", (max(since, 1),)
+        ).fetchall()
+        return [r["title"] for r in rows]
+
     def alerts_sent_since(self, since):
         # sent_at = 0 indica "segnata come già vista al primo avvio", non un invio reale.
         row = self.db.execute(

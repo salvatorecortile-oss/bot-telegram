@@ -283,3 +283,14 @@ def same_story(words_a, words_b):
     return (common >= 3
             and common / min(len(words_a), len(words_b)) >= 0.6
             and common / max(len(words_a), len(words_b)) >= 0.4)
+
+
+def similar_story(words_a, words_b):
+    """
+    Confronto più largo di same_story, usato prima di mandare un'ULTIM'ORA:
+    basta che metà delle parole importanti coincida per considerarla un doppione.
+    """
+    if not words_a or not words_b:
+        return False
+    common = len(words_a & words_b)
+    return common >= 3 and common / min(len(words_a), len(words_b)) >= 0.5

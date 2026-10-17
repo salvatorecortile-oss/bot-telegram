@@ -65,8 +65,9 @@ def test_real_headlines():
         assert score(title, tier, sources) < config.RECAP_THRESHOLD, title
     instant = [
         ("Fed cuts rates by 50 basis points in surprise move", 1, 3),
-        ("Fed holds rates steady, Powell signals cuts later this year", 1, 2),
-        ("US CPI rises 0.4% in September, above expectations", 1, 2),
+        # con soglia 95 i dati "high" partono quando li confermano almeno 3 testate
+        ("Fed holds rates steady, Powell signals cuts later this year", 1, 3),
+        ("US CPI rises 0.4% in September, above expectations", 1, 3),
         ("Gold hits record high above $4,500 as Iran tensions escalate", 2, 2),
         ("Iran launches missiles at US base in Iraq", 1, 2),
     ]
@@ -120,7 +121,7 @@ def test_engine():
         assert engine.instant_candidates(t1) == []
         # ...ma se altre due fonti la confermano, diventa importante.
         t2 = engine.ingest([
-            item("b", "Israeli airstrikes hit southern Lebanon overnight, officials say", "BBC", tier=2),
+            item("b", "Israeli airstrikes hit southern Lebanon overnight, officials say", "Reuters", tier=1),
             item("c", "Airstrikes hit southern Lebanon overnight", "Al Jazeera", tier=2),
         ])
         assert t1 == t2, "le tre notizie devono essere la stessa storia"
@@ -141,6 +142,27 @@ def test_engine():
         titles = [r["title"] for r in recap]
         assert not any("Lebanon" in t for t in titles), "già inviata come ULTIM'ORA"
         assert "Celebrity wedding photos" not in titles
+        storage.db.close()
+
+
+def test_no_duplicate_alerts():
+    """Mai due ULTIM'ORA sullo stesso fatto, anche se i titoli sono diversi."""
+    with tempfile.TemporaryDirectory() as tmp:
+        storage = Storage(Path(tmp) / "t.db")
+        engine = NewsEngine(storage)
+        t1 = engine.ingest([
+            item("a", "Iran launches missiles at US base in Iraq", "Reuters", tier=1),
+            item("b", "Iran fires missiles at US base in Iraq", "AP News", tier=1),
+        ])
+        first = engine.instant_candidates(t1)
+        assert len(first) == 1
+        storage.mark_sent(first[0]["story_id"], time.time())
+        # Un'ora dopo un'altra testata scrive lo stesso fatto con parole diverse
+        t2 = engine.ingest([
+            item("c", "US base in Iraq hit by Iranian missiles, Pentagon says", "CNN", tier=2),
+            item("d", "Pentagon: Iranian missiles hit US base in Iraq", "BBC", tier=2),
+        ])
+        assert engine.instant_candidates(t2) == [], "doppione di una ULTIM'ORA già inviata"
         storage.db.close()
 
 
@@ -201,6 +223,6 @@ def test_messages():
 
 
 if __name__ == "__main__":
-    for test in (test_classifier, test_real_headlines, test_market_relevance, test_parse_feed, test_engine, test_translator, test_calendar, test_messages):
+    for test in (test_classifier, test_real_headlines, test_market_relevance, test_parse_feed, test_engine, test_no_duplicate_alerts, test_translator, test_calendar, test_messages):
         test()
         print("OK", test.__name__)
