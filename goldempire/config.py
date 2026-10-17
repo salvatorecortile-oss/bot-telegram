@@ -39,8 +39,8 @@ SESSION_NAME = os.getenv("TELEGRAM_SESSION_NAME", "goldempire_session")
 SOURCE_CHAT = int(os.getenv("TELEGRAM_SOURCE_CHAT", "0") or 0)
 DESTINATION_CHAT = int(os.getenv("TELEGRAM_DESTINATION_CHAT", "0") or 0)
 
-# Comandi da "Messaggi salvati" (es. gold_status, gold_pausa ...).
-COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "gold_").strip().lower()
+# Comandi da "Messaggi salvati" (es. bot3_status, bot3_pausa ...). Non usare bot2_ (e' dell'altro bot).
+COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "bot3_").strip().lower()
 
 # =========================
 # MT5

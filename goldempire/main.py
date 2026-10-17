@@ -38,7 +38,15 @@ from config import (
     SOURCE_CHAT,
     TRADING_ENABLED,
 )
-from messages import calculate_pips, classify_stop_close, help_message
+from messages import (
+    calculate_pips,
+    classify_stop_close,
+    help_message,
+    paused_message,
+    play_message,
+    restart_message,
+    stopped_message,
+)
 from signal_parser import parse_signal
 
 
@@ -397,10 +405,13 @@ async def close_all_open_trades():
     return closed, errors
 
 
+STATE_LABELS = {"RUNNING": "▶️ ATTIVO", "PAUSED": "⏸️ IN PAUSA", "STOPPED": "🛑 FERMATO"}
+
+
 def status_text():
     rows = db.get_open_signals()
     lines = [
-        f"<b>STATO BOT GOLD EMPIRE:</b> {BOT_STATE}",
+        f"<b>STATO BOT:</b> {STATE_LABELS.get(BOT_STATE, BOT_STATE)}",
         f"<b>MT5:</b> {'collegato' if MT5_READY else ('modalita TEST' if not TRADING_ENABLED else 'NON collegato')}",
         f"<b>Operazioni aperte ({len(rows)}):</b>",
     ]
@@ -431,22 +442,18 @@ async def saved_messages_handler(event):
     try:
         if command == "play":
             BOT_STATE = "RUNNING"
-            await event.reply("✅ <b>BOT GOLD EMPIRE ATTIVO</b>", parse_mode="html")
+            await event.reply(play_message(COMMAND_PREFIX), parse_mode="html")
         elif command == "pausa":
             BOT_STATE = "PAUSED"
-            await event.reply(
-                "⏸️ <b>BOT GOLD EMPIRE IN PAUSA</b>\nNessun nuovo trade, gli aperti restano gestiti.",
-                parse_mode="html",
-            )
+            await event.reply(paused_message(COMMAND_PREFIX), parse_mode="html")
         elif command == "stop":
             closed, errors = await close_all_open_trades()
             BOT_STATE = "STOPPED"
-            await event.reply(
-                f"🛑 <b>BOT GOLD EMPIRE FERMATO</b>\nPosizioni chiuse: {closed}"
-                + (f"\n⚠️ Errori: {errors}" if errors else "")
-                + f"\nScrivi {COMMAND_PREFIX}play per ripartire.",
-                parse_mode="html",
-            )
+            await event.reply(stopped_message(COMMAND_PREFIX, closed, errors), parse_mode="html")
+        elif command == "riavvio":
+            closed, errors = await close_all_open_trades()
+            BOT_STATE = "RUNNING"
+            await event.reply(restart_message(COMMAND_PREFIX, closed, errors), parse_mode="html")
         elif command in {"report", "reportw", "reportm"}:
             kind = {"report": "daily", "reportw": "weekly", "reportm": "monthly"}[command]
             await send_text(scheduled_text(kind, reports.now_italy().date()))

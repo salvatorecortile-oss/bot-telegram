@@ -182,15 +182,76 @@ GOOD_MORNING_MESSAGE_TEMPLATE = (
 # COMANDI (Messaggi salvati)
 # ============================================================
 
+HELP_MESSAGE_TEMPLATE = (
+    "📋 <b>COMANDI DISPONIBILI {name}</b>\n\n"
+    "▶️ <b>{p}play</b> — Il bot riparte al 100%\n"
+    "🛑 <b>{p}stop</b> — Chiude tutte le posizioni a mercato e ferma "
+    "completamente il bot (niente più ascolto né messaggi nel canale)\n"
+    "🔄 <b>{p}riavvio</b> — Come {p}stop e subito dopo come {p}play\n"
+    "⏸️ <b>{p}pausa</b> — Non copia né apre nuovi trade, ma lascia gestite "
+    "da MT5 le posizioni già aperte\n"
+    "📊 <b>{p}status</b> — Stato attuale del bot + posizioni aperte con "
+    "il profitto/perdita di ciascuna\n"
+    "📈 <b>{p}report</b> — Invia subito nel canale il report giornaliero\n"
+    "📅 <b>{p}reportw</b> — Invia subito nel canale il report settimanale\n"
+    "🗓️ <b>{p}reportm</b> — Invia subito nel canale il report mensile\n"
+    "❓ <b>{p}comandi</b> — Mostra questo elenco"
+)
+
+PLAY_MESSAGE_TEMPLATE = (
+    "✅ <b>{name} ATTIVO AL 100%</b>\n"
+    "Ascolto segnali e apro nuovi trade normalmente."
+)
+
+PAUSED_MESSAGE_TEMPLATE = (
+    "⏸️ <b>{name} IN PAUSA</b>\n"
+    "Nessun nuovo trade verrà aperto.\n"
+    "Le posizioni già aperte continuano a essere gestite."
+)
+
+STOPPED_MESSAGE_TEMPLATE = (
+    "🛑 <b>{name} FERMATO</b>\n"
+    "Posizioni chiuse: {closed}\n"
+    "{errors_line}"
+    "Non ascolto più messaggi e non invio altro nel canale finché non ricevo {p}play."
+)
+
+RESTART_MESSAGE_TEMPLATE = (
+    "🔄 <b>{name} RIAVVIATO</b>\n"
+    "Posizioni chiuse: {closed}\n"
+    "{errors_line}"
+    "Di nuovo operativo al 100%: ascolto segnali e apro nuovi trade normalmente."
+)
+
+
+def bot_name(prefix):
+    """Nome mostrato nei messaggi dei comandi: dal prefisso (bot3_ -> BOT3)."""
+    return prefix.strip("_ ").upper() or "BOT"
+
+
 def help_message(prefix):
-    return (
-        "📋 <b>COMANDI BOT GOLD EMPIRE</b>\n\n"
-        f"▶️ <b>{prefix}play</b> — Il bot riparte al 100%\n"
-        f"⏸️ <b>{prefix}pausa</b> — Non apre nuovi trade, gestisce quelli aperti\n"
-        f"🛑 <b>{prefix}stop</b> — Chiude tutte le posizioni del bot e si ferma\n"
-        f"📊 <b>{prefix}status</b> — Stato del bot e posizioni aperte\n"
-        f"📈 <b>{prefix}report</b> — Invia subito nel canale il report giornaliero\n"
-        f"📅 <b>{prefix}reportw</b> — Invia subito nel canale il report settimanale\n"
-        f"🗓️ <b>{prefix}reportm</b> — Invia subito nel canale il report mensile\n"
-        f"❓ <b>{prefix}comandi</b> — Mostra questo elenco"
+    return HELP_MESSAGE_TEMPLATE.format(p=prefix, name=bot_name(prefix))
+
+
+def play_message(prefix):
+    return PLAY_MESSAGE_TEMPLATE.format(name=bot_name(prefix))
+
+
+def paused_message(prefix):
+    return PAUSED_MESSAGE_TEMPLATE.format(name=bot_name(prefix))
+
+
+def _errors_line(errors):
+    return f"⚠️ Errori chiusura: {errors}\n" if errors else ""
+
+
+def stopped_message(prefix, closed, errors):
+    return STOPPED_MESSAGE_TEMPLATE.format(
+        name=bot_name(prefix), p=prefix, closed=closed, errors_line=_errors_line(errors),
+    )
+
+
+def restart_message(prefix, closed, errors):
+    return RESTART_MESSAGE_TEMPLATE.format(
+        name=bot_name(prefix), closed=closed, errors_line=_errors_line(errors),
     )

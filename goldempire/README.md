@@ -65,10 +65,10 @@ Quando è tutto ok metti `TRADING_ENABLED=true`.
 Se il PC era spento all'orario previsto, il messaggio parte appena il bot si riavvia (entro 3 ore). Ogni messaggio parte una sola volta.
 I testi si modificano in `messages.py`.
 
-## Comandi (scrivili in "Messaggi salvati" di Telegram)
+## Comandi (scrivili in "Messaggi salvati" di Telegram; prefisso in `COMMAND_PREFIX` del .env, NON usare `bot2_` che è dell'altro bot)
 
-`gold_play`, `gold_pausa`, `gold_stop` (chiude tutte le posizioni del bot e si ferma), `gold_status`,
-`gold_report` / `gold_reportw` / `gold_reportm` (invia subito il report giornaliero / settimanale / mensile), `gold_comandi`.
+`bot3_play`, `bot3_pausa`, `bot3_stop` (chiude tutte le posizioni del bot e si ferma), `bot3_riavvio` (chiude tutto e riparte), `bot3_status`,
+`bot3_report` / `bot3_reportw` / `bot3_reportm` (invia subito il report giornaliero / settimanale / mensile), `bot3_comandi`.
 
 ## Test (senza Telegram né MT5)
 
