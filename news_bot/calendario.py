@@ -11,7 +11,7 @@ SPIEGAZIONI e la funzione format_calendar() qui sotto.
 """
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import escape as _html_escape
 from zoneinfo import ZoneInfo
 
@@ -177,14 +177,23 @@ def _day(when):
     return f"{GIORNI[when.weekday()]} {when.day}"
 
 
-def _week_range(events, now):
-    if events:
-        first, last = events[0]["when"], events[-1]["when"]
-    else:
-        first = last = now
+def _week_range(now):
+    """Settimana corrente da lunedì a venerdì, es. '19 – 23 ottobre 2026'."""
+    first = (now - timedelta(days=now.weekday())).date()
+    last = first + timedelta(days=4)
     if first.month == last.month:
         return f"{first.day} – {last.day} {MESI[last.month - 1]} {last.year}"
     return f"{first.day} {MESI[first.month - 1]} – {last.day} {MESI[last.month - 1]} {last.year}"
+
+
+def _numbers(e):
+    """'Previsione 225K · Precedente 219K' (vuoto se il calendario non li ha)."""
+    numbers = []
+    if e["forecast"]:
+        numbers.append(f"Previsione {escape(_number(e['forecast']))}")
+    if e["previous"]:
+        numbers.append(f"Precedente {escape(_number(e['previous']))}")
+    return " · ".join(numbers)
 
 
 def format_calendar(events, now):
@@ -194,7 +203,7 @@ def format_calendar(events, now):
 
     lines = [
         "📅 <b>CALENDARIO ECONOMICO DELLA SETTIMANA</b> 🇺🇸",
-        f"<i>{_week_range(events, now)} · orari italiani</i>",
+        f"<i>{_week_range(now)} · orari italiani</i>",
     ]
 
     if not events:
@@ -207,13 +216,9 @@ def format_calendar(events, now):
     previous_key = None
     for e in high:
         lines += ["", f"• <b>{_day(e['when'])} ore {e['when']:%H:%M}</b> · {escape(italian_name(e['title']))}"]
-        numbers = []
-        if e["forecast"]:
-            numbers.append(f"Previsione {escape(_number(e['forecast']))}")
-        if e["previous"]:
-            numbers.append(f"Precedente {escape(_number(e['previous']))}")
+        numbers = _numbers(e)
         if numbers:
-            lines.append("  " + " · ".join(numbers))
+            lines.append("  " + numbers)
         text = explanation(e["title"])
         # Dati usciti alla stessa ora con la stessa spiegazione (es. CPI e CPI core):
         # la spiegazione si scrive una volta sola.
@@ -234,6 +239,9 @@ def format_calendar(events, now):
                 lines.append(f"  🏦 {escape(italian_name(e['title']))}")
             else:
                 lines.append(f"  {e['when']:%H:%M} · {escape(italian_name(e['title']))}")
+                numbers = _numbers(e)
+                if numbers:
+                    lines.append(f"          {numbers}")
 
     lines += ["", "Buona settimana di trading a tutti! 📈"]
     return "\n".join(lines)

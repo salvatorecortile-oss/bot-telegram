@@ -207,7 +207,11 @@ def test_calendar():
     assert "Festività: banche USA chiuse" in text
     assert "Discorso di Waller (membro Fed)" in text
     assert "ZEW" not in text and "Vendite al dettaglio" not in text
-    assert "12 – 16 ottobre 2026" in text
+    assert "12 – 16 ottobre 2026" in text, "sempre da lunedì a venerdì della settimana corrente"
+    assert "Previsione 225K · Precedente 219K" in text, "numeri anche per i dati arancioni"
+    # Anche se i dati sono solo giovedì e venerdì, il titolo mostra tutta la settimana
+    late = [e for e in events if e["when"].day >= 16]
+    assert "12 – 16 ottobre 2026" in calendario.format_calendar(late, events[0]["when"])
 
 
 def test_messages():
