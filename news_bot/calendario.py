@@ -34,7 +34,7 @@ TESTO_SEZIONE_IMPORTANTI = "🔴 <b>GLI APPUNTAMENTI PIÙ IMPORTANTI</b>"
 TESTO_NESSUN_IMPORTANTE = "Nessun dato ad alto impatto questa settimana."
 TESTO_SEZIONE_ALTRI = "🟠 <b>GLI ALTRI DATI DELLA SETTIMANA</b>"
 TESTO_NESSUN_DATO = "Nessun dato importante sul dollaro in programma questa settimana."
-TESTO_FINALE = "Buona settimana di trading a tutti! 📈"
+TESTO_FINALE = ""   # vuoto = nessun saluto finale (non cancellare la riga)
 # =====================================================================
 
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
@@ -258,7 +258,8 @@ def format_calendar(events, now):
                 if numbers:
                     lines.append(f"          {numbers}")
 
-    lines += ["", TESTO_FINALE]
+    if TESTO_FINALE:
+        lines += ["", TESTO_FINALE]
     return "\n".join(lines)
 
 
