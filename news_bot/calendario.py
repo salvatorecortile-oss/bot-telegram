@@ -6,8 +6,10 @@ I dati arrivano dal calendario gratuito di ForexFactory:
 Per ogni evento: titolo, valuta, data/ora, impatto (High/Medium/Low/Holiday),
 previsione e dato precedente.
 
-Per cambiare testi ed emoji del messaggio: modifica NOMI_ITALIANI,
-SPIEGAZIONI e la funzione format_calendar() qui sotto.
+Per cambiare il messaggio:
+- titolo, sezioni e saluto finale: le righe TESTO_... qui sotto
+- nomi dei dati in italiano: NOMI_ITALIANI
+- frasi "sopra/sotto le attese": SPIEGAZIONI
 """
 import logging
 import re
@@ -21,6 +23,19 @@ import config
 from messages import GIORNI, MESI
 
 log = logging.getLogger("news_bot")
+
+# =====================================================================
+#  TESTI DEL MESSAGGIO — modifica qui titolo, sezioni e saluto finale.
+#  <b>...</b> = grassetto, <i>...</i> = corsivo (formato di Telegram).
+# =====================================================================
+TESTO_TITOLO = "📅 <b>CALENDARIO ECONOMICO DELLA SETTIMANA</b> 🇺🇸"
+TESTO_SOTTOTITOLO = "<i>{settimana} · orari italiani</i>"   # {settimana} = "19 – 23 ottobre 2026"
+TESTO_SEZIONE_IMPORTANTI = "🔴 <b>GLI APPUNTAMENTI PIÙ IMPORTANTI</b>"
+TESTO_NESSUN_IMPORTANTE = "Nessun dato ad alto impatto questa settimana."
+TESTO_SEZIONE_ALTRI = "🟠 <b>GLI ALTRI DATI DELLA SETTIMANA</b>"
+TESTO_NESSUN_DATO = "Nessun dato importante sul dollaro in programma questa settimana."
+TESTO_FINALE = "Buona settimana di trading a tutti! 📈"
+# =====================================================================
 
 CALENDAR_URL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
 TZ = ZoneInfo(config.TIMEZONE)
@@ -202,17 +217,17 @@ def format_calendar(events, now):
     other = [e for e in events if e["impact"] != IMPATTO_ALTO]
 
     lines = [
-        "📅 <b>CALENDARIO ECONOMICO DELLA SETTIMANA</b> 🇺🇸",
-        f"<i>{_week_range(now)} · orari italiani</i>",
+        TESTO_TITOLO,
+        TESTO_SOTTOTITOLO.format(settimana=_week_range(now)),
     ]
 
     if not events:
-        lines += ["", "Nessun dato importante sul dollaro in programma questa settimana."]
+        lines += ["", TESTO_NESSUN_DATO]
         return "\n".join(lines)
 
-    lines += ["", "🔴 <b>GLI APPUNTAMENTI PIÙ IMPORTANTI</b>"]
+    lines += ["", TESTO_SEZIONE_IMPORTANTI]
     if not high:
-        lines += ["", "Nessun dato ad alto impatto questa settimana."]
+        lines += ["", TESTO_NESSUN_IMPORTANTE]
     previous_key = None
     for e in high:
         lines += ["", f"• <b>{_day(e['when'])} ore {e['when']:%H:%M}</b> · {escape(italian_name(e['title']))}"]
@@ -228,7 +243,7 @@ def format_calendar(events, now):
         previous_key = key
 
     if other:
-        lines += ["", "🟠 <b>GLI ALTRI DATI DELLA SETTIMANA</b>"]
+        lines += ["", TESTO_SEZIONE_ALTRI]
         current_day = None
         for e in other:
             day = _day(e["when"])
@@ -243,7 +258,7 @@ def format_calendar(events, now):
                 if numbers:
                     lines.append(f"          {numbers}")
 
-    lines += ["", "Buona settimana di trading a tutti! 📈"]
+    lines += ["", TESTO_FINALE]
     return "\n".join(lines)
 
 

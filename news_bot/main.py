@@ -62,19 +62,35 @@ class NewsBot:
         self.channel = None
 
     async def send(self, text):
+        """Pubblica il messaggio e ritorna i messaggi Telegram inviati."""
         if config.DRY_RUN:
             log.info("[DRY_RUN] Messaggio non inviato:\n%s", text)
-            return
+            return []
+        sent = []
         for part in messages.split_message(text):
             while True:
                 try:
-                    await self.client.send_message(
+                    sent.append(await self.client.send_message(
                         self.channel, part, parse_mode="html", link_preview=False
-                    )
+                    ))
                     break
                 except errors.FloodWaitError as exc:
                     log.warning("Telegram chiede di aspettare %s secondi", exc.seconds)
                     await asyncio.sleep(exc.seconds + 1)
+        return sent
+
+    async def pin_weekly(self, message):
+        """Fissa il calendario nuovo e toglie dai fissati quello della settimana prima."""
+        old_id = self.storage.get_meta("pinned_weekly_id")
+        try:
+            if old_id:
+                await self.client.unpin_message(self.channel, int(old_id))
+            await self.client.pin_message(self.channel, message, notify=False)
+            self.storage.set_meta("pinned_weekly_id", message.id)
+            log.info("Calendario fissato in alto nel canale.")
+        except errors.RPCError as exc:
+            log.warning("Non riesco a fissare il calendario (%s): serve il permesso di "
+                        "fissare i messaggi nel canale/gruppo.", exc.__class__.__name__)
 
     # ---------- notizie istantanee ----------
     async def poll_news(self):
@@ -192,8 +208,10 @@ class NewsBot:
                         and start <= now_local < start + timedelta(hours=1)
                         and self.storage.get_meta("last_weekly") != week_key):
                     text = await asyncio.to_thread(calendario.build_weekly_message, now_local)
-                    await self.send(text)
+                    sent = await self.send(text)
                     self.storage.set_meta("last_weekly", week_key)
+                    if sent and config.WEEKLY_PIN:
+                        await self.pin_weekly(sent[0])
                     log.info("Calendario economico della settimana inviato.")
             except Exception:
                 log.exception("Errore durante l'invio del calendario: riprovo tra 5 minuti")

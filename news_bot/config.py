@@ -48,6 +48,8 @@ WEEKLY_ENABLED = os.getenv("WEEKLY_ENABLED", "true").strip().lower() in {"1", "t
 WEEKLY_DAY = int(os.getenv("WEEKLY_DAY", "0"))
 WEEKLY_HOUR = int(os.getenv("WEEKLY_HOUR", "10"))
 WEEKLY_MINUTE = int(os.getenv("WEEKLY_MINUTE", "0"))
+# Fissa il calendario in alto nel canale (e toglie quello della settimana prima).
+WEEKLY_PIN = os.getenv("WEEKLY_PIN", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 POLL_SECONDS = int(os.getenv("POLL_SECONDS", "120"))
 QUIET_HOURS = os.getenv("QUIET_HOURS", "").strip()

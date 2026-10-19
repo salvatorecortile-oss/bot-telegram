@@ -18,7 +18,9 @@ Ogni **lunedì alle 10:00** il bot pubblica il calendario dei dati economici USA
 
 Prova senza pubblicare: `python prova_calendario.py` (con `--invia` lo pubblica nel canale).
 Giorno e ora si cambiano nel `.env` (`WEEKLY_DAY`, `WEEKLY_HOUR`, `WEEKLY_MINUTE`);
-`WEEKLY_ENABLED=false` lo disattiva. Testi e spiegazioni sono in `calendario.py`.
+`WEEKLY_ENABLED=false` lo disattiva. Il calendario viene **fissato** in alto nel canale
+(quello della settimana prima viene tolto dai fissati); `WEEKLY_PIN=false` lo evita.
+Testi e spiegazioni sono in `calendario.py`: le righe `TESTO_...` in cima al file.
 
 ## Da dove arrivano le notizie
 
