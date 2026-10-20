@@ -1,0 +1,58 @@
+; StraddleM1 v9 - OTTIMIZZAZIONE sul server FortunePrime-Live2 (spread reale ~48 nei tick)
+; Strategy Tester collegato al Live2: XAUUSD-P, M1, 2026.01.01 - 2026.10.19, tick reali, deposito 1000 USD, leva 1:500
+; Algoritmo genetico veloce, criterio "Custom max", forward 1/3. Spread gia' nei tick: InpTestExtraSpread=0
+; InpRebatePerLot=0: il punteggio e' solo il profitto vero (il rebate premierebbe chi fa piu' trade)
+; InpEquityFloor=500: i passaggi che perdono meta' conto vengono scartati
+; Base
+InpLots=0.01
+InpAutoStart=true
+InpMagic=52001
+; Distanze in punti (0 = automatico dall'ATR M1) - molto piu' larghe: lo spread deve pesare poco sul trade
+InpEntryPts=150||50||50||300||Y
+InpSLPts=90||30||30||210||Y
+InpBEPts=120||60||60||240||Y
+InpBELockPts=10
+InpTrailStartPts=200||100||100||400||Y
+InpTrailDistPts=100||50||50||250||Y
+InpMaxSpreadPts=0
+InpScaleRefATR=0||0||250||250||Y
+InpMinATRSpr=4||0||2||10||Y
+; Filtro laterale (lavora solo sui movimenti veri)
+InpBigOnly=true
+InpERPeriod=6
+InpERMin=0.5||0.3||0.2||0.7||Y
+InpBigK=1.0||0.6||0.4||1.4||Y
+InpBigSpreadMult=8||4||4||12||Y
+InpTrendSide=false
+InpActiveSec=20||20||20||60||Y
+InpMaxPerDir=1
+; Modalita' laterale (limit): spenta, nei test perde sempre
+InpRangeMode=false
+InpRangeBars=15
+InpRangeMaxER=0.25
+InpRangeMinSpr=8
+InpRangeSLPct=0.3
+InpRangeMaxSLPts=40
+InpRangeUseTP=false
+InpRangeTPPct=0.5
+; Uscita breakout fallito
+InpFailExit=true
+InpFailSec=35||10||25||60||Y
+; Filtro orario (ora di MT5). Fascia 1: fine 10 = spenta, fine 13 = 10-13 accesa
+InpUseSessions=true
+InpSess1Start=10
+InpSess1End=10||10||3||13||Y
+InpSess2Start=15
+InpSess2End=18
+; Registro
+InpLogCSV=false
+; Volume / IB
+InpRebatePerLot=0
+; Limiti giornalieri (valuta conto, 0 = off)
+InpMaxDailyLoss=10.0
+InpDailyTarget=0.0
+InpMaxTradesDay=0
+; Protezione capitale
+InpEquityFloor=500
+; Solo Strategy Tester
+InpTestExtraSpread=0
