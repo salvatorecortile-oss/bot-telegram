@@ -65,7 +65,37 @@ Risultato   −241,6 pips  ·  −24,16 $
 
 Valori per 0,01 lotti"""
 
+# Formato nuovo del canale (ottobre 2026).
+SIGNAL_2_BUY_NEW = """🟣 SIGNAL 2 – XAUUSD BUY
+
+📥 Ingresso: 4137,44
+
+🎯 TP1: 4163,40
+🎯 TP2: comunicato alla chiusura del TP1
+
+🛑 SL: 4131,13
+
+💰 TP1 a 0.01 lot = +25,96$
+❌ SL a 0.01 lot = -6,31$
+
+📏 Rischio consigliato: 2% del conto per segnale, contando TUTTE le gambe
+
+⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
+
 TESTS = [
+    (SIGNAL_2_BUY_NEW, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 2, "direction": "BUY",
+                        "entry": 4137.44, "sl": 4131.13, "tp": 4163.40, "targets_total": 2}),
+    (SIGNAL_2_BUY_NEW.replace("BUY", "SELL").replace("4163,40", "4100,00").replace("4131,13", "4150,00"),
+     {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 2, "direction": "SELL",
+      "entry": 4137.44, "sl": 4150.0, "tp": 4100.0, "targets_total": 2}),
+    ("🟣 SIGNAL 2 – TP1 RAGGIUNTO ✅", {"action": "TP_HIT", "symbol": "XAUUSD", "signal_no": 2,
+                                       "exit_price": None, "pips": None}),
+    ("🟣 SIGNAL 2 – SL HIT", {"action": "SL_HIT", "symbol": "XAUUSD", "signal_no": 2,
+                             "exit_price": None, "pips": None}),
+    ("🟣 SIGNAL 2 – BREAKEVEN\nNuovo SL: 4137,44", {"action": "BREAKEVEN", "symbol": "XAUUSD",
+                                                   "signal_no": 2, "new_sl": 4137.44}),
+    ("🟣 SIGNAL 2 – CHIUSO", {"action": "CLOSE", "symbol": "XAUUSD", "signal_no": 2,
+                             "exit_price": None, "pips": None}),
     (SIGNAL_2_SELL, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 2, "direction": "SELL",
                      "entry": 4204.38, "sl": 4214.33, "tp": 4169.15, "targets_total": 4}),
     (SIGNAL_2_TP, {"action": "TP_HIT", "symbol": "XAUUSD", "signal_no": 2,

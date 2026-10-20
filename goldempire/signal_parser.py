@@ -68,7 +68,7 @@ def _header(text):
 
 
 def _exit_and_pips(text):
-    exit_price = _number_after(r"\bUSCITA\b", text)
+    exit_price = _number_after(r"\b(?:USCITA|EXIT)\b", text)
     pips_match = re.search(
         r"\bRISULTATO\b\s*[:=]?\s*([-+]?\s*\d+(?:[.,]\d+)?)\s*PIPS?\b",
         text,
@@ -91,26 +91,35 @@ def parse_signal(text):
     upper_header = header.upper()
 
     # ------------------------------------------------------------
-    # APERTURA: VENDI/COMPRA + Ingresso + Stop + Obiettivo
+    # APERTURA. Due formati del canale:
+    #   "SIGNAL 2 ⬇️ VENDI XAUUSD" + Ingresso / Stop / Obiettivo (1)
+    #   "SIGNAL 2 – XAUUSD BUY"    + Ingresso: / TP1: / SL:
     # ------------------------------------------------------------
-    direction_match = re.search(r"\b(VENDI|COMPRA)\b", upper_header)
+    direction_match = re.search(r"\b(VENDI|COMPRA|SELL|BUY)\b", upper_header)
     if direction_match:
         # Solo XAUUSD: qualunque altro strumento viene ignorato.
         if not re.search(r"\bXAU\s*/?\s*USD\b", clean, re.IGNORECASE):
             return None
 
-        direction = "SELL" if direction_match.group(1) == "VENDI" else "BUY"
-        entry = _number_after(r"\bINGRESSO\b", clean)
-        sl = _number_after(r"\bSTOP\b", clean)
-        # "Obiettivo 4486,04" oppure "Obiettivo 1 4169,15": il "1" e' l'indice.
+        direction = "SELL" if direction_match.group(1) in {"VENDI", "SELL"} else "BUY"
+        entry = _number_after(r"\b(?:INGRESSO|ENTRATA|ENTRY)\b", clean)
+        # Il numero deve seguire subito l'etichetta: righe come
+        # "SL a 0.01 lot = -6,31$" non vengono confuse con lo stop.
+        sl = _number_after(r"\b(?:STOP\s*LOSS|STOP|SL)\b", clean)
+        # "Obiettivo 4486,04", "Obiettivo 1 4169,15", "TP1: 4163,40":
+        # si usa sempre il primo obiettivo.
         tp_match = re.search(
-            r"\bOBIETTIVO\b\s*(?:([1-9])\s+)?[:=]?\s*(" + _NUMBER + r")",
+            r"\b(?:OBIETTIVO|TAKE\s*PROFIT|TP)\s*(?:1\s*)?[:=]?\s*(" + _NUMBER + r")",
             clean,
             re.IGNORECASE,
         )
-        tp = _to_float(tp_match.group(2)) if tp_match else None
+        tp = _to_float(tp_match.group(1)) if tp_match else None
         targets_match = re.search(r"\bDI\s+(\d+)\s+OBIETTIVI\b", clean, re.IGNORECASE)
-        targets_total = int(targets_match.group(1)) if targets_match else 1
+        if targets_match:
+            targets_total = int(targets_match.group(1))
+        else:
+            tp_indexes = [int(n) for n in re.findall(r"\bTP\s*([1-9])\b", clean, re.IGNORECASE)]
+            targets_total = max(tp_indexes) if tp_indexes else 1
 
         if entry is None or sl is None or tp is None:
             return None
@@ -136,7 +145,10 @@ def parse_signal(text):
     # AGGIORNAMENTI (l'ordine dei controlli conta: "STOP A PAREGGIO"
     # va riconosciuto prima del semplice "STOP").
     # ------------------------------------------------------------
-    if re.search(r"\bOBIETTIVO\s+RAGGIUNTO\b", upper_header):
+    if re.search(
+        r"\bOBIETTIVO\s+RAGGIUNTO\b|\bTP\s*\d?\s*(?:RAGGIUNTO|HIT|PRESO|COLPITO|CENTRATO)\b",
+        upper_header,
+    ):
         exit_price, pips = _exit_and_pips(clean)
         return {
             "action": "TP_HIT",
@@ -146,15 +158,15 @@ def parse_signal(text):
             "pips": pips,
         }
 
-    if re.search(r"\bSTOP\s+A\s+PAREGGIO\b|\bPAREGGIO\b", upper_header):
+    if re.search(r"\bPAREGGIO\b|\bBREAK\s*-?\s*EVEN\b|\bBE\b", upper_header):
         return {
             "action": "BREAKEVEN",
             "symbol": SYMBOL,
             "signal_no": signal_no,
-            "new_sl": _number_after(r"\bNUOVO\s+STOP\b", clean),
+            "new_sl": _number_after(r"\bNUOVO\s+(?:STOP|SL)\b", clean),
         }
 
-    if re.search(r"\bCHIUSA\b", upper_header):
+    if re.search(r"\bCHIUS[AO]\b|\bCLOSED?\b", upper_header):
         exit_price, pips = _exit_and_pips(clean)
         return {
             "action": "CLOSE",
@@ -164,7 +176,7 @@ def parse_signal(text):
             "pips": pips,
         }
 
-    if re.search(r"\bSTOP\b", upper_header):
+    if re.search(r"\bSTOP\b|\bSL\b", upper_header):
         exit_price, pips = _exit_and_pips(clean)
         return {
             "action": "SL_HIT",
