@@ -1,6 +1,6 @@
 ; StraddleM1 v9 - test 0: controllo
 ; Come il backtest 2 (TrendSide=false, laterale acceso, due fasce) ma con deposito 1000: anno intero senza blocco a gennaio
-; Strategy Tester: XAUUSD-P, M1, 2026.01.01 - 2026.10.19, ogni tick su tick reali, deposito 1000 USD, leva 1:500
+; Strategy Tester sul server del conto live 48: XAUUSD, M1, 2026.01.01 - 2026.10.19, tick reali, deposito 1000 USD. Lo spread e' gia' nei tick: niente spread simulato
 ; Base
 InpLots=0.01
 InpAutoStart=true

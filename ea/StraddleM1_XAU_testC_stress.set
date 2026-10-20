@@ -1,6 +1,6 @@
-; StraddleM1 v9 - test C: stress spread
-; Come il test A con 15 punti di spread in piu' simulati (slippage e spread peggiori del tester)
-; Strategy Tester: XAUUSD-P, M1, 2026.01.01 - 2026.10.19, ogni tick su tick reali, deposito 1000 USD, leva 1:500
+; StraddleM1 v9 - test C: stress slippage
+; Come il test A con 5 punti di spread in piu' simulati (slippage del conto reale)
+; Strategy Tester sul server del conto live 48: XAUUSD, M1, 2026.01.01 - 2026.10.19, tick reali, deposito 1000 USD. Lo spread e' gia' nei tick: qui si aggiungono solo 5 punti di slippage
 ; Base
 InpLots=0.01
 InpAutoStart=true
@@ -53,4 +53,4 @@ InpMaxTradesDay=0
 ; Protezione capitale
 InpEquityFloor=0
 ; Solo Strategy Tester
-InpTestExtraSpread=15
+InpTestExtraSpread=5
