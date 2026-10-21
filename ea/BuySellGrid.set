@@ -16,6 +16,7 @@ TradingMode=0
 ; =========  Range Parameters =========
 StartHour=0
 time=1140
+CloseOutsideWindow=true
 ; === Gestione Lotti ===
 Lots=0.01
 LotsizeIncrement=0.01

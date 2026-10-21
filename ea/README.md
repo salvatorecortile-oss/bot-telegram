@@ -87,11 +87,11 @@ Ricostruito dai parametri di `buysell2.set` e dagli ordini del report dell'origi
 ## Come lavora
 
 - **Inizio ciclo:** con nessuna posizione aperta e dentro la finestra oraria, apre un **BUY e un SELL insieme** con `Lots`.
-- **Griglia:** ogni volta che il prezzo si sposta di un passo (`MinStep` punti, oppure `MinStepPerc` % con `SType = 1`) dal livello dell'ultima apertura, apre un'altra coppia buy + sell. Con `TradingMode = 1` apre solo nella direzione del passo: se sale un buy, se scende un sell.
+- **Griglia:** un solo buy e un solo sell per livello. Apre un lato quando non ha già una posizione dello stesso tipo a meno di un passo dal prezzo (`MinStep` punti, oppure `MinStepPerc` % con `SType = 1`). Quando il buy chiude in profitto un passo più su, riapre buy e sell insieme, come negli ordini dell'originale. Con `TradingMode = 1` apre solo nella direzione dell'ultimo passo: se sale un buy, se scende un sell.
 - **Chiusura singola:** ogni posizione che arriva a `+MinPosProfit` (valuta del conto, swap compreso) si chiude. Con 0,01 lotti sull'oro, 200 punti di passo = 2 $ = `MinPosProfit`.
 - **Chiusura del ciclo:** quando la somma di tutte le posizioni arriva a `+MinPosProfit` chiude tutto, perdenti comprese, e riparte subito con una nuova coppia (`ProfitCalcMode`: 0 = solo singole, 1 = solo ciclo, 2 = tutte e due).
 - **Stoploss:** perdita del ciclo, in valuta del conto, che chiude tutto. Con `0` non c'è nessuno stop, come nell'originale.
-- **Finestra oraria:** da `StartHour` per `time` minuti (1140 = 00:00–19:00, ora del server). Fuori finestra non apre niente, ma continua a chiudere.
+- **Finestra oraria:** da `StartHour` per `time` minuti (1140 = 00:00–19:00, ora del server). Con `CloseOutsideWindow = true` a fine finestra **chiude tutto com'è, anche in perdita**, e riparte il giorno dopo. Sono i gradini in discesa del grafico dell'originale, dove nessuna posizione dura più di 17:36. Con `false` fuori finestra non apre niente ma continua a gestire le posizioni.
 - **Lotto** (`LotCalcMode`):
   - 0 = fisso;
   - 1 = `Lots` + `LotsizeIncrement` ogni `LotsizeIncrementMultiple` posizioni già aperte nella stessa direzione;

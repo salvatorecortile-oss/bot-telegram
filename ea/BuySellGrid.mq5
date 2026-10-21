@@ -3,18 +3,21 @@
 //|  Griglia buy + sell (conto hedging), ricostruita dai parametri   |
 //|  del file buysell2.set e dagli ordini del report di Buysell 2.0: |
 //|  - a inizio ciclo apre un BUY e un SELL insieme                  |
-//|  - ogni volta che il prezzo si sposta di un passo (MinStep) dal  |
-//|    livello dell'ultima apertura, apre un'altra coppia buy + sell |
+//|  - griglia: un solo buy e un solo sell per livello; quando non   |
+//|    c'e' una posizione dello stesso tipo a meno di un passo        |
+//|    (MinStep) dal prezzo, la apre                                 |
 //|  - ogni posizione che arriva a +MinPosProfit si chiude da sola   |
 //|  - quando la somma di tutte le posizioni arriva a +MinPosProfit  |
 //|    chiude tutto il ciclo (anche le perdenti) e riparte           |
+//|  - a fine finestra oraria chiude tutto com'e' (anche in perdita) |
+//|    e riparte il giorno dopo (CloseOutsideWindow)                 |
 //|  - Stoploss (valuta conto) chiude tutto se la perdita del ciclo  |
 //|    arriva a quel valore (0 = nessuno stop, come nell'originale)  |
 //|  I nomi dei parametri sono gli stessi dell'originale, quindi il  |
 //|  file .set dell'originale si carica direttamente.                |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.00"
+#property version   "1.10"
 #property description "Griglia buy+sell su conto hedging (ricostruzione di Buysell 2.0 dai suoi parametri)"
 
 #include <Trade\Trade.mqh>
@@ -62,6 +65,7 @@ input TradingModeType TradingMode    = TM_BOTH;           // Modalita'
 input group "========= Range Parameters ========="
 input int             StartHour      = 0;                 // Ora di inizio (ora del server)
 input int             time           = 1140;              // Durata della finestra in minuti (1140 = fino alle 19:00)
+input bool            CloseOutsideWindow = true;          // A fine finestra chiude tutto (anche in perdita) e riparte il giorno dopo
 
 input group "=== Gestione Lotti ==="
 input double          Lots                     = 0.01;      // Lotto base
@@ -161,6 +165,16 @@ void ManageExits()
    if(-total > g_maxDD)
       g_maxDD = -total;
 
+   // nell'originale nessuna posizione supera le 17:36 di durata con una
+   // finestra di 19 ore: a fine finestra il ciclo si chiude com'e'
+   if(CloseOutsideWindow && !InWindow())
+     {
+      Log(StringFormat("Fine finestra: chiude %d posizioni, %.2f", n, total));
+      CloseAll();
+      g_lastPx = 0;
+      return;
+     }
+
    if(Stoploss > 0 && total <= -Stoploss)
      {
       Log(StringFormat("STOP ciclo: %d posizioni, %.2f", n, total));
@@ -211,14 +225,24 @@ void ManageEntries(double bid)
       return;
      }
 
-   if(n > 0 && g_lastPx == 0)
-      g_lastPx = LastOpenPrice();   // dopo un riavvio riparte dall'ultima apertura
+   double step = StepPrice(bid);
+   double ask  = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
 
-   if(n == 0 && TradingMode == TM_BOTH)
+   // buy + sell: un solo buy e un solo sell per livello, cioe' apre un lato
+   // solo se non ha gia' una posizione dello stesso tipo a meno di un passo.
+   // Partenza: coppia subito; poi, quando il buy chiude a +profitto un passo
+   // piu' su, riapre buy e sell insieme (come negli ordini dell'originale)
+   if(TradingMode == TM_BOTH)
      {
-      OpenLevel(bid, true, true, nBuy, nSell);
+      bool buy  = !HasNear(POSITION_TYPE_BUY,  ask, step);
+      bool sell = !HasNear(POSITION_TYPE_SELL, bid, step);
+      if(buy || sell)
+         OpenLevel(bid, buy, sell, nBuy, nSell);
       return;
      }
+
+   if(n > 0 && g_lastPx == 0)
+      g_lastPx = LastOpenPrice();   // dopo un riavvio riparte dall'ultima apertura
    if(g_lastPx == 0)
      {
       g_lastPx = bid;               // direzionale: aspetta il primo passo da qui
@@ -226,13 +250,14 @@ void ManageEntries(double bid)
      }
 
    double move = bid - g_lastPx;
-   if(MathAbs(move) < StepPrice(bid))
+   if(MathAbs(move) < step)
       return;
-
-   if(TradingMode == TM_BOTH)
-      OpenLevel(bid, true, true, nBuy, nSell);
+   if(move > 0 && !HasNear(POSITION_TYPE_BUY, ask, step))
+      OpenLevel(bid, true, false, nBuy, nSell);
+   else if(move < 0 && !HasNear(POSITION_TYPE_SELL, bid, step))
+      OpenLevel(bid, false, true, nBuy, nSell);
    else
-      OpenLevel(bid, move > 0, move < 0, nBuy, nSell);
+      g_lastPx = bid;               // livello gia' occupato: conta il passo e va avanti
   }
 
 void OpenLevel(double bid, bool buy, bool sell, int nBuy, int nSell)
@@ -300,6 +325,20 @@ bool InWindow()
    if(end <= 1440)
       return now >= start && now < end;
    return now >= start || now < end - 1440;
+  }
+
+// c'e' gia' una posizione di quel tipo a meno di "step" da price?
+bool HasNear(ENUM_POSITION_TYPE type, double price, double step)
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong t = PositionGetTicket(i);
+      if(!IsMine(t) || PositionGetInteger(POSITION_TYPE) != type)
+         continue;
+      if(MathAbs(PositionGetDouble(POSITION_PRICE_OPEN) - price) < step - _Point / 2)
+         return true;
+     }
+   return false;
   }
 
 bool IsMine(ulong ticket)
