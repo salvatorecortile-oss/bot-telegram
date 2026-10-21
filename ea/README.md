@@ -77,3 +77,27 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 - **`InpTestExtraSpread`** (solo nello Strategy Tester): simula punti di spread in più sui tick reali. Ad esempio con 30 i tick Demo2 a 18 diventano un conto a 48. Il bot si comporta come con lo spread largo: entrata, break-even e filtri. Il costo in più però non compare nel report standard: lo trovi nel risultato **Custom** e nella riga `RISULTATO` del journal.
 - **Risultato Custom** (ottimizzazione con "Custom max"): profitto meno lo spread simulato, più il rebate stimato (`InpRebatePerLot` × lotti). Un passaggio che tocca il minimo di capitale viene scartato.
 - Set: `StraddleM1_XAU_spread48.set` (dal vivo) e `StraddleM1_XAU_spread48_ottimizza.set` (ottimizzazione).
+
+---
+
+# BuySellGrid — griglia buy + sell (ricostruzione di Buysell 2.0)
+
+Ricostruito dai parametri di `buysell2.set` e dagli ordini del report dell'originale. Il file `.ex5` non è stato decompilato. I parametri hanno gli stessi nomi dell'originale, quindi anche il suo `.set` si carica direttamente.
+
+## Come lavora
+
+- **Inizio ciclo:** con nessuna posizione aperta e dentro la finestra oraria, apre un **BUY e un SELL insieme** con `Lots`.
+- **Griglia:** ogni volta che il prezzo si sposta di un passo (`MinStep` punti, oppure `MinStepPerc` % con `SType = 1`) dal livello dell'ultima apertura, apre un'altra coppia buy + sell. Con `TradingMode = 1` apre solo nella direzione del passo: se sale un buy, se scende un sell.
+- **Chiusura singola:** ogni posizione che arriva a `+MinPosProfit` (valuta del conto, swap compreso) si chiude. Con 0,01 lotti sull'oro, 200 punti di passo = 2 $ = `MinPosProfit`.
+- **Chiusura del ciclo:** quando la somma di tutte le posizioni arriva a `+MinPosProfit` chiude tutto, perdenti comprese, e riparte subito con una nuova coppia (`ProfitCalcMode`: 0 = solo singole, 1 = solo ciclo, 2 = tutte e due).
+- **Stoploss:** perdita del ciclo, in valuta del conto, che chiude tutto. Con `0` non c'è nessuno stop, come nell'originale.
+- **Finestra oraria:** da `StartHour` per `time` minuti (1140 = 00:00–19:00, ora del server). Fuori finestra non apre niente, ma continua a chiudere.
+- **Lotto** (`LotCalcMode`):
+  - 0 = fisso;
+  - 1 = `Lots` + `LotsizeIncrement` ogni `LotsizeIncrementMultiple` posizioni già aperte nella stessa direzione;
+  - 2 = come 1, con `Lots` per ogni 1.000 di saldo.
+  Il limite è `MaxLotsize` (0 = nessun limite).
+- **Altro:** `MaxSpread` e `MaxSlippage` in punti, `newBarOnly` apre solo a inizio candela di `Timeframe`. `ExportHistory` salva i deal in `MQL5/Files/BuySellGrid_<simbolo>.csv`.
+- **Conto:** funziona solo su conti **hedging**.
+
+`BuySellGrid.set` usa gli stessi valori dell'originale, con lotto fisso (`LotCalcMode = 0`).

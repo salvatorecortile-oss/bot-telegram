@@ -1,0 +1,34 @@
+; BuySellGrid - stessi valori di buysell2.set (Buysell 2.0)
+; unica differenza: LotCalcMode=0 (lotto fisso 0.01), perche' nel report
+; dell'originale gli ordini visibili sono tutti da 0.01
+;
+; === Impostazioni Generali ===
+MagicNumber=123456
+Timeframe=0
+newBarOnly=false
+PrintAllowed=false
+ShowPanelChart=true
+MaxSpread=9999
+MaxSlippage=9999
+TradeComment=BuySellGrid
+; === Modalita' Direzionale ===
+TradingMode=0
+; =========  Range Parameters =========
+StartHour=0
+time=1140
+; === Gestione Lotti ===
+Lots=0.01
+LotsizeIncrement=0.01
+LotsizeIncrementMultiple=1
+MaxLotsize=0
+LotCalcMode=0
+; === Logica della griglia ===
+SType=0
+MinStep=200
+MinStepPerc=0.09
+; === Gestione Profitto e Stop Loss ===
+MinPosProfit=2
+ProfitCalcMode=2
+Stoploss=0
+; === Esportazione Dati ===
+ExportHistory=false
