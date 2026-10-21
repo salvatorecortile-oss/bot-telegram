@@ -97,7 +97,7 @@ Il range Asia va dalle 01:00 alle 08:00 ora di MT5, cioè dalle 00:00 alle 07:00
 
 1. **Sweep:** una candela M5 **chiude sotto** il livello. Il bot registra il minimo più basso raggiunto (wick compresi).
 2. **Conferma:** entro **12 candele M5** (1 ora) una candela M5 **chiude di nuovo sopra** il livello. Alla chiusura di quella candela il bot apre un **BUY a mercato**.
-3. **SL:** sotto il minimo dello sweep, più 20 punti di margine.
+3. **SL:** sotto il minimo dello sweep, più un margine di 20 punti + 0,3 × ATR M5 (`InpSLBufferATR`). Il margine serve a non farsi prendere dal secondo sweep.
 4. **TP:** 2 volte il rischio (RR 1:2).
 
 Per il SELL sul massimo la logica è la stessa, specchiata.
@@ -107,10 +107,11 @@ Per il SELL sul massimo la logica è la stessa, specchiata.
 - lo sweep va troppo oltre il livello: più di 2 × ATR M5 (`InpMaxDepthATR`). È una rottura vera.
 - il prezzo resta fuori più di 12 candele M5. Anche questa è una rottura vera: il livello torna valido solo dopo un rientro, e quel rientro non apre trade.
 - lo SL risulterebbe più lontano di 4 × ATR M5 (`InpMaxSLATR`). Si può impostare anche un limite in punti (`InpMaxSLPts`).
-- il rientro avviene fuori dalle sessioni: Londra 09:00–14:00 e New York 15:30–19:00, ora di MT5.
+- il rientro avviene fuori dalle sessioni: Londra 10:00–14:00 e New York 15:30–19:00, ora di MT5.
 - c'è già un trade aperto sullo stesso livello, oppure il livello ha già fatto 3 trade oggi.
 - due livelli confermano sulla stessa candela nella stessa direzione (per esempio PDL e minimo Asia molto vicini): apre un solo trade.
 - lo spread è sopra 60 punti.
+- (opzionale, `InpTrendEMA` > 0) il trade va contro il trend D1, cioè contro la posizione della chiusura di ieri rispetto all'EMA D1.
 
 Il break-even è spento (`InpBreakEvenR = 0`). Mettendo per esempio `1.0`, lo SL va a entrata + 10 punti quando il trade è a +1R.
 
@@ -121,3 +122,4 @@ Sul grafico disegna i livelli: D1 con linee rosse continue, Asia con linee blu t
 1. Copia `LiquiditySweep_XAU.mq5` in *MQL5/Experts* e compila con F7.
 2. Trascinalo sul grafico **M5** di XAUUSD e carica `LiquiditySweep_XAU.set`.
 3. Fai un backtest con "Every tick based on real ticks" prima del conto reale.
+4. Per l'ottimizzazione carica `LiquiditySweep_XAU_ottimizza.set` (algoritmo genetico, forward 1/3).

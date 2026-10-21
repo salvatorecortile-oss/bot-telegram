@@ -11,7 +11,7 @@
 //|  livello e' rotto davvero: nessun trade finche' non rientra      |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.00"
+#property version   "1.10"
 #property description "Liquidity sweep: massimo/minimo di ieri (D1) e range Asia, conferma M5, RR fisso"
 
 #include <Trade\Trade.mqh>
@@ -36,6 +36,7 @@ input int    InpATRPeriod      = 14;    // Periodo ATR M5
 
 input group "Stop loss e break-even"
 input int    InpSLBufferPts    = 20;    // Punti oltre l'estremo dello sweep
+input double InpSLBufferATR    = 0.3;   // ...piu' questa frazione di ATR M5 (0 = off): evita lo stop sul secondo sweep
 input double InpMaxSLATR       = 4.0;   // SL massimo (x ATR M5, 0 = off): oltre, il trade si salta
 input int    InpMaxSLPts       = 0;     // SL massimo in punti (0 = off)
 input int    InpMinSLPts       = 50;    // SL minimo in punti (se piu' vicino viene allargato)
@@ -47,6 +48,7 @@ input int    InpMaxTradesLevel = 3;     // Trade max per livello al giorno (0 = 
 input bool   InpOnePerLevel    = true;  // Un solo trade aperto per livello alla volta
 input bool   InpOnePerBar      = true;  // Due livelli confermano sulla stessa candela: un solo trade
 input int    InpMaxSpreadPts   = 60;    // Spread massimo in punti (0 = off)
+input int    InpTrendEMA       = 0;     // Solo a favore del trend: EMA su D1 di X giorni (0 = off)
 
 input group "Sessioni di entrata (HHMM, ora di MT5 = ora italiana + 1)"
 input bool   InpUseLondon      = true;  // Entrate nella sessione di Londra
@@ -77,6 +79,7 @@ struct SLevel
 CTrade   g_trade;
 SLevel   g_lev[NLEV];
 int      g_hATR         = INVALID_HANDLE;
+int      g_hEMA         = INVALID_HANDLE;
 datetime g_day          = 0;
 datetime g_lastBar      = 0;
 datetime g_lastTradeBar = 0;
@@ -126,6 +129,15 @@ int OnInit()
       Print("ATR non disponibile");
       return INIT_FAILED;
    }
+   if(InpTrendEMA > 0)
+   {
+      g_hEMA = iMA(_Symbol, PERIOD_D1, InpTrendEMA, 0, MODE_EMA, PRICE_CLOSE);
+      if(g_hEMA == INVALID_HANDLE)
+      {
+         Print("EMA D1 non disponibile");
+         return INIT_FAILED;
+      }
+   }
 
    g_lev[0].name = "PDL";   g_lev[0].side = -1;
    g_lev[1].name = "PDH";   g_lev[1].side = +1;
@@ -138,6 +150,7 @@ int OnInit()
 void OnDeinit(const int reason)
 {
    if(g_hATR != INVALID_HANDLE) IndicatorRelease(g_hATR);
+   if(g_hEMA != INVALID_HANDLE) IndicatorRelease(g_hEMA);
    ObjectsDeleteAll(0, g_pfx);
    Comment("");
 }
@@ -344,19 +357,28 @@ void TryEntry(int i, double atr)
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    if(ask <= 0 || bid <= 0) return;
+   if(g_hEMA != INVALID_HANDLE)
+   {
+      // trend = chiusura di ieri sopra/sotto l'EMA D1 di ieri
+      double ema[1];
+      double c1 = iClose(_Symbol, PERIOD_D1, 1);
+      if(CopyBuffer(g_hEMA, 0, 1, 1, ema) != 1 || c1 <= 0) return;
+      if((dir > 0 && c1 < ema[0]) || (dir < 0 && c1 > ema[0])) { Log(name + ": contro il trend D1, niente trade"); return; }
+   }
    if(InpMaxSpreadPts > 0 && ask - bid > InpMaxSpreadPts * _Point) { Log(name + ": spread troppo alto"); return; }
 
+   double buf = InpSLBufferPts * _Point + InpSLBufferATR * atr;
    double entry, sl, risk;
    if(dir > 0)
    {
       entry = ask;
-      sl    = g_lev[i].extreme - InpSLBufferPts * _Point;
+      sl    = g_lev[i].extreme - buf;
       risk  = entry - sl;
    }
    else
    {
       entry = bid;
-      sl    = g_lev[i].extreme + InpSLBufferPts * _Point + (ask - bid);  // lo SL del sell scatta sull'ask
+      sl    = g_lev[i].extreme + buf + (ask - bid);  // lo SL del sell scatta sull'ask
       risk  = sl - entry;
    }
    if(risk <= 0) return;

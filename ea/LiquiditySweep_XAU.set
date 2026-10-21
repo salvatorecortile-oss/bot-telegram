@@ -1,4 +1,4 @@
-; LiquiditySweep - XAUUSD, conferma M5, RR 1:2, lotto fisso
+; LiquiditySweep v1.10 - XAUUSD, conferma M5, RR 1:2, lotto fisso
 ; Base
 InpLots=0.01
 InpMagic=53001
@@ -15,6 +15,7 @@ InpMaxDepthPts=0
 InpATRPeriod=14
 ; Stop loss e break-even
 InpSLBufferPts=20
+InpSLBufferATR=0.3
 InpMaxSLATR=4.0
 InpMaxSLPts=0
 InpMinSLPts=50
@@ -25,9 +26,10 @@ InpMaxTradesLevel=3
 InpOnePerLevel=true
 InpOnePerBar=true
 InpMaxSpreadPts=60
+InpTrendEMA=0
 ; Sessioni di entrata (ora di MT5)
 InpUseLondon=true
-InpLonStart=900
+InpLonStart=1000
 InpLonEnd=1400
 InpUseNY=true
 InpNYStart=1530
