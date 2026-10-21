@@ -92,10 +92,19 @@ Sempre attivo, senza filtri. Un solo trade per ogni tocco di 30/70.
 
 `InpOneAtTime` (attivo): mentre c'è un trade aperto, i nuovi segnali vengono ignorati.
 
+## Opzioni (v3.10, ora di MT5 = ora italiana + 1)
+
+| Opzione | Default | Cosa fa |
+|---|---|---|
+| `InpWeekend` | attiva | il venerdì niente trade nuovi dalle 21:00 e chiusura di tutto alle 22:45 |
+| `InpUseHours` | spenta | entra solo dalle 13:00 alle 20:00; le uscite restano sempre attive |
+| `InpUseATRFilter` | spenta | entra solo se l'ATR è tra 0,065% e 0,13% del prezzo, cioè circa 3–6 $ con il gold a 4500 |
+
 ## File di impostazioni
 
 - `RSI_M1_XAU.set`: impostazioni base.
 - `RSI_M1_XAU_test_SL.set`: ottimizzazione che prova lo SL da 1 a 4 × ATR, con e senza "una operazione alla volta".
+- `RSI_M1_XAU_test_filtri.set`: ottimizzazione che prova le 8 combinazioni dei filtri weekend, fascia oraria e ATR.
 
 ## Installazione
 

@@ -1,4 +1,4 @@
-; RSI_M1_XAU v3.00 - XAUUSD M1: entrata al rientro da 30/70, TP a RSI 50, SL = 2 x ATR M1
+; RSI_M1_XAU v3.10 - XAUUSD M1: rientro da 30/70, TP a RSI 50, SL = 2 x ATR M1, chiusura prima del weekend
 ; Base
 InpLots=0.01
 InpMagic=54001
@@ -13,3 +13,15 @@ InpATRPeriod=14
 InpSLATR=2.0
 ; Operazioni
 InpOneAtTime=true
+; Weekend (ora di MT5)
+InpWeekend=true
+InpFriNoNew=2100
+InpFriClose=2245
+; Fascia oraria di entrata (ora di MT5)
+InpUseHours=false
+InpHourStart=1300
+InpHourEnd=2000
+; Volatilita' (ATR in % del prezzo)
+InpUseATRFilter=false
+InpMinATRPct=0.065
+InpMaxATRPct=0.13

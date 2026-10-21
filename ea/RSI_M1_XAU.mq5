@@ -8,9 +8,11 @@
 //|  Un solo trade per ogni tocco di 30/70                           |
 //|  SL = ATR x moltiplicatore (si adatta alla volatilita')          |
 //|  TP = quando l'RSI torna a 50                                    |
+//|  Opzioni (accendi/spegni): chiusura prima del weekend, fascia    |
+//|  oraria di entrata, volatilita' (ATR) minima e massima           |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "3.00"
+#property version   "3.10"
 #property description "RSI M1: entra al rientro da 30/70, esce quando l'RSI torna a 50, SL in ATR"
 
 #include <Trade\Trade.mqh>
@@ -34,6 +36,21 @@ input double InpSLATR          = 2.0;   // SL = ATR x questo
 input group "Operazioni"
 input bool   InpOneAtTime      = true;  // Una operazione alla volta: segnale ignorato se c'e' gia' un trade aperto
 
+input group "Weekend (ora di MT5)"
+input bool   InpWeekend        = true;  // Venerdi': niente trade nuovi la sera e chiusura prima del weekend
+input int    InpFriNoNew       = 2100;  // Venerdi': niente trade nuovi dalle (HHMM)
+input int    InpFriClose       = 2245;  // Venerdi': chiude tutto alle (HHMM)
+
+input group "Fascia oraria di entrata (ora di MT5 = ora italiana + 1)"
+input bool   InpUseHours       = false; // Entra solo in questa fascia (le uscite restano sempre attive)
+input int    InpHourStart      = 1300;  // Dalle (HHMM)
+input int    InpHourEnd        = 2000;  // Alle (HHMM)
+
+input group "Volatilita' (ATR in % del prezzo; 0,07% = circa 3 $ con il gold a 4500)"
+input bool   InpUseATRFilter   = false; // Entra solo se l'ATR e' tra il minimo e il massimo
+input double InpMinATRPct      = 0.065; // ATR minimo (% del prezzo): sotto lo spread pesa troppo
+input double InpMaxATRPct      = 0.13;  // ATR massimo (% del prezzo): sopra e' news / mercato impazzito
+
 //--- stato ------------------------------------------------------------
 CTrade   g_trade;
 int      g_hRSI      = INVALID_HANDLE;
@@ -48,6 +65,20 @@ bool     g_quiet     = false;  // in ottimizzazione: niente log e niente pannell
 void Log(string s)
 {
    if(!g_quiet) Print(s);
+}
+
+int HHMM(datetime t)
+{
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   return dt.hour * 100 + dt.min;
+}
+
+bool IsFriday(datetime t)
+{
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   return dt.day_of_week == 5;
 }
 
 //+------------------------------------------------------------------+
@@ -78,6 +109,13 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
+   // weekend: il venerdi' sera chiude tutto, cosi' nessun trade resta aperto sul gap del lunedi'
+   if(InpWeekend && IsFriday(TimeCurrent()) && HHMM(TimeCurrent()) >= InpFriClose)
+   {
+      CloseAll(POSITION_TYPE_BUY);
+      CloseAll(POSITION_TYPE_SELL);
+   }
+
    // TP: a ogni tick, appena l'RSI torna a 50
    double now[1];
    if(CopyBuffer(g_hRSI, 0, 0, 1, now) == 1)
@@ -159,9 +197,21 @@ void Open(int dir, double atr)
    string name = dir > 0 ? "BUY" : "SELL";
    if(InpOneAtTime && CountOpen() > 0) { Log(name + ": c'e' gia' un'operazione aperta, segnale ignorato"); return; }
 
+   datetime t  = TimeCurrent();
+   int      hm = HHMM(t);
+   if(InpWeekend && IsFriday(t) && hm >= InpFriNoNew)                { Log(name + ": venerdi' sera, niente trade nuovi"); return; }
+   if(InpUseHours && (hm < InpHourStart || hm >= InpHourEnd))         { Log(name + ": fuori dalla fascia oraria"); return; }
+
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    if(ask <= 0 || bid <= 0) return;
+
+   if(InpUseATRFilter)
+   {
+      double pct = atr / bid * 100.0;
+      if(pct < InpMinATRPct) { Log(StringFormat("%s: ATR troppo basso (%.3f%%), niente trade", name, pct)); return; }
+      if(pct > InpMaxATRPct) { Log(StringFormat("%s: ATR troppo alto (%.3f%%), niente trade", name, pct)); return; }
+   }
 
    // il broker vuole lo SL ad almeno "stops level" punti dal prezzo
    double dist    = InpSLATR * atr;
@@ -186,6 +236,8 @@ void UpdatePanel()
 {
    if(g_quiet) return;
    string s = StringFormat("RSI M1 (%d)  |  SL %.1f x ATR  |  TP a RSI %s\n", InpRSIPeriod, InpSLATR, DoubleToString(InpRSIExit, 0));
+   s += StringFormat("Weekend: %s  |  Fascia oraria: %s  |  Filtro ATR: %s\n", InpWeekend ? "SI" : "NO",
+                     InpUseHours ? StringFormat("%04d-%04d", InpHourStart, InpHourEnd) : "NO", InpUseATRFilter ? "SI" : "NO");
    s += StringFormat("RSI: %.1f  %s\n", g_rsiNow, g_os ? "(sotto " + DoubleToString(InpRSILow, 0) + ", attendo il rientro)"
                                             : (g_ob ? "(sopra " + DoubleToString(InpRSIHigh, 0) + ", attendo il rientro)" : ""));
    s += StringFormat("Posizioni aperte: %d\n", CountOpen());

@@ -14,3 +14,15 @@ InpATRPeriod=14
 InpSLATR=2.0||1.0||0.5||4.0||Y
 ; Operazioni
 InpOneAtTime=true||false||0||true||Y
+; Weekend (ora di MT5)
+InpWeekend=true
+InpFriNoNew=2100
+InpFriClose=2245
+; Fascia oraria di entrata
+InpUseHours=false
+InpHourStart=1300
+InpHourEnd=2000
+; Volatilita'
+InpUseATRFilter=false
+InpMinATRPct=0.065
+InpMaxATRPct=0.13
