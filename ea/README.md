@@ -77,3 +77,47 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 - **`InpTestExtraSpread`** (solo nello Strategy Tester): simula punti di spread in più sui tick reali. Ad esempio con 30 i tick Demo2 a 18 diventano un conto a 48. Il bot si comporta come con lo spread largo: entrata, break-even e filtri. Il costo in più però non compare nel report standard: lo trovi nel risultato **Custom** e nella riga `RISULTATO` del journal.
 - **Risultato Custom** (ottimizzazione con "Custom max"): profitto meno lo spread simulato, più il rebate stimato (`InpRebatePerLot` × lotti). Un passaggio che tocca il minimo di capitale viene scartato.
 - Set: `StraddleM1_XAU_spread48.set` (dal vivo) e `StraddleM1_XAU_spread48_ottimizza.set` (ottimizzazione).
+
+---
+
+# LiquiditySweep_XAU — EA MT5 sweep di liquidità (D1 + Asia)
+
+Un solo bot che segue **4 livelli** contemporaneamente:
+
+| Livello | Cos'è | Setup |
+|---|---|---|
+| `PDL` | minimo di ieri (D1) | BUY |
+| `PDH` | massimo di ieri (D1) | SELL |
+| `AsiaL` | minimo del range Asia | BUY |
+| `AsiaH` | massimo del range Asia | SELL |
+
+Il range Asia va dalle 01:00 alle 08:00 ora di MT5, cioè dalle 00:00 alle 07:00 italiane. Si calcola solo a sessione chiusa, quindi i livelli Asia sono attivi dalle 08:00 di MT5.
+
+## Come lavora (esempio BUY sul minimo)
+
+1. **Sweep:** una candela M5 **chiude sotto** il livello. Il bot registra il minimo più basso raggiunto (wick compresi).
+2. **Conferma:** entro **12 candele M5** (1 ora) una candela M5 **chiude di nuovo sopra** il livello. Alla chiusura di quella candela il bot apre un **BUY a mercato**.
+3. **SL:** sotto il minimo dello sweep, più 20 punti di margine.
+4. **TP:** 2 volte il rischio (RR 1:2).
+
+Per il SELL sul massimo la logica è la stessa, specchiata.
+
+## Nessun trade quando
+
+- lo sweep va troppo oltre il livello: più di 2 × ATR M5 (`InpMaxDepthATR`). È una rottura vera.
+- il prezzo resta fuori più di 12 candele M5. Anche questa è una rottura vera: il livello torna valido solo dopo un rientro, e quel rientro non apre trade.
+- lo SL risulterebbe più lontano di 4 × ATR M5 (`InpMaxSLATR`). Si può impostare anche un limite in punti (`InpMaxSLPts`).
+- il rientro avviene fuori dalle sessioni: Londra 09:00–14:00 e New York 15:30–19:00, ora di MT5.
+- c'è già un trade aperto sullo stesso livello, oppure il livello ha già fatto 3 trade oggi.
+- due livelli confermano sulla stessa candela nella stessa direzione (per esempio PDL e minimo Asia molto vicini): apre un solo trade.
+- lo spread è sopra 60 punti.
+
+Il break-even è spento (`InpBreakEvenR = 0`). Mettendo per esempio `1.0`, lo SL va a entrata + 10 punti quando il trade è a +1R.
+
+Sul grafico disegna i livelli: D1 con linee rosse continue, Asia con linee blu tratteggiate. In alto a sinistra mostra lo stato di ogni livello.
+
+## Installazione e backtest
+
+1. Copia `LiquiditySweep_XAU.mq5` in *MQL5/Experts* e compila con F7.
+2. Trascinalo sul grafico **M5** di XAUUSD e carica `LiquiditySweep_XAU.set`.
+3. Fai un backtest con "Every tick based on real ticks" prima del conto reale.
