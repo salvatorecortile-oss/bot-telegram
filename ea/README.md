@@ -102,6 +102,7 @@ Sempre attivo, senza filtri. Un solo trade per ogni tocco di 30/70.
 
 ## File di impostazioni
 
+- **`RSI_M1_XAU_definitivo.set`**: impostazioni consigliate. SL 2,5 × ATR, TP a RSI 50, fascia oraria 13–20, filtro ATR e weekend accesi. Sul 2026: +320 $, PF 1,46, drawdown 8,5%, 175 trade.
 - `RSI_M1_XAU.set`: impostazioni base.
 - `RSI_M1_XAU_test_SL.set`: ottimizzazione che prova lo SL da 1 a 4 × ATR, con e senza "una operazione alla volta".
 - `RSI_M1_XAU_test_filtri.set`: ottimizzazione che prova le 8 combinazioni dei filtri weekend, fascia oraria e ATR.
