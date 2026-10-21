@@ -1,0 +1,40 @@
+; BuySellGrid v1.20 - versione protetta (la migliore nei test su gennaio 2026)
+; passo 20 $ (2000 punti), chiusura a +20 $ con 0.01 lotti, stop di ogni posizione a 40 $ (4000 punti)
+; se cambi Lots, cambia MinPosProfit in proporzione (0.02 lotti -> 40)
+;
+; === Impostazioni Generali ===
+MagicNumber=123456
+Timeframe=0
+newBarOnly=false
+PrintAllowed=false
+ShowPanelChart=true
+MaxSpread=9999
+MaxSlippage=9999
+TradeComment=BuySellGrid
+; === Modalita' Direzionale ===
+TradingMode=0
+; =========  Range Parameters =========
+StartHour=0
+time=1140
+CloseOutsideWindow=true
+; === Gestione Lotti ===
+Lots=0.01
+LotsizeIncrement=0.01
+LotsizeIncrementMultiple=1
+MaxLotsize=0
+LotCalcMode=0
+; === Logica della griglia ===
+SType=0
+MinStep=2000
+MinStepPerc=0.09
+; === Gestione Profitto e Stop Loss ===
+MinPosProfit=20
+ProfitCalcMode=2
+Stoploss=0
+; === Esportazione Dati ===
+ExportHistory=false
+; === Protezioni (v1.20) ===
+PosStopLoss=4000
+MaxPerSide=3
+DailyLossLimit=300
+PauseAfterStop=true

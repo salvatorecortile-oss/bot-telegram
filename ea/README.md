@@ -101,3 +101,23 @@ Ricostruito dai parametri di `buysell2.set` e dagli ordini del report dell'origi
 - **Conto:** funziona solo su conti **hedging**.
 
 `BuySellGrid.set` usa gli stessi valori dell'originale, con lotto fisso (`LotCalcMode = 0`).
+
+## v1.20 — protezioni
+
+| Parametro | Cosa fa |
+|---|---|
+| `PosStopLoss` | Stop di ogni posizione, in punti. Consigliato 2 × `MinStep`. |
+| `MaxPerSide` | Numero massimo di posizioni aperte per lato. |
+| `DailyLossLimit` | Se la perdita del giorno (equity) arriva a questo valore, chiude tutto e resta fermo fino al giorno dopo. |
+| `PauseAfterStop` | Dopo lo `Stoploss` del ciclo resta fermo fino al giorno dopo, invece di riaprire subito. |
+
+**Test su gennaio 2026**, con i prezzi ricostruiti dai deal del report FortunePrime e un deposito di 10.000 $:
+
+| Configurazione | Risultato | Drawdown | Note |
+|---|---|---|---|
+| Originale: passo 2 $, nessuno stop | −9.500 $ | — | Stop-out il 29/01 |
+| Passo 20 $, chiusura a +20 $, stop posizione 40 $ | circa −80 $ | 270 $ | |
+
+Passo largo e stop per posizione sono le due modifiche che contano. Nessuna variante è in profitto su gennaio 2026, un mese con l'oro in salita del 23%. Va verificato su tutto il periodo con i tick reali.
+
+Set: `BuySellGrid_protetto.set`. `BuySellGrid.set` resta uguale all'originale, con le protezioni spente.

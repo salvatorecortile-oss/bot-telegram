@@ -1,4 +1,4 @@
-; BuySellGrid - stessi valori di buysell2.set (Buysell 2.0)
+; BuySellGrid - stessi valori di buysell2.set (Buysell 2.0), protezioni spente
 ; unica differenza: LotCalcMode=0 (lotto fisso 0.01), perche' nel report
 ; dell'originale gli ordini visibili sono tutti da 0.01
 ;
@@ -33,3 +33,8 @@ ProfitCalcMode=2
 Stoploss=0
 ; === Esportazione Dati ===
 ExportHistory=false
+; === Protezioni (v1.20) ===
+PosStopLoss=0
+MaxPerSide=0
+DailyLossLimit=0
+PauseAfterStop=true

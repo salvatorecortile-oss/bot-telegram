@@ -11,13 +11,15 @@
 //|    chiude tutto il ciclo (anche le perdenti) e riparte           |
 //|  - a fine finestra oraria chiude tutto com'e' (anche in perdita) |
 //|    e riparte il giorno dopo (CloseOutsideWindow)                 |
+//|  - v1.20: stop per posizione (PosStopLoss), massimo posizioni    |
+//|    per lato, perdita massima giornaliera, pausa dopo uno stop    |
 //|  - Stoploss (valuta conto) chiude tutto se la perdita del ciclo  |
 //|    arriva a quel valore (0 = nessuno stop, come nell'originale)  |
 //|  I nomi dei parametri sono gli stessi dell'originale, quindi il  |
 //|  file .set dell'originale si carica direttamente.                |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.10"
+#property version   "1.20"
 #property description "Griglia buy+sell su conto hedging (ricostruzione di Buysell 2.0 dai suoi parametri)"
 
 #include <Trade\Trade.mqh>
@@ -84,6 +86,12 @@ input double          MinPosProfit   = 2;                 // Profitto di chiusur
 input ProfitCalcType  ProfitCalcMode = PCM_BOTH;          // Come si chiude
 input double          Stoploss       = 0;                 // Perdita del ciclo che chiude tutto (valuta conto, 0 = off)
 
+input group "=== Protezioni (v1.20) ==="
+input int             PosStopLoss    = 0;                 // Stop di ogni posizione in punti (0 = off; consigliato 2 x MinStep)
+input int             MaxPerSide     = 0;                 // Posizioni massime per lato (0 = nessun limite)
+input double          DailyLossLimit = 0;                 // Perdita del giorno che chiude tutto e ferma fino a domani (valuta conto, 0 = off)
+input bool            PauseAfterStop = true;              // Dopo lo Stoploss del ciclo resta fermo fino a domani
+
 input group "=== Esportazione Dati ==="
 input bool            ExportHistory  = false;             // Salva i deal in MQL5/Files/BuySellGrid_<simbolo>.csv all'uscita
 
@@ -92,6 +100,9 @@ CTrade   g_trade;
 double   g_lastPx   = 0;   // livello dell'ultima apertura (bid)
 datetime g_lastBar  = 0;
 double   g_maxDD    = 0;   // peggior perdita del ciclo vista da quando e' attaccato
+long     g_day      = -1;  // giorno del server (TimeCurrent / 86400)
+double   g_dayEq    = 0;   // equity all'inizio del giorno
+long     g_pauseDay = -1;  // giorno in cui il bot e' fermo dopo uno stop
 int      g_cycles   = 0;   // cicli chiusi in profitto
 string   g_status   = "";
 
@@ -158,6 +169,13 @@ void OnTick()
 //+------------------------------------------------------------------+
 void ManageExits()
   {
+   long today = (long)(TimeCurrent() / 86400);
+   if(today != g_day)
+     {
+      g_day   = today;
+      g_dayEq = AccountInfoDouble(ACCOUNT_EQUITY);
+     }
+
    int n = 0;
    double total = CycleProfit(n);
    if(n == 0)
@@ -180,6 +198,17 @@ void ManageExits()
       Log(StringFormat("STOP ciclo: %d posizioni, %.2f", n, total));
       CloseAll();
       g_lastPx = 0;
+      if(PauseAfterStop)
+         g_pauseDay = today;
+      return;
+     }
+
+   if(DailyLossLimit > 0 && AccountInfoDouble(ACCOUNT_EQUITY) - g_dayEq <= -DailyLossLimit)
+     {
+      Log(StringFormat("STOP giornaliero: %d posizioni, %.2f", n, total));
+      CloseAll();
+      g_lastPx = 0;
+      g_pauseDay = today;
       return;
      }
 
@@ -192,16 +221,29 @@ void ManageExits()
       return;
      }
 
-   if(ProfitCalcMode == PCM_POSITION || ProfitCalcMode == PCM_BOTH)
+   bool single = (ProfitCalcMode == PCM_POSITION || ProfitCalcMode == PCM_BOTH);
+   if(!single && PosStopLoss <= 0)
+      return;
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
-      for(int i = PositionsTotal() - 1; i >= 0; i--)
+      ulong t = PositionGetTicket(i);
+      if(!IsMine(t))
+         continue;
+      double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+      if(single && p >= MinPosProfit)
         {
-         ulong t = PositionGetTicket(i);
-         if(!IsMine(t))
-            continue;
-         double p = PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
-         if(p >= MinPosProfit && g_trade.PositionClose(t))
+         if(g_trade.PositionClose(t))
             Log(StringFormat("Chiusa #%I64u a %.2f", t, p));
+         continue;
+        }
+      if(PosStopLoss > 0)
+        {
+         double po = PositionGetDouble(POSITION_PRICE_OPEN);
+         double adverse = PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? po - bid : ask - po;
+         if(adverse >= PosStopLoss * _Point && g_trade.PositionClose(t))
+            Log(StringFormat("Stop #%I64u a %.2f", t, p));
         }
      }
   }
@@ -219,6 +261,11 @@ void ManageEntries(double bid)
    g_status = window ? "attivo" : "fuori orario";
    if(!window)
       return;
+   if(g_pauseDay == (long)(TimeCurrent() / 86400))
+     {
+      g_status = "fermo fino a domani (stop)";
+      return;
+     }
    if(SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) > MaxSpread)
      {
       g_status = "spread alto";
@@ -234,8 +281,8 @@ void ManageEntries(double bid)
    // piu' su, riapre buy e sell insieme (come negli ordini dell'originale)
    if(TradingMode == TM_BOTH)
      {
-      bool buy  = !HasNear(POSITION_TYPE_BUY,  ask, step);
-      bool sell = !HasNear(POSITION_TYPE_SELL, bid, step);
+      bool buy  = !HasNear(POSITION_TYPE_BUY,  ask, step) && (MaxPerSide <= 0 || nBuy  < MaxPerSide);
+      bool sell = !HasNear(POSITION_TYPE_SELL, bid, step) && (MaxPerSide <= 0 || nSell < MaxPerSide);
       if(buy || sell)
          OpenLevel(bid, buy, sell, nBuy, nSell);
       return;
@@ -252,9 +299,9 @@ void ManageEntries(double bid)
    double move = bid - g_lastPx;
    if(MathAbs(move) < step)
       return;
-   if(move > 0 && !HasNear(POSITION_TYPE_BUY, ask, step))
+   if(move > 0 && !HasNear(POSITION_TYPE_BUY, ask, step) && (MaxPerSide <= 0 || nBuy < MaxPerSide))
       OpenLevel(bid, true, false, nBuy, nSell);
-   else if(move < 0 && !HasNear(POSITION_TYPE_SELL, bid, step))
+   else if(move < 0 && !HasNear(POSITION_TYPE_SELL, bid, step) && (MaxPerSide <= 0 || nSell < MaxPerSide))
       OpenLevel(bid, false, true, nBuy, nSell);
    else
       g_lastPx = bid;               // livello gia' occupato: conta il passo e va avanti
