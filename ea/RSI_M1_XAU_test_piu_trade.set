@@ -1,0 +1,29 @@
+; RSI_M1_XAU v3.10 - TEST "PIU' TRADE": parte dal set definitivo e prova a far entrare piu' segnali
+; RSI 14-21-28  x  livelli 30/70 o 35/65  x  fascia oraria si/no  x  ATR minimo 0.05/0.065  x  ATR massimo 0.13/0.16
+; Ottimizzazione "Slow complete algorithm": 96 test, senza forward. Periodo 2026.01.01-2026.10.20, tick reali
+; Base
+InpLots=0.01
+InpMagic=54001
+; RSI (M1)
+InpRSIPeriod=28||14||7||28||Y
+InpRSILow=30.0||30.0||5.0||35.0||Y
+InpRSIHigh=70.0||65.0||5.0||70.0||Y
+InpRSIExit=50.0
+; Stop loss (ATR)
+InpATRTF=1
+InpATRPeriod=14
+InpSLATR=2.5
+; Operazioni
+InpOneAtTime=true
+; Weekend (ora di MT5)
+InpWeekend=true
+InpFriNoNew=2100
+InpFriClose=2245
+; Fascia oraria di entrata (ora di MT5)
+InpUseHours=true||false||0||true||Y
+InpHourStart=1300
+InpHourEnd=2000
+; Volatilita' (ATR in % del prezzo)
+InpUseATRFilter=true
+InpMinATRPct=0.065||0.05||0.015||0.065||Y
+InpMaxATRPct=0.13||0.13||0.03||0.16||Y
