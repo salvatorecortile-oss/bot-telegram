@@ -82,23 +82,17 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 
 # RSI_M1_XAU — EA MT5 RSI su M1
 
-- **RSI:** 28 periodi su M1.
-- **BUY:** l'RSI scende a 30 o sotto, poi una candela M1 chiude con l'RSI di nuovo sopra 30. Il bot apre a mercato.
-- **SELL:** l'RSI sale a 70 o sopra, poi una candela M1 chiude con l'RSI di nuovo sotto 70. Il bot apre a mercato.
-- **SL:** oltre il minimo (BUY) o il massimo (SELL) toccato mentre l'RSI era oltre 30/70, più un margine di 20 punti + 0,3 × ATR M5.
-- **TP:** 2 volte il rischio (RR 1:2).
+Sempre attivo, a qualsiasi ora, senza filtri.
 
-## Filtri
+| | BUY | SELL |
+|---|---|---|
+| **Entrata** | l'RSI(28) M1 scende a 30 o sotto, poi una candela M1 chiude con l'RSI di nuovo sopra 30 | l'RSI sale a 70 o sopra, poi una candela M1 chiude con l'RSI di nuovo sotto 70 |
+| **Uscita (TP)** | appena l'RSI tocca 70 (controllato a ogni tick) | appena l'RSI tocca 30 |
+| **SL** | sotto il minimo toccato mentre l'RSI era sotto 30, + 20 punti + 0,3 × ATR M5 | sopra il massimo toccato mentre l'RSI era sopra 70, con lo stesso margine |
 
-- Entrate solo nelle sessioni: Londra 10:00–14:00 e New York 15:30–19:00, ora di MT5 (= ora italiana + 1).
-- Nessun trade se lo SL sarebbe più lontano di 4 × ATR M5.
-- Massimo 3 trade al giorno e 1 posizione aperta alla volta.
-- Spread massimo 60 punti.
-- Filtro trend EMA D1 opzionale (`InpTrendEMA`, spento).
-- Break-even opzionale (`InpBreakEvenR`, spento).
+Non ci sono TP fisso, sessioni, limiti di trade, filtro spread, filtro trend o break-even.
 
 ## Installazione
 
 1. Copia `RSI_M1_XAU.mq5` in *MQL5/Experts* e compila con F7.
 2. Trascinalo sul grafico **M1** di XAUUSD e carica `RSI_M1_XAU.set`.
-3. Per l'ottimizzazione usa `RSI_M1_XAU_ottimizza.set`.

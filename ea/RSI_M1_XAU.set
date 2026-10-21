@@ -1,30 +1,13 @@
-; RSI_M1_XAU - XAUUSD, RSI 28 su M1, rientro da 30/70, RR 1:2, lotto fisso
+; RSI_M1_XAU v2.00 - XAUUSD, RSI 28 su M1, nessun filtro, sempre attivo
+; Entrata al rientro da 30/70, uscita al tocco del livello opposto, SL oltre l'estremo
 ; Base
 InpLots=0.01
 InpMagic=54001
-InpRR=2.0
 ; RSI (M1)
 InpRSIPeriod=28
 InpRSILow=30.0
 InpRSIHigh=70.0
-; Stop loss e break-even
+; Stop loss
 InpSLBufferPts=20
 InpSLBufferATR=0.3
 InpATRPeriod=14
-InpMaxSLATR=4.0
-InpMaxSLPts=0
-InpMinSLPts=50
-InpBreakEvenR=0.0
-InpBELockPts=10
-; Limiti
-InpMaxTradesDay=3
-InpMaxOpen=1
-InpMaxSpreadPts=60
-InpTrendEMA=0
-; Sessioni di entrata (ora di MT5 = ora italiana + 1)
-InpUseLondon=true
-InpLonStart=1000
-InpLonEnd=1400
-InpUseNY=true
-InpNYStart=1530
-InpNYEnd=1900
