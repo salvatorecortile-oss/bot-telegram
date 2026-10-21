@@ -4,28 +4,28 @@
 ; x  weekend si/no  x  fascia oraria 13-20 si/no  x  filtro ATR si/no
 ; Da fare sul 2026 (tick reali) e poi sul 2024-2025 con lo stesso file
 ; Base
-InpLots=0.01
-InpMagic=54001
+InpLots=0.01||0.01||0||0.01||N
+InpMagic=54001||54001||0||54001||N
 ; RSI (M1)
-InpRSIPeriod=28
-InpRSILow=30.0
-InpRSIHigh=70.0
+InpRSIPeriod=28||28||0||28||N
+InpRSILow=30.0||30.0||0||30.0||N
+InpRSIHigh=70.0||70.0||0||70.0||N
 InpRSIExit=50.0||45.0||5.0||55.0||Y
 ; Stop loss (ATR)
-InpATRTF=1
-InpATRPeriod=14
+InpATRTF=1||1||0||1||N
+InpATRPeriod=14||14||0||14||N
 InpSLATR=2.0||1.0||0.5||3.0||Y
 ; Operazioni
 InpOneAtTime=true||false||0||true||Y
 ; Weekend (ora di MT5)
 InpWeekend=true||false||0||true||Y
-InpFriNoNew=2100
-InpFriClose=2245
+InpFriNoNew=2100||2100||0||2100||N
+InpFriClose=2245||2245||0||2245||N
 ; Fascia oraria di entrata (ora di MT5)
 InpUseHours=false||false||0||true||Y
-InpHourStart=1300
-InpHourEnd=2000
+InpHourStart=1300||1300||0||1300||N
+InpHourEnd=2000||2000||0||2000||N
 ; Volatilita' (ATR in % del prezzo)
 InpUseATRFilter=false||false||0||true||Y
-InpMinATRPct=0.065
-InpMaxATRPct=0.13
+InpMinATRPct=0.065||0.065||0||0.065||N
+InpMaxATRPct=0.13||0.13||0||0.13||N

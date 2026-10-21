@@ -1,28 +1,28 @@
 ; RSI_M1_XAU v3.00 - prova lo SL da 1 a 4 x ATR M1 (e una operazione alla volta si/no)
 ; Ottimizzazione "Slow complete algorithm": 14 test, senza forward
 ; Base
-InpLots=0.01
-InpMagic=54001
+InpLots=0.01||0.01||0||0.01||N
+InpMagic=54001||54001||0||54001||N
 ; RSI (M1)
-InpRSIPeriod=28
-InpRSILow=30.0
-InpRSIHigh=70.0
-InpRSIExit=50.0
+InpRSIPeriod=28||28||0||28||N
+InpRSILow=30.0||30.0||0||30.0||N
+InpRSIHigh=70.0||70.0||0||70.0||N
+InpRSIExit=50.0||50.0||0||50.0||N
 ; Stop loss (ATR)
-InpATRTF=1
-InpATRPeriod=14
+InpATRTF=1||1||0||1||N
+InpATRPeriod=14||14||0||14||N
 InpSLATR=2.0||1.0||0.5||4.0||Y
 ; Operazioni
 InpOneAtTime=true||false||0||true||Y
 ; Weekend (ora di MT5)
-InpWeekend=true
-InpFriNoNew=2100
-InpFriClose=2245
+InpWeekend=true||false||0||true||N
+InpFriNoNew=2100||2100||0||2100||N
+InpFriClose=2245||2245||0||2245||N
 ; Fascia oraria di entrata
-InpUseHours=false
-InpHourStart=1300
-InpHourEnd=2000
+InpUseHours=false||false||0||true||N
+InpHourStart=1300||1300||0||1300||N
+InpHourEnd=2000||2000||0||2000||N
 ; Volatilita'
-InpUseATRFilter=false
-InpMinATRPct=0.065
-InpMaxATRPct=0.13
+InpUseATRFilter=false||false||0||true||N
+InpMinATRPct=0.065||0.065||0||0.065||N
+InpMaxATRPct=0.13||0.13||0||0.13||N
