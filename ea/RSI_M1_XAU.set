@@ -1,5 +1,4 @@
-; RSI_M1_XAU v2.00 - XAUUSD, RSI 28 su M1, nessun filtro, sempre attivo
-; Entrata al rientro da 30/70, uscita al tocco del livello opposto, SL oltre l'estremo
+; RSI_M1_XAU v2.10 - XAUUSD M1, 1 operazione per segnale, senza break-even
 ; Base
 InpLots=0.01
 InpMagic=54001
@@ -7,6 +6,13 @@ InpMagic=54001
 InpRSIPeriod=28
 InpRSILow=30.0
 InpRSIHigh=70.0
+; Operazioni
+InpOneAtTime=true
+InpTradesPerSignal=1
+; Break-even
+InpBreakEven=false
+InpBERSI=50.0
+InpBELockPts=0
 ; Stop loss
 InpSLBufferPts=20
 InpSLBufferATR=0.3

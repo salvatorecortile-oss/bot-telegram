@@ -1,0 +1,19 @@
+; RSI_M1_XAU v2.10 - XAUUSD M1, 2 operazioni per segnale, senza break-even
+; Base
+InpLots=0.01
+InpMagic=54001
+; RSI (M1)
+InpRSIPeriod=28
+InpRSILow=30.0
+InpRSIHigh=70.0
+; Operazioni
+InpOneAtTime=true
+InpTradesPerSignal=2
+; Break-even
+InpBreakEven=false
+InpBERSI=50.0
+InpBELockPts=0
+; Stop loss
+InpSLBufferPts=20
+InpSLBufferATR=0.3
+InpATRPeriod=14

@@ -90,7 +90,23 @@ Sempre attivo, a qualsiasi ora, senza filtri.
 | **Uscita (TP)** | appena l'RSI tocca 70 (controllato a ogni tick) | appena l'RSI tocca 30 |
 | **SL** | sotto il minimo toccato mentre l'RSI era sotto 30, + 20 punti + 0,3 × ATR M5 | sopra il massimo toccato mentre l'RSI era sopra 70, con lo stesso margine |
 
-Non ci sono TP fisso, sessioni, limiti di trade, filtro spread, filtro trend o break-even.
+Non ci sono TP fisso, sessioni, limiti di trade, filtro spread o filtro trend.
+
+## Opzioni (v2.10)
+
+- **`InpOneAtTime`** (attivo): una operazione alla volta. Un nuovo segnale viene ignorato finché c'è un trade aperto.
+- **`InpTradesPerSignal`** (1): quante posizioni apre a ogni segnale (1, 2, 3...).
+- **`InpBreakEven`** (spento): quando l'RSI tocca 50, lo SL va all'entrata.
+
+## File di impostazioni
+
+| File | Posizioni per segnale | Break-even RSI 50 |
+|---|---|---|
+| `RSI_M1_XAU.set` | 1 | no |
+| `RSI_M1_XAU_BE.set` | 1 | sì |
+| `RSI_M1_XAU_2pos.set` | 2 | no |
+| `RSI_M1_XAU_2pos_BE.set` | 2 | sì |
+| `RSI_M1_XAU_test_tutti.set` | ottimizzazione: tutte le 12 varianti in un colpo | |
 
 ## Installazione
 

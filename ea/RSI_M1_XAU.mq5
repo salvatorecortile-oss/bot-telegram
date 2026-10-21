@@ -7,9 +7,11 @@
 //|    con l'RSI di nuovo sotto 70; chiude quando l'RSI tocca 30     |
 //|  SL oltre il minimo/massimo del tratto in cui l'RSI e' stato     |
 //|  oltre 30/70 (+ margine), nessun TP fisso                        |
+//|  Opzioni: una operazione alla volta, N posizioni per segnale,    |
+//|  break-even quando l'RSI tocca 50                                |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "2.00"
+#property version   "2.10"
 #property description "RSI M1: entra al rientro da 30/70, esce al tocco del livello opposto, SL oltre l'estremo"
 
 #include <Trade\Trade.mqh>
@@ -23,6 +25,15 @@ input group "RSI (M1)"
 input int    InpRSIPeriod      = 28;    // Periodo RSI
 input double InpRSILow         = 30;    // BUY al rientro sopra / chiusura dei SELL al tocco
 input double InpRSIHigh        = 70;    // SELL al rientro sotto / chiusura dei BUY al tocco
+
+input group "Operazioni"
+input bool   InpOneAtTime      = true;  // Una operazione alla volta: nuovo segnale ignorato se c'e' un trade aperto
+input int    InpTradesPerSignal = 1;    // Posizioni aperte a ogni segnale (1, 2, 3...)
+
+input group "Break-even"
+input bool   InpBreakEven      = false; // Break-even quando l'RSI tocca 50
+input double InpBERSI          = 50;    // Livello RSI del break-even
+input int    InpBELockPts      = 0;     // Punti bloccati oltre l'entrata
 
 input group "Stop loss"
 input int    InpSLBufferPts    = 20;    // Punti oltre il minimo/massimo del tratto
@@ -82,6 +93,11 @@ void OnTick()
       g_rsiNow = now[0];
       if(now[0] >= InpRSIHigh) CloseAll(POSITION_TYPE_BUY);
       if(now[0] <= InpRSILow)  CloseAll(POSITION_TYPE_SELL);
+      if(InpBreakEven)
+      {
+         if(now[0] >= InpBERSI) BreakEven(POSITION_TYPE_BUY);
+         if(now[0] <= InpBERSI) BreakEven(POSITION_TYPE_SELL);
+      }
    }
 
    datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
@@ -135,6 +151,37 @@ void CloseAll(ENUM_POSITION_TYPE type)
    }
 }
 
+// SL all'entrata (+ punti bloccati), solo se il prezzo lo permette
+void BreakEven(ENUM_POSITION_TYPE type)
+{
+   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double stops = (SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) + 2) * _Point;
+   for(int k = PositionsTotal() - 1; k >= 0; k--)
+   {
+      ulong tk = PositionGetTicket(k);
+      if(tk == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      if(PositionGetInteger(POSITION_TYPE) != type) continue;
+
+      double open = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl   = PositionGetDouble(POSITION_SL);
+      if(type == POSITION_TYPE_BUY)
+      {
+         double nsl = NormalizeDouble(open + InpBELockPts * _Point, _Digits);
+         if(sl < nsl && bid - nsl > stops && g_trade.PositionModify(tk, nsl, 0))
+            Log("BUY a break-even: RSI " + DoubleToString(g_rsiNow, 1));
+      }
+      else
+      {
+         double nsl = NormalizeDouble(open - InpBELockPts * _Point, _Digits);
+         if((sl == 0 || sl > nsl) && nsl - ask > stops && g_trade.PositionModify(tk, nsl, 0))
+            Log("SELL a break-even: RSI " + DoubleToString(g_rsiNow, 1));
+      }
+   }
+}
+
 int CountOpen()
 {
    int n = 0;
@@ -163,6 +210,7 @@ double NormLots(double v)
 void Open(int dir, double ext, double atr)
 {
    string name = dir > 0 ? "BUY" : "SELL";
+   if(InpOneAtTime && CountOpen() > 0) { Log(name + ": c'e' gia' un'operazione aperta, segnale ignorato"); return; }
    double ask  = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid  = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    if(ask <= 0 || bid <= 0) return;
@@ -176,21 +224,26 @@ void Open(int dir, double ext, double atr)
    if(dir * (entry - sl) < minDist) sl = entry - dir * minDist;
    sl = NormalizeDouble(sl, _Digits);
 
-   bool ok = dir > 0 ? g_trade.Buy(NormLots(InpLots), _Symbol, 0, sl, 0, "RSI M1")
-                     : g_trade.Sell(NormLots(InpLots), _Symbol, 0, sl, 0, "RSI M1");
-   if(ok && (g_trade.ResultRetcode() == TRADE_RETCODE_DONE || g_trade.ResultRetcode() == TRADE_RETCODE_PLACED))
-      Log(StringFormat("%s: entrata %s SL %s (rischio %.0f punti), uscita al tocco RSI %s", name,
-                       DoubleToString(entry, _Digits), DoubleToString(sl, _Digits), MathAbs(entry - sl) / _Point,
-                       DoubleToString(dir > 0 ? InpRSIHigh : InpRSILow, 0)));
-   else
-      Log(StringFormat("%s: ordine rifiutato (%u %s)", name, g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
+   for(int n = 0; n < MathMax(1, InpTradesPerSignal); n++)
+   {
+      bool ok = dir > 0 ? g_trade.Buy(NormLots(InpLots), _Symbol, 0, sl, 0, "RSI M1")
+                        : g_trade.Sell(NormLots(InpLots), _Symbol, 0, sl, 0, "RSI M1");
+      if(ok && (g_trade.ResultRetcode() == TRADE_RETCODE_DONE || g_trade.ResultRetcode() == TRADE_RETCODE_PLACED))
+         Log(StringFormat("%s: entrata %s SL %s (rischio %.0f punti), uscita al tocco RSI %s", name,
+                          DoubleToString(entry, _Digits), DoubleToString(sl, _Digits), MathAbs(entry - sl) / _Point,
+                          DoubleToString(dir > 0 ? InpRSIHigh : InpRSILow, 0)));
+      else
+         Log(StringFormat("%s: ordine rifiutato (%u %s)", name, g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
+   }
 }
 
 //+------------------------------------------------------------------+
 void UpdatePanel()
 {
    if(g_quiet) return;
-   string s = StringFormat("RSI M1 (%d)  |  sempre attivo, nessun filtro\n", InpRSIPeriod);
+   string s = StringFormat("RSI M1 (%d)  |  %s  |  %d pos. per segnale  |  break-even RSI 50: %s\n", InpRSIPeriod,
+                           InpOneAtTime ? "una operazione alla volta" : "piu' operazioni insieme", MathMax(1, InpTradesPerSignal),
+                           InpBreakEven ? "SI" : "NO");
    s += StringFormat("RSI: %.1f  %s\n", g_rsiNow, g_os ? "(ipervenduto, attendo rientro sopra " + DoubleToString(InpRSILow, 0) + ")"
                                             : (g_ob ? "(ipercomprato, attendo rientro sotto " + DoubleToString(InpRSIHigh, 0) + ")" : ""));
    s += StringFormat("Posizioni aperte: %d\n", CountOpen());
