@@ -1,7 +1,7 @@
 ; RSI_M1_XAU v3.10 - SET DEFINITIVO (migliore dal test completo 2026 con tick reali)
-; Test 2026.01.01-2026.10.20: +319.50 $, Profit Factor 1.46, drawdown 8.5%, 175 trade (0.01 lotti, conto 1000 $)
+; Test 2026.01.01-2026.10.20: +344.60 $, Profit Factor 1.40, drawdown 8.2%, 228 trade (0.01 lotti, conto 1000 $)
 ; Entrata al rientro da 30/70, TP a RSI 50, SL 2.5 x ATR M1, una operazione alla volta,
-; solo dalle 13:00 alle 20:00 ora MT5, solo con ATR tra 0.065% e 0.13% del prezzo, chiusura prima del weekend
+; solo dalle 13:00 alle 20:00 ora MT5, solo con ATR tra 0.05% e 0.13% del prezzo, chiusura prima del weekend
 ; Base
 InpLots=0.01||0.01||0||0.01||N
 InpMagic=54001||54001||0||54001||N
@@ -26,5 +26,5 @@ InpHourStart=1300||1300||0||1300||N
 InpHourEnd=2000||2000||0||2000||N
 ; Volatilita' (ATR in % del prezzo)
 InpUseATRFilter=true||false||0||true||N
-InpMinATRPct=0.065||0.065||0||0.065||N
+InpMinATRPct=0.05||0.05||0||0.05||N
 InpMaxATRPct=0.13||0.13||0||0.13||N
