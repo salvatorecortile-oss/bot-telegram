@@ -80,56 +80,25 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 
 ---
 
-# LiquiditySweep_XAU — EA MT5 sweep di liquidità (D1 + Asia)
+# RSI_M1_XAU — EA MT5 RSI su M1
 
-Un solo bot che segue **4 livelli** contemporaneamente:
+- **RSI:** 28 periodi su M1.
+- **BUY:** l'RSI scende a 30 o sotto, poi una candela M1 chiude con l'RSI di nuovo sopra 30. Il bot apre a mercato.
+- **SELL:** l'RSI sale a 70 o sopra, poi una candela M1 chiude con l'RSI di nuovo sotto 70. Il bot apre a mercato.
+- **SL:** oltre il minimo (BUY) o il massimo (SELL) toccato mentre l'RSI era oltre 30/70, più un margine di 20 punti + 0,3 × ATR M5.
+- **TP:** 2 volte il rischio (RR 1:2).
 
-| Livello | Cos'è | Setup |
-|---|---|---|
-| `PDL` | minimo di ieri (D1) | BUY |
-| `PDH` | massimo di ieri (D1) | SELL |
-| `AsiaL` | minimo del range Asia | BUY |
-| `AsiaH` | massimo del range Asia | SELL |
+## Filtri
 
-Il range Asia va dalle 01:00 alle 08:00 ora di MT5, cioè dalle 00:00 alle 07:00 italiane. Si calcola solo a sessione chiusa, quindi i livelli Asia sono attivi dalle 08:00 di MT5.
+- Entrate solo nelle sessioni: Londra 10:00–14:00 e New York 15:30–19:00, ora di MT5 (= ora italiana + 1).
+- Nessun trade se lo SL sarebbe più lontano di 4 × ATR M5.
+- Massimo 3 trade al giorno e 1 posizione aperta alla volta.
+- Spread massimo 60 punti.
+- Filtro trend EMA D1 opzionale (`InpTrendEMA`, spento).
+- Break-even opzionale (`InpBreakEvenR`, spento).
 
-## Modalità di entrata (`InpEntryMode`, dalla v2.00)
+## Installazione
 
-| Valore | Modalità | Entrata |
-|---|---|---|
-| 0 | Sweep M5 | logica descritta sotto (chiusura M5 oltre il livello e poi rientro) |
-| 1 | RSI M1 + sweep (default) | RSI(28) su M1. **BUY:** l'RSI scende a 30 o sotto e poi una candela M1 chiude con l'RSI di nuovo sopra 30. In quel tratto il prezzo deve aver superato al ribasso un minimo (PDL o AsiaL) e la candela deve chiudere sopra quel livello. **SELL:** stessa logica con 70 e un massimo (PDH o AsiaH). |
-| 2 | Solo RSI M1 | come la 1, ma senza bisogno di livelli |
-
-Nelle modalità RSI lo SL va oltre l'estremo del tratto in cui l'RSI è stato oltre 30/70, con lo stesso margine (punti + ATR M5). Valgono gli stessi filtri: sessioni, SL massimo, trade al giorno, spread, trend. Set: `LiquiditySweep_XAU_rsi.set`; per l'ottimizzazione `LiquiditySweep_XAU_rsi_ottimizza.set`.
-
-## Come lavora (esempio BUY sul minimo)
-
-1. **Sweep:** una candela M5 **chiude sotto** il livello. Il bot registra il minimo più basso raggiunto (wick compresi).
-2. **Conferma:** entro **12 candele M5** (1 ora) una candela M5 **chiude di nuovo sopra** il livello. Alla chiusura di quella candela il bot apre un **BUY a mercato**.
-3. **SL:** sotto il minimo dello sweep, più un margine di 20 punti + 0,3 × ATR M5 (`InpSLBufferATR`). Il margine serve a non farsi prendere dal secondo sweep.
-4. **TP:** 2 volte il rischio (RR 1:2).
-
-Per il SELL sul massimo la logica è la stessa, specchiata.
-
-## Nessun trade quando
-
-- lo sweep va troppo oltre il livello: più di 2 × ATR M5 (`InpMaxDepthATR`). È una rottura vera.
-- il prezzo resta fuori più di 12 candele M5. Anche questa è una rottura vera: il livello torna valido solo dopo un rientro, e quel rientro non apre trade.
-- lo SL risulterebbe più lontano di 4 × ATR M5 (`InpMaxSLATR`). Si può impostare anche un limite in punti (`InpMaxSLPts`).
-- il rientro avviene fuori dalle sessioni: Londra 10:00–14:00 e New York 15:30–19:00, ora di MT5.
-- c'è già un trade aperto sullo stesso livello, oppure il livello ha già fatto 3 trade oggi.
-- due livelli confermano sulla stessa candela nella stessa direzione (per esempio PDL e minimo Asia molto vicini): apre un solo trade.
-- lo spread è sopra 60 punti.
-- (opzionale, `InpTrendEMA` > 0) il trade va contro il trend D1, cioè contro la posizione della chiusura di ieri rispetto all'EMA D1.
-
-Il break-even è spento (`InpBreakEvenR = 0`). Mettendo per esempio `1.0`, lo SL va a entrata + 10 punti quando il trade è a +1R.
-
-Sul grafico disegna i livelli: D1 con linee rosse continue, Asia con linee blu tratteggiate. In alto a sinistra mostra lo stato di ogni livello.
-
-## Installazione e backtest
-
-1. Copia `LiquiditySweep_XAU.mq5` in *MQL5/Experts* e compila con F7.
-2. Trascinalo sul grafico **M5** di XAUUSD e carica `LiquiditySweep_XAU.set`.
-3. Fai un backtest con "Every tick based on real ticks" prima del conto reale.
-4. Per l'ottimizzazione carica `LiquiditySweep_XAU_ottimizza.set` (algoritmo genetico, forward 1/3).
+1. Copia `RSI_M1_XAU.mq5` in *MQL5/Experts* e compila con F7.
+2. Trascinalo sul grafico **M1** di XAUUSD e carica `RSI_M1_XAU.set`.
+3. Per l'ottimizzazione usa `RSI_M1_XAU_ottimizza.set`.
