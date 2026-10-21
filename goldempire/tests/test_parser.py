@@ -82,7 +82,26 @@ SIGNAL_2_BUY_NEW = """🟣 SIGNAL 2 – XAUUSD BUY
 
 ⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
 
+# Segnale senza obiettivo: si esce quando lo dice il canale.
+SIGNAL_5_BUY_NO_TP = """🟠 SIGNAL 5 – XAUUSD BUY
+
+📥 Ingresso: 4118,78
+
+🎯 Uscita: al segnale della strategia
+
+🛑 SL: 3871,65 (stop d’emergenza, non l’uscita prevista)
+
+📏 Rischio consigliato: 2% del conto per segnale, contando TUTTE le gambe
+
+⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
+
 TESTS = [
+    (SIGNAL_5_BUY_NO_TP, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5, "direction": "BUY",
+                          "entry": 4118.78, "sl": 3871.65, "tp": None, "targets_total": 1}),
+    # Senza TP e senza "Uscita" il messaggio e' incompleto: non si apre.
+    ("🟠 SIGNAL 5 – XAUUSD BUY\nIngresso: 4118,78\nSL: 3871,65", None),
+    # SL dal lato sbagliato anche senza TP: non si apre.
+    (SIGNAL_5_BUY_NO_TP.replace("BUY", "SELL"), None),
     (SIGNAL_2_BUY_NEW, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 2, "direction": "BUY",
                         "entry": 4137.44, "sl": 4131.13, "tp": 4163.40, "targets_total": 2}),
     (SIGNAL_2_BUY_NEW.replace("BUY", "SELL").replace("4163,40", "4100,00").replace("4131,13", "4150,00"),

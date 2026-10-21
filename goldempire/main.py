@@ -121,9 +121,9 @@ async def handle_open(message, signal):
             return  # gia' gestito
 
         logger.info(
-            "🎯 SIGNAL %s | %s XAUUSD | Ingresso %.2f | SL %.2f | TP %.2f%s | #%s",
+            "🎯 SIGNAL %s | %s XAUUSD | Ingresso %.2f | SL %.2f | TP %s%s | #%s",
             signal["signal_no"], signal["direction"], signal["entry"], signal["sl"],
-            signal["tp"],
+            f"{signal['tp']:.2f}" if signal["tp"] else "nessuno (chiusura a segnale)",
             f" (obiettivo 1 di {signal['targets_total']})" if signal["targets_total"] > 1 else "",
             source_id,
         )
@@ -424,9 +424,10 @@ def status_text():
     for row in rows:
         profit = profit_by_ticket.get(int(row["position_ticket"] or 0))
         profit_txt = f" | {profit:+.2f} $" if profit is not None else ""
+        tp_txt = f"{row['tp']:.2f}" if row["tp"] else "a segnale"
         lines.append(
             f"• SIGNAL {row['signal_no']} {row['direction']} @ {row['open_price']:.2f} "
-            f"| SL {row['sl']:.2f} | TP {row['tp']:.2f}{' | BE' if row['be_applied'] else ''}{profit_txt}"
+            f"| SL {row['sl']:.2f} | TP {tp_txt}{' | BE' if row['be_applied'] else ''}{profit_txt}"
         )
     if not rows:
         lines.append("Nessuna")

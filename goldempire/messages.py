@@ -12,6 +12,14 @@ OPEN_TRADE_MESSAGE_TEMPLATE = (
     "🎯 <b>TAKE PROFIT:</b> {tp:.2f}"
 )
 
+# Segnali senza obiettivo: si chiude quando lo comunica il canale.
+OPEN_TRADE_NO_TP_MESSAGE_TEMPLATE = (
+    "👑 <b>XAUUSD — {direction}</b>\n\n"
+    "🟢 <b>ENTRY:</b> {entry:.2f}\n"
+    "🛑 <b>STOP LOSS:</b> {sl:.2f}\n"
+    "🎯 <b>TAKE PROFIT:</b> chiusura a segnale"
+)
+
 TAKE_PROFIT_MESSAGE_TEMPLATE = (
     "🟢 <b>TAKE PROFIT RAGGIUNTO!</b>\n"
     "✅ <b>OPERAZIONE CHIUSA</b>\n\n"
@@ -57,6 +65,12 @@ def format_signed_pips(value):
 
 
 def format_open_message(direction, entry, sl, tp):
+    if not tp:
+        return OPEN_TRADE_NO_TP_MESSAGE_TEMPLATE.format(
+            direction=escape(str(direction).upper()),
+            entry=float(entry),
+            sl=float(sl),
+        )
     return OPEN_TRADE_MESSAGE_TEMPLATE.format(
         direction=escape(str(direction).upper()),
         entry=float(entry),

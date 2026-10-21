@@ -145,7 +145,7 @@ def mark_opened(source_message_id, position_ticket, open_price, volume, sl, tp):
             """,
             (
                 OPEN_STATUS, position_ticket, float(open_price), volume,
-                float(sl), float(tp), _now(), int(source_message_id),
+                float(sl), float(tp) if tp else None, _now(), int(source_message_id),
             ),
         )
 

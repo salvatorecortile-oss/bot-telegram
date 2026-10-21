@@ -233,6 +233,23 @@ async def scenario(trading):
         assert db.get_signal(40)["status"] == "CLOSED_TP"
         print("   Monitor TP ->", tg.sent[-1].text.replace("\n", " | "))
 
+    # 11b) Segnale senza TP: aperto con il solo SL, chiuso dal messaggio del canale
+    mt5.bid, mt5.ask = 4118.50, 4118.78
+    await main.source_message_handler(event(msg(60, T.SIGNAL_5_BUY_NO_TP)))
+    r7 = db.get_signal(60)
+    assert r7["status"] == "OPENED" and r7["tp"] is None, r7
+    assert "chiusura a segnale" in tg.sent[-1].text, tg.sent[-1].text
+    print("   Apertura senza TP ->", tg.sent[-1].text.replace("\n", " | "))
+    if trading:
+        pos = mt5.positions[r7["position_ticket"]]
+        assert (pos.sl, pos.tp) == (3871.65, 0.0), (pos.sl, pos.tp)
+    assert "a segnale" in main.status_text()
+    mt5.bid, mt5.ask = 4150.00, 4150.30
+    close5 = "🟠 SIGNAL 5 – CHIUSA\n\nUscita 4150,00\nRisultato +312,2 pips"
+    await main.source_message_handler(event(msg(61, close5, reply_to=60)))
+    assert db.get_signal(60)["status"] == "CLOSED_MANUAL", db.get_signal(60)
+    print("   Chiusura a segnale ->", tg.sent[-1].text.replace("\n", " | "))
+
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)
     old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)

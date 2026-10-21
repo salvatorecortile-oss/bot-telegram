@@ -121,13 +121,17 @@ def parse_signal(text):
             tp_indexes = [int(n) for n in re.findall(r"\bTP\s*([1-9])\b", clean, re.IGNORECASE)]
             targets_total = max(tp_indexes) if tp_indexes else 1
 
-        if entry is None or sl is None or tp is None:
+        # Senza obiettivo ("Uscita: al segnale della strategia") si apre con
+        # il solo SL: la chiusura arrivera' con il messaggio del canale.
+        if entry is None or sl is None:
+            return None
+        if tp is None and not re.search(r"\bUSCITA\b", clean, re.IGNORECASE):
             return None
 
         # Coerenza dei livelli: evita di aprire con un numero letto male.
-        if direction == "BUY" and not (sl < entry < tp):
+        if direction == "BUY" and not (sl < entry and (tp is None or entry < tp)):
             return None
-        if direction == "SELL" and not (tp < entry < sl):
+        if direction == "SELL" and not (sl > entry and (tp is None or entry > tp)):
             return None
 
         return {

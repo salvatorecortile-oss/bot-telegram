@@ -158,16 +158,16 @@ def _validate_stops(direction, price, sl, tp, info):
     if direction == "BUY":
         if not sl < price:
             raise ValueError(f"BUY: SL {sl:.2f} non e' sotto il prezzo {price:.2f} (stop gia' superato).")
-        if not tp > price:
+        if tp and not tp > price:
             raise ValueError(f"BUY: TP {tp:.2f} non e' sopra il prezzo {price:.2f} (obiettivo gia' superato).")
-        if min_distance and (price - sl < min_distance or tp - price < min_distance):
+        if min_distance and (price - sl < min_distance or (tp and tp - price < min_distance)):
             raise ValueError(f"BUY: SL/TP troppo vicini al prezzo (minimo {min_distance:.2f}).")
     else:
         if not sl > price:
             raise ValueError(f"SELL: SL {sl:.2f} non e' sopra il prezzo {price:.2f} (stop gia' superato).")
-        if not tp < price:
+        if tp and not tp < price:
             raise ValueError(f"SELL: TP {tp:.2f} non e' sotto il prezzo {price:.2f} (obiettivo gia' superato).")
-        if min_distance and (sl - price < min_distance or price - tp < min_distance):
+        if min_distance and (sl - price < min_distance or (tp and price - tp < min_distance)):
             raise ValueError(f"SELL: SL/TP troppo vicini al prezzo (minimo {min_distance:.2f}).")
 
 
@@ -234,7 +234,8 @@ def open_market_order(signal):
             )
 
         sl = round(float(signal["sl"]), digits)
-        tp = round(float(signal["tp"]), digits)
+        # 0 = nessun TP su MT5 (segnali con uscita "al segnale della strategia").
+        tp = round(float(signal["tp"]), digits) if signal.get("tp") else 0.0
         _validate_stops(direction, price, sl, tp, info)
 
         volume = _normalize_volume(LOT_SIZE, info)
