@@ -1,4 +1,9 @@
 ; LiquiditySweep v1.10 - OTTIMIZZAZIONE (Slow complete o Genetic), forward 1/3, criterio Profit Factor o Balance max
+; Modalita' di entrata
+InpEntryMode=0
+InpRSIPeriod=28
+InpRSILow=30.0
+InpRSIHigh=70.0
 ; Base
 InpLots=0.01
 InpMagic=53001

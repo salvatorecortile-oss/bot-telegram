@@ -93,6 +93,16 @@ Un solo bot che segue **4 livelli** contemporaneamente:
 
 Il range Asia va dalle 01:00 alle 08:00 ora di MT5, cioè dalle 00:00 alle 07:00 italiane. Si calcola solo a sessione chiusa, quindi i livelli Asia sono attivi dalle 08:00 di MT5.
 
+## Modalità di entrata (`InpEntryMode`, dalla v2.00)
+
+| Valore | Modalità | Entrata |
+|---|---|---|
+| 0 | Sweep M5 | logica descritta sotto (chiusura M5 oltre il livello e poi rientro) |
+| 1 | RSI M1 + sweep (default) | RSI(28) su M1. **BUY:** l'RSI scende a 30 o sotto e poi una candela M1 chiude con l'RSI di nuovo sopra 30. In quel tratto il prezzo deve aver superato al ribasso un minimo (PDL o AsiaL) e la candela deve chiudere sopra quel livello. **SELL:** stessa logica con 70 e un massimo (PDH o AsiaH). |
+| 2 | Solo RSI M1 | come la 1, ma senza bisogno di livelli |
+
+Nelle modalità RSI lo SL va oltre l'estremo del tratto in cui l'RSI è stato oltre 30/70, con lo stesso margine (punti + ATR M5). Valgono gli stessi filtri: sessioni, SL massimo, trade al giorno, spread, trend. Set: `LiquiditySweep_XAU_rsi.set`; per l'ottimizzazione `LiquiditySweep_XAU_rsi_ottimizza.set`.
+
 ## Come lavora (esempio BUY sul minimo)
 
 1. **Sweep:** una candela M5 **chiude sotto** il livello. Il bot registra il minimo più basso raggiunto (wick compresi).

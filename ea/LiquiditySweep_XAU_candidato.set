@@ -1,5 +1,10 @@
 ; LiquiditySweep v1.10 - CANDIDATO dall'ottimizzazione 2026 (gruppo positivo sia back che forward)
 ; Da verificare su un periodo MAI usato: 2024.01.01 - 2025.12.31
+; Modalita' di entrata
+InpEntryMode=0
+InpRSIPeriod=28
+InpRSILow=30.0
+InpRSIHigh=70.0
 ; Base
 InpLots=0.01
 InpMagic=53001

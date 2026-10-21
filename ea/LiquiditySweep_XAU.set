@@ -1,4 +1,9 @@
 ; LiquiditySweep v1.10 - XAUUSD, conferma M5, RR 1:2, lotto fisso
+; Modalita' di entrata
+InpEntryMode=0
+InpRSIPeriod=28
+InpRSILow=30.0
+InpRSIHigh=70.0
 ; Base
 InpLots=0.01
 InpMagic=53001

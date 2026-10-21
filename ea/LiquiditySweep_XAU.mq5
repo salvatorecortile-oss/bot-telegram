@@ -9,14 +9,31 @@
 //|  SL oltre l'estremo dello sweep (+ margine), TP = rischio x RR   |
 //|  Se il prezzo va troppo oltre o resta fuori troppo a lungo il    |
 //|  livello e' rotto davvero: nessun trade finche' non rientra      |
+//|  Modalita' RSI (M1): BUY quando l'RSI scende a 30 o sotto e poi  |
+//|  chiude di nuovo sopra 30, SELL quando sale a 70 o sopra e poi   |
+//|  chiude di nuovo sotto 70. "RSI + sweep" vuole anche che in quel |
+//|  tratto il prezzo abbia sweepato un livello e sia rientrato.     |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.10"
+#property version   "2.00"
 #property description "Liquidity sweep: massimo/minimo di ieri (D1) e range Asia, conferma M5, RR fisso"
 
 #include <Trade\Trade.mqh>
 
 //--- parametri ------------------------------------------------------
+enum EntryMode
+{
+   ENTRY_SWEEP_M5  = 0, // Sweep con conferma M5
+   ENTRY_RSI_SWEEP = 1, // RSI M1 + sweep di un livello
+   ENTRY_RSI_ONLY  = 2  // Solo RSI M1
+};
+
+input group "Modalita' di entrata"
+input EntryMode InpEntryMode   = ENTRY_RSI_SWEEP; // Modalita' di entrata
+input int    InpRSIPeriod      = 28;    // Periodo RSI (M1)
+input double InpRSILow         = 30;    // RSI ipervenduto: BUY quando richiude sopra
+input double InpRSIHigh        = 70;    // RSI ipercomprato: SELL quando richiude sotto
+
 input group "Base"
 input double InpLots           = 0.01;  // Lotti (fisso)
 input long   InpMagic          = 53001; // Magic number
@@ -80,6 +97,13 @@ CTrade   g_trade;
 SLevel   g_lev[NLEV];
 int      g_hATR         = INVALID_HANDLE;
 int      g_hEMA         = INVALID_HANDLE;
+int      g_hRSI         = INVALID_HANDLE;
+datetime g_lastBarM1    = 0;
+bool     g_os           = false;  // RSI in ipervenduto
+double   g_osLow        = 0;      // minimo del tratto in ipervenduto
+bool     g_ob           = false;  // RSI in ipercomprato
+double   g_obHigh       = 0;      // massimo del tratto in ipercomprato
+int      g_rsiTrades    = 0;      // trade di oggi in modalita' "Solo RSI"
 datetime g_day          = 0;
 datetime g_lastBar      = 0;
 datetime g_lastTradeBar = 0;
@@ -139,6 +163,16 @@ int OnInit()
       }
    }
 
+   if(InpEntryMode != ENTRY_SWEEP_M5)
+   {
+      g_hRSI = iRSI(_Symbol, PERIOD_M1, InpRSIPeriod, PRICE_CLOSE);
+      if(g_hRSI == INVALID_HANDLE)
+      {
+         Print("RSI M1 non disponibile");
+         return INIT_FAILED;
+      }
+   }
+
    g_lev[0].name = "PDL";   g_lev[0].side = -1;
    g_lev[1].name = "PDH";   g_lev[1].side = +1;
    g_lev[2].name = "AsiaL"; g_lev[2].side = -1;
@@ -151,6 +185,7 @@ void OnDeinit(const int reason)
 {
    if(g_hATR != INVALID_HANDLE) IndicatorRelease(g_hATR);
    if(g_hEMA != INVALID_HANDLE) IndicatorRelease(g_hEMA);
+   if(g_hRSI != INVALID_HANDLE) IndicatorRelease(g_hRSI);
    ObjectsDeleteAll(0, g_pfx);
    Comment("");
 }
@@ -162,6 +197,7 @@ void NewDay(datetime day)
    g_d1Done       = !InpUseD1;
    g_asiaDone     = !InpUseAsia;
    g_lastTradeBar = 0;
+   g_rsiTrades    = 0;
    for(int i = 0; i < NLEV; i++)
    {
       g_lev[i].price   = 0;
@@ -237,6 +273,12 @@ void OnTick()
 
    ManageBreakEven();
 
+   if(InpEntryMode == ENTRY_SWEEP_M5) ProcessM5();
+   else                               ProcessM1();
+}
+
+void ProcessM5()
+{
    datetime bar0 = iTime(_Symbol, PERIOD_M5, 0);
    if(bar0 == 0 || bar0 == g_lastBar) return;
    g_lastBar = bar0;
@@ -250,6 +292,68 @@ void OnTick()
       ProcessLevel(i, r[0], atr[0]);
 
    UpdatePanel();
+}
+
+// una candela M1 appena chiusa: segue l'RSI e cerca il rientro da 30 / 70
+void ProcessM1()
+{
+   datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
+   if(bar0 == 0 || bar0 == g_lastBarM1) return;
+   g_lastBarM1 = bar0;
+
+   MqlRates r[];
+   if(CopyRates(_Symbol, PERIOD_M1, 1, 1, r) != 1) return;
+   double rsi[1], atr[1];
+   if(CopyBuffer(g_hRSI, 0, 1, 1, rsi) != 1) return;
+   if(CopyBuffer(g_hATR, 0, 1, 1, atr) != 1 || atr[0] <= 0) return;
+
+   if(rsi[0] <= InpRSILow)
+   {
+      g_osLow = g_os ? MathMin(g_osLow, r[0].low) : r[0].low;
+      g_os    = true;
+   }
+   else if(g_os)
+   {
+      g_os = false;
+      SignalRSI(+1, MathMin(g_osLow, r[0].low), r[0].close, atr[0]);
+   }
+
+   if(rsi[0] >= InpRSIHigh)
+   {
+      g_obHigh = g_ob ? MathMax(g_obHigh, r[0].high) : r[0].high;
+      g_ob     = true;
+   }
+   else if(g_ob)
+   {
+      g_ob = false;
+      SignalRSI(-1, MathMax(g_obHigh, r[0].high), r[0].close, atr[0]);
+   }
+
+   UpdatePanel();
+}
+
+// l'RSI e' rientrato: ext = estremo del tratto oltre 30/70 (dove va lo SL)
+void SignalRSI(int dir, double ext, double close, double atr)
+{
+   if(InpEntryMode == ENTRY_RSI_ONLY)
+   {
+      TryEntry(-1, "RSI", dir, ext, atr, g_lastBarM1);
+      return;
+   }
+   for(int i = 0; i < NLEV; i++)
+   {
+      if(g_lev[i].side != -dir || g_lev[i].state == LS_OFF || g_lev[i].price <= 0) continue;
+      double lv = g_lev[i].price;
+      bool swept = dir > 0 ? (ext < lv && close > lv) : (ext > lv && close < lv);
+      if(!swept) continue;
+      double depth = MathAbs(lv - ext);
+      if((InpMaxDepthATR > 0 && depth > InpMaxDepthATR * atr) || (InpMaxDepthPts > 0 && depth > InpMaxDepthPts * _Point))
+      {
+         Log(g_lev[i].name + ": sweep troppo profondo, niente trade");
+         continue;
+      }
+      TryEntry(i, g_lev[i].name, dir, ext, atr, g_lastBarM1);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -295,7 +399,7 @@ void ProcessLevel(int i, const MqlRates &bar, double atr)
          }
          else if(IsInside(g_lev[i], c))
          {
-            TryEntry(i, atr);
+            TryEntry(i, g_lev[i].name, -g_lev[i].side, g_lev[i].extreme, atr, g_lastBar);
             g_lev[i].state = LS_IDLE;
          }
          else if(++g_lev[i].barsOut > InpMaxBarsOut)
@@ -343,16 +447,16 @@ double NormLots(double v)
    return NormalizeDouble(MathMax(mn, MathMin(mx, v)), 2);
 }
 
-void TryEntry(int i, double atr)
+// i = livello (-1 = solo RSI), dir = +1 BUY / -1 SELL, ext = estremo oltre il quale va lo SL
+void TryEntry(int i, string name, int dir, double ext, double atr, datetime bar)
 {
-   string name = g_lev[i].name;
-   string tag  = "LS " + name;
-   int    dir  = -g_lev[i].side;  // sweep del minimo -> BUY, del massimo -> SELL
+   string tag    = "LS " + name;
+   int    trades = i >= 0 ? g_lev[i].trades : g_rsiTrades;
 
-   if(!InSession(TimeCurrent()))                                  { Log(name + ": rientro fuori sessione, niente trade"); return; }
-   if(InpMaxTradesLevel > 0 && g_lev[i].trades >= InpMaxTradesLevel) { Log(name + ": trade massimi di oggi raggiunti"); return; }
+   if(!InSession(TimeCurrent()))                                  { Log(name + ": segnale fuori sessione, niente trade"); return; }
+   if(InpMaxTradesLevel > 0 && trades >= InpMaxTradesLevel)      { Log(name + ": trade massimi di oggi raggiunti"); return; }
    if(InpOnePerLevel && HasOpenFor(tag))                         { Log(name + ": c'e' gia' un trade aperto su questo livello"); return; }
-   if(InpOnePerBar && g_lastTradeBar == g_lastBar && g_lastTradeDir == dir) { Log(name + ": trade gia' aperto su questa candela"); return; }
+   if(InpOnePerBar && g_lastTradeBar == bar && g_lastTradeDir == dir) { Log(name + ": trade gia' aperto su questa candela"); return; }
 
    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
@@ -372,13 +476,13 @@ void TryEntry(int i, double atr)
    if(dir > 0)
    {
       entry = ask;
-      sl    = g_lev[i].extreme - buf;
+      sl    = ext - buf;
       risk  = entry - sl;
    }
    else
    {
       entry = bid;
-      sl    = g_lev[i].extreme + buf + (ask - bid);  // lo SL del sell scatta sull'ask
+      sl    = ext + buf + (ask - bid);  // lo SL del sell scatta sull'ask
       risk  = sl - entry;
    }
    if(risk <= 0) return;
@@ -409,8 +513,9 @@ void TryEntry(int i, double atr)
                      : g_trade.Sell(lots, _Symbol, 0, sl, tp, tag);
    if(ok && (g_trade.ResultRetcode() == TRADE_RETCODE_DONE || g_trade.ResultRetcode() == TRADE_RETCODE_PLACED))
    {
-      g_lev[i].trades++;
-      g_lastTradeBar = g_lastBar;
+      if(i >= 0) g_lev[i].trades++;
+      else       g_rsiTrades++;
+      g_lastTradeBar = bar;
       g_lastTradeDir = dir;
       Log(StringFormat("%s %s: entrata %s SL %s TP %s (rischio %.0f punti)", dir > 0 ? "BUY" : "SELL", name,
                        DoubleToString(entry, _Digits), DoubleToString(sl, _Digits), DoubleToString(tp, _Digits), risk / _Point));
@@ -472,7 +577,10 @@ void DrawLevel(int i)
 void UpdatePanel()
 {
    if(g_quiet) return;
-   string s = "LiquiditySweep  |  conferma M5  |  RR 1:" + DoubleToString(InpRR, 1) + "\n";
+   string mode = InpEntryMode == ENTRY_SWEEP_M5 ? "sweep M5" : (InpEntryMode == ENTRY_RSI_SWEEP ? "RSI M1 + sweep" : "solo RSI M1");
+   string s = "LiquiditySweep  |  " + mode + "  |  RR 1:" + DoubleToString(InpRR, 1) + "\n";
+   if(InpEntryMode != ENTRY_SWEEP_M5)
+      s += StringFormat("RSI(%d): %s\n", InpRSIPeriod, g_os ? "ipervenduto" : (g_ob ? "ipercomprato" : "nel range"));
    s += InSession(TimeCurrent()) ? "Sessione: ATTIVA\n" : "Sessione: fuori orario\n";
    for(int i = 0; i < NLEV; i++)
    {
