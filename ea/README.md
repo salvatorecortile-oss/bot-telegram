@@ -80,33 +80,22 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 
 ---
 
-# RSI_M1_XAU — EA MT5 RSI su M1
+# RSI_M1_XAU — EA MT5 RSI su M1 (v3.00)
 
-Sempre attivo, a qualsiasi ora, senza filtri.
+Sempre attivo, senza filtri. Un solo trade per ogni tocco di 30/70.
 
 | | BUY | SELL |
 |---|---|---|
 | **Entrata** | l'RSI(28) M1 scende a 30 o sotto, poi una candela M1 chiude con l'RSI di nuovo sopra 30 | l'RSI sale a 70 o sopra, poi una candela M1 chiude con l'RSI di nuovo sotto 70 |
-| **Uscita (TP)** | appena l'RSI tocca 70 (controllato a ogni tick) | appena l'RSI tocca 30 |
-| **SL** | sotto il minimo toccato mentre l'RSI era sotto 30, + 20 punti + 0,3 × ATR M5 | sopra il massimo toccato mentre l'RSI era sopra 70, con lo stesso margine |
+| **TP** | appena l'RSI torna a 50 (controllato a ogni tick) | appena l'RSI torna a 50 |
+| **SL** | 2 × ATR(14) M1 sotto l'entrata | 2 × ATR(14) M1 sopra l'entrata |
 
-Non ci sono TP fisso, sessioni, limiti di trade, filtro spread o filtro trend.
-
-## Opzioni (v2.10)
-
-- **`InpOneAtTime`** (attivo): una operazione alla volta. Un nuovo segnale viene ignorato finché c'è un trade aperto.
-- **`InpTradesPerSignal`** (1): quante posizioni apre a ogni segnale (1, 2, 3...).
-- **`InpBreakEven`** (spento): quando l'RSI tocca 50, lo SL va all'entrata.
+`InpOneAtTime` (attivo): mentre c'è un trade aperto, i nuovi segnali vengono ignorati.
 
 ## File di impostazioni
 
-| File | Posizioni per segnale | Break-even RSI 50 |
-|---|---|---|
-| `RSI_M1_XAU.set` | 1 | no |
-| `RSI_M1_XAU_BE.set` | 1 | sì |
-| `RSI_M1_XAU_2pos.set` | 2 | no |
-| `RSI_M1_XAU_2pos_BE.set` | 2 | sì |
-| `RSI_M1_XAU_test_tutti.set` | ottimizzazione: tutte le 12 varianti in un colpo | |
+- `RSI_M1_XAU.set`: impostazioni base.
+- `RSI_M1_XAU_test_SL.set`: ottimizzazione che prova lo SL da 1 a 4 × ATR, con e senza "una operazione alla volta".
 
 ## Installazione
 

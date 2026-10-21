@@ -1,0 +1,16 @@
+; RSI_M1_XAU v3.00 - prova lo SL da 1 a 4 x ATR M1 (e una operazione alla volta si/no)
+; Ottimizzazione "Slow complete algorithm": 14 test, senza forward
+; Base
+InpLots=0.01
+InpMagic=54001
+; RSI (M1)
+InpRSIPeriod=28
+InpRSILow=30.0
+InpRSIHigh=70.0
+InpRSIExit=50.0
+; Stop loss (ATR)
+InpATRTF=1
+InpATRPeriod=14
+InpSLATR=2.0||1.0||0.5||4.0||Y
+; Operazioni
+InpOneAtTime=true||false||0||true||Y
