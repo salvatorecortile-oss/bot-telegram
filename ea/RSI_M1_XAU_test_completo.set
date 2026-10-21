@@ -1,0 +1,31 @@
+; RSI_M1_XAU v3.10 - TEST COMPLETO: tutte le combinazioni in un unico file
+; Ottimizzazione "Slow complete algorithm": 240 test, senza forward
+; SL 1-1.5-2-2.5-3 x ATR  x  TP a RSI 45-50-55  x  una operazione alla volta si/no
+; x  weekend si/no  x  fascia oraria 13-20 si/no  x  filtro ATR si/no
+; Da fare sul 2026 (tick reali) e poi sul 2024-2025 con lo stesso file
+; Base
+InpLots=0.01
+InpMagic=54001
+; RSI (M1)
+InpRSIPeriod=28
+InpRSILow=30.0
+InpRSIHigh=70.0
+InpRSIExit=50.0||45.0||5.0||55.0||Y
+; Stop loss (ATR)
+InpATRTF=1
+InpATRPeriod=14
+InpSLATR=2.0||1.0||0.5||3.0||Y
+; Operazioni
+InpOneAtTime=true||false||0||true||Y
+; Weekend (ora di MT5)
+InpWeekend=true||false||0||true||Y
+InpFriNoNew=2100
+InpFriClose=2245
+; Fascia oraria di entrata (ora di MT5)
+InpUseHours=false||false||0||true||Y
+InpHourStart=1300
+InpHourEnd=2000
+; Volatilita' (ATR in % del prezzo)
+InpUseATRFilter=false||false||0||true||Y
+InpMinATRPct=0.065
+InpMaxATRPct=0.13
