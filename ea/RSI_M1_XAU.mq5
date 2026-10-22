@@ -7,12 +7,12 @@
 //|    con l'RSI di nuovo sotto 70                                   |
 //|  Un solo trade per ogni tocco di 30/70                           |
 //|  SL = ATR x moltiplicatore (si adatta alla volatilita')          |
-//|  TP = quando l'RSI torna a 50                                    |
+//|  TP = quando l'RSI torna a 50 (livello BUY e SELL separati)      |
 //|  Opzioni (accendi/spegni): chiusura prima del weekend, fascia    |
 //|  oraria di entrata, volatilita' (ATR) minima e massima           |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "3.10"
+#property version   "3.20"
 #property description "RSI M1: entra al rientro da 30/70, esce quando l'RSI torna a 50, SL in ATR"
 
 #include <Trade\Trade.mqh>
@@ -26,7 +26,8 @@ input group "RSI (M1)"
 input int    InpRSIPeriod      = 28;    // Periodo RSI
 input double InpRSILow         = 30;    // BUY quando l'RSI rientra sopra questo livello
 input double InpRSIHigh        = 70;    // SELL quando l'RSI rientra sotto questo livello
-input double InpRSIExit        = 50;    // TP: BUY chiude con RSI >= questo, SELL con RSI <= 100 - questo
+input double InpRSIExit        = 50;    // TP BUY: chiude quando l'RSI sale a questo livello
+input double InpRSIExitSell    = 50;    // TP SELL: chiude quando l'RSI scende a questo livello
 
 input group "Stop loss (ATR)"
 input ENUM_TIMEFRAMES InpATRTF = PERIOD_M1; // Time frame ATR
@@ -122,7 +123,7 @@ void OnTick()
    {
       g_rsiNow = now[0];
       if(now[0] >= InpRSIExit)       CloseAll(POSITION_TYPE_BUY);
-      if(now[0] <= 100 - InpRSIExit) CloseAll(POSITION_TYPE_SELL);
+      if(now[0] <= InpRSIExitSell)   CloseAll(POSITION_TYPE_SELL);
    }
 
    datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
@@ -162,8 +163,7 @@ void CloseAll(ENUM_POSITION_TYPE type)
       if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
       if(PositionGetInteger(POSITION_TYPE) != type) continue;
       if(g_trade.PositionClose(tk))
-         Log(StringFormat("%s chiuso: RSI %.1f tornato a %s", type == POSITION_TYPE_BUY ? "BUY" : "SELL", g_rsiNow,
-                          DoubleToString(InpRSIExit, 0)));
+         Log(StringFormat("%s chiuso: RSI %.1f", type == POSITION_TYPE_BUY ? "BUY" : "SELL", g_rsiNow));
    }
 }
 
@@ -226,7 +226,7 @@ void Open(int dir, double atr)
    if(ok && (g_trade.ResultRetcode() == TRADE_RETCODE_DONE || g_trade.ResultRetcode() == TRADE_RETCODE_PLACED))
       Log(StringFormat("%s: entrata %s SL %s (%.0f punti = %.1f x ATR), TP quando l'RSI torna a %s", name,
                        DoubleToString(entry, _Digits), DoubleToString(sl, _Digits), dist / _Point, InpSLATR,
-                       DoubleToString(InpRSIExit, 0)));
+                       DoubleToString(dir > 0 ? InpRSIExit : InpRSIExitSell, 0)));
    else
       Log(StringFormat("%s: ordine rifiutato (%u %s)", name, g_trade.ResultRetcode(), g_trade.ResultRetcodeDescription()));
 }
@@ -235,7 +235,8 @@ void Open(int dir, double atr)
 void UpdatePanel()
 {
    if(g_quiet) return;
-   string s = StringFormat("RSI M1 (%d)  |  SL %.1f x ATR  |  TP a RSI %s\n", InpRSIPeriod, InpSLATR, DoubleToString(InpRSIExit, 0));
+   string s = StringFormat("RSI M1 (%d)  |  SL %.1f x ATR  |  TP BUY a RSI %s, SELL a RSI %s\n", InpRSIPeriod, InpSLATR,
+                           DoubleToString(InpRSIExit, 0), DoubleToString(InpRSIExitSell, 0));
    s += StringFormat("Weekend: %s  |  Fascia oraria: %s  |  Filtro ATR: %s\n", InpWeekend ? "SI" : "NO",
                      InpUseHours ? StringFormat("%04d-%04d", InpHourStart, InpHourEnd) : "NO", InpUseATRFilter ? "SI" : "NO");
    s += StringFormat("RSI: %.1f  %s\n", g_rsiNow, g_os ? "(sotto " + DoubleToString(InpRSILow, 0) + ", attendo il rientro)"

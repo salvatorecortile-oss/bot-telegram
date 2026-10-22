@@ -87,7 +87,7 @@ Sempre attivo, senza filtri. Un solo trade per ogni tocco di 30/70.
 | | BUY | SELL |
 |---|---|---|
 | **Entrata** | l'RSI(28) M1 scende a 30 o sotto, poi una candela M1 chiude con l'RSI di nuovo sopra 30 | l'RSI sale a 70 o sopra, poi una candela M1 chiude con l'RSI di nuovo sotto 70 |
-| **TP** | appena l'RSI torna a 50 (controllato a ogni tick) | appena l'RSI torna a 50 |
+| **TP** | appena l'RSI sale a `InpRSIExit` (50), controllato a ogni tick | appena l'RSI scende a `InpRSIExitSell` (50) |
 | **SL** | 2 × ATR(14) M1 sotto l'entrata | 2 × ATR(14) M1 sopra l'entrata |
 
 `InpOneAtTime` (attivo): mentre c'è un trade aperto, i nuovi segnali vengono ignorati.
@@ -105,6 +105,7 @@ Sempre attivo, senza filtri. Un solo trade per ogni tocco di 30/70.
 - **`RSI_M1_XAU_definitivo.set`**: impostazioni consigliate. SL 2,5 × ATR, TP a RSI 50, fascia oraria 13–20, filtro ATR (0,05%–0,13%) e weekend accesi. Sul 2026: +345 $, PF 1,40, drawdown 8,2%, 228 trade.
 - `RSI_M1_XAU.set`: impostazioni base.
 - `RSI_M1_XAU_test_SL.set`: ottimizzazione che prova lo SL da 1 a 4 × ATR, con e senza "una operazione alla volta".
+- `RSI_M1_XAU_test_TP.set`: ottimizzazione del TP, BUY da 50 a 70 × SELL da 50 a 30 (25 test).
 - `RSI_M1_XAU_test_filtri.set`: ottimizzazione che prova le 8 combinazioni dei filtri weekend, fascia oraria e ATR.
 
 ## Installazione

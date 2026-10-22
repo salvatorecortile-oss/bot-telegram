@@ -1,6 +1,6 @@
-; RSI_M1_XAU v3.10 - TEST TP: set definitivo con TP a RSI 50, 55, 60, 65 e 70
-; (BUY chiude con RSI >= valore, SELL con RSI <= 100 - valore)
-; Ottimizzazione "Slow complete algorithm": 5 test, senza forward. Periodo 2026.01.01-2026.10.20, tick reali
+; RSI_M1_XAU v3.20 - TEST TP BUY e SELL separati, sul set definitivo
+; TP BUY a RSI 50-55-60-65-70  x  TP SELL a RSI 50-45-40-35-30
+; Ottimizzazione "Slow complete algorithm": 25 test, senza forward. Periodo 2026, tick reali
 ; Base
 InpLots=0.01||0.01||0||0.01||N
 InpMagic=54001||54001||0||54001||N
@@ -9,6 +9,7 @@ InpRSIPeriod=28||28||0||28||N
 InpRSILow=30.0||30.0||0||30.0||N
 InpRSIHigh=70.0||70.0||0||70.0||N
 InpRSIExit=50.0||50.0||5.0||70.0||Y
+InpRSIExitSell=50.0||30.0||5.0||50.0||Y
 ; Stop loss (ATR)
 InpATRTF=1||1||0||1||N
 InpATRPeriod=14||14||0||14||N

@@ -9,6 +9,7 @@ InpRSIPeriod=28||14||7||28||Y
 InpRSILow=30.0||30.0||5.0||35.0||Y
 InpRSIHigh=70.0||65.0||5.0||70.0||Y
 InpRSIExit=50.0||50.0||0||50.0||N
+InpRSIExitSell=50.0||50.0||0||50.0||N
 ; Stop loss (ATR)
 InpATRTF=1||1||0||1||N
 InpATRPeriod=14||14||0||14||N
