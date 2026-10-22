@@ -386,6 +386,26 @@ async def scenario(trading):
     assert db.get_signal(115)["status"] == "PAUSED_NO_NEW_TRADE"
     main.BOT_STATE = "RUNNING"
 
+    # 18) 3 SELL del SIGNAL 5: "CHIUSA" in reply chiude solo quella, il BUY chiude le restanti
+    mt5.bid, mt5.ask = 4100.00, 4100.30
+    for mid in (120, 121, 122):
+        await main.source_message_handler(event(msg(mid, strat(5, "SELL", "4100,00", "4350,00"))))
+    mt5.bid, mt5.ask = 4090.00, 4090.30
+    close_reply = "🟠 SIGNAL 5 – OPERAZIONE CHIUSA"
+    await main.source_message_handler(event(msg(123, close_reply, reply_to=122)))  # ultimo SELL
+    assert [db.get_signal(m)["status"] for m in (120, 121, 122)] == ["OPENED", "OPENED", "CLOSED_MANUAL"]
+    await main.source_message_handler(event(msg(124, close_reply, reply_to=120)))  # primo SELL
+    assert [db.get_signal(m)["status"] for m in (120, 121, 122)] == ["CLOSED_MANUAL", "OPENED", "CLOSED_MANUAL"]
+    # Il SIGNAL 6 non e' toccato dalle chiusure del 5
+    await main.source_message_handler(event(msg(125, strat(6, "SELL", "4090,00", "4350,00"))))
+    n = len(tg.sent)
+    await main.source_message_handler(event(msg(126, strat(5, "BUY", "4090,30", "3850,00"))))
+    assert db.get_signal(121)["status"] == "CLOSED_MANUAL" and db.get_signal(125)["status"] == "OPENED"
+    assert len(tg.sent) - n == 2  # una sola chiusura (l'unico SELL rimasto) + apertura BUY
+    # Messaggio di chiusura arrivato dopo il BUY: gia' chiusa, nessun doppione
+    await main.source_message_handler(event(msg(127, close_reply, reply_to=121)))
+    assert len(tg.sent) - n == 2
+
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)
     old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)
