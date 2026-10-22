@@ -75,6 +75,13 @@ MAX_ENTRY_DISTANCE = float(os.getenv("MAX_ENTRY_DISTANCE", "0"))
 # vengono annullati se non eseguiti (0 = restano finche' il canale non li annulla).
 PENDING_EXPIRY_MINUTES = float(os.getenv("PENDING_EXPIRY_MINUTES", "1440"))
 
+# Segnali "stop and reverse" (strategia senza TP): un nuovo SIGNAL N in una
+# direzione chiude prima tutte le operazioni aperte dello stesso SIGNAL N
+# nella direzione opposta. Es. REVERSAL_SIGNALS=5,6
+REVERSAL_SIGNALS = {
+    int(n) for n in os.getenv("REVERSAL_SIGNALS", "5,6").replace(";", ",").split(",") if n.strip()
+}
+
 # Dimensione di 1 pip su XAUUSD (0,10 $ come il canale: 35,24 $ = 352,4 pips).
 PIP_SIZE = float(os.getenv("PIP_SIZE", "0.1"))
 

@@ -137,6 +137,20 @@ def get_open_signals():
         return [dict(r) for r in rows]
 
 
+def get_active_by_signal_no(signal_no, direction):
+    """Operazioni aperte e ordini pendenti di un SIGNAL N in una direzione."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM signals
+            WHERE signal_no = ? AND direction = ? AND status IN (?, ?)
+            ORDER BY source_message_id
+            """,
+            (int(signal_no), direction, OPEN_STATUS, PENDING_STATUS),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def get_pending_signals():
     with get_connection() as conn:
         rows = conn.execute(

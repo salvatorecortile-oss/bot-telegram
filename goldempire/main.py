@@ -34,6 +34,7 @@ from config import (
     MAX_SIGNAL_AGE_SECONDS,
     MONITOR_INTERVAL_SECONDS,
     PENDING_EXPIRY_MINUTES,
+    REVERSAL_SIGNALS,
     MT5_SYMBOL,
     PIP_SIZE,
     SOURCE_CHAT,
@@ -112,6 +113,11 @@ def current_pip_size():
 async def handle_open(message, signal):
     source_id = message.id
 
+    # SIGNAL 5 / 6 (stop and reverse): prima si chiudono le operazioni dello
+    # stesso SIGNAL nella direzione opposta, anche se il segnale e' in ritardo.
+    if signal.get("signal_no") in REVERSAL_SIGNALS:
+        await close_opposite_for_reversal(signal, source_id)
+
     age = (datetime.now(timezone.utc) - message.date).total_seconds()
     if age > MAX_SIGNAL_AGE_SECONDS:
         logger.warning("⏭️ SEGNALE #%s TROPPO VECCHIO (%.0fs): ignorato.", source_id, age)
@@ -177,6 +183,52 @@ async def handle_open(message, signal):
 
         db.mark_opened(source_id, position_ticket, open_price, volume, sl, tp)
         await publish_open(source_id, signal["direction"], open_price, sl, tp)
+
+
+async def close_opposite_for_reversal(signal, source_id):
+    """
+    Nuovo SIGNAL N BUY -> chiude tutti i SELL del SIGNAL N (e viceversa),
+    pubblicando la chiusura di ciascuno. Gli altri SIGNAL non vengono toccati.
+    """
+    opposite = "SELL" if signal["direction"] == "BUY" else "BUY"
+    rows = db.get_active_by_signal_no(signal["signal_no"], opposite)
+    if not rows:
+        return
+    if db.get_signal(source_id) is not None:
+        return  # messaggio gia' gestito
+
+    logger.info(
+        "🔄 INVERSIONE SIGNAL %s -> %s | chiudo %d operazioni %s",
+        signal["signal_no"], signal["direction"], len(rows), opposite,
+    )
+    for row in rows:
+        row_id = row["source_message_id"]
+        async with get_lock(row_id):
+            current = db.get_signal(row_id)
+            live = TRADING_ENABLED and (current["position_ticket"] or current["order_ticket"])
+            if live and not MT5_READY:
+                logger.error("❌ MT5 NON PRONTO: inversione non eseguita per #%s", row_id)
+                continue
+            try:
+                if current["status"] == db.PENDING_STATUS:
+                    if live:
+                        await asyncio.to_thread(mt5x.cancel_pending_order, current["order_ticket"])
+                    db.finish_pending(row_id, "CANCELED")
+                    logger.info("🚫 INVERSIONE: ordine pendente #%s annullato", row_id)
+                    continue
+                if current["status"] != db.OPEN_STATUS:
+                    continue
+                if live:
+                    if await asyncio.to_thread(mt5x.is_position_open, current["position_ticket"]):
+                        price = await asyncio.to_thread(mt5x.close_position, current["position_ticket"])
+                        await finalize_close(current, "CLOSED_MANUAL", price)
+                    else:
+                        await finalize_if_closed_on_mt5(current)
+                else:
+                    # Modalita' TEST: chiusura simulata all'ingresso del nuovo segnale.
+                    await finalize_close(current, "CLOSED_MANUAL", signal["entry"])
+            except Exception:
+                logger.exception("❌ ERRORE CHIUSURA PER INVERSIONE | #%s", row_id)
 
 
 async def publish_open(source_id, direction, open_price, sl, tp):
@@ -591,6 +643,8 @@ async def main():
     logger.info("DESTINATION : %s", DESTINATION_CHAT)
     logger.info("TRADING     : %s", "ATTIVO" if TRADING_ENABLED else "DISATTIVATO (modalita TEST)")
     logger.info("SIMBOLO     : %s | Lotto %.2f | Magic %s", MT5_SYMBOL, LOT_SIZE, MAGIC_NUMBER)
+    logger.info("INVERSIONE  : SIGNAL %s (il segnale opposto chiude quelli dello stesso numero)",
+                ", ".join(str(n) for n in sorted(REVERSAL_SIGNALS)) or "nessuno")
     logger.info("ETA' MAX    : %.0fs | Distanza max ingresso: %s",
                 MAX_SIGNAL_AGE_SECONDS, f"{MAX_ENTRY_DISTANCE:.2f} $" if MAX_ENTRY_DISTANCE else "nessun limite")
     logger.info("COMANDI     : %scomandi (in Messaggi salvati)", COMMAND_PREFIX)

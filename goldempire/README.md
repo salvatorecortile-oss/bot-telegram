@@ -17,6 +17,11 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
   Nel tuo canale il segnale esce solo **quando l'ordine viene eseguito** (con l'entry reale). Se il prezzo ha già raggiunto
   l'ingresso apre subito a mercato. Se il canale lo annulla, o manda TP/STOP/CHIUSA prima dell'esecuzione, l'ordine viene tolto
   senza messaggi; dopo `PENDING_EXPIRY_MINUTES` (default 24 ore) senza esecuzione viene annullato.
+- **SIGNAL 5 e SIGNAL 6 (stop and reverse, `REVERSAL_SIGNALS=5,6`)**: ogni segnale apre la sua operazione (anche più
+  nella stessa direzione). Un SIGNAL 5 nella direzione opposta **chiude prima tutte le operazioni del SIGNAL 5** aperte
+  nell'altra direzione (pubblicando la chiusura di ognuna) e poi apre la nuova. Il 5 chiude solo il 5, il 6 solo il 6;
+  gli altri SIGNAL (con TP/SL) non vengono mai chiusi da un segnale opposto. Se il segnale arriva in ritardo o il bot è
+  in pausa, le operazioni opposte vengono chiuse lo stesso ma la nuova non viene aperta.
 - Gli aggiornamenti vengono collegati al segnale tramite la **reply** di Telegram
   (riserva: ultimo `SIGNAL N` ancora aperto). Nel tuo canale escono in reply al segnale copiato.
 - BUY e SELL possono essere aperti **contemporaneamente** (serve un conto MT5 *hedging*).

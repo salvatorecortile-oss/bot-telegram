@@ -331,6 +331,61 @@ async def scenario(trading):
         await asyncio.wait_for(_one_monitor_pass(main), 5)
         assert db.get_signal(95)["status"] == "EXPIRED", db.get_signal(95)
 
+    # 17) INVERSIONE SIGNAL 5 / 6
+    def strat(no, direction, entry, sl):
+        return (f"🟠 SIGNAL {no} – XAUUSD {direction}\n\n📥 Ingresso: {entry}\n\n"
+                f"🎯 Uscita: al segnale della strategia\n\n🛑 SL: {sl} (stop d’emergenza)")
+    mt5.bid, mt5.ask = 4100.00, 4100.30
+    for mid in (100, 101, 102):                      # tre SELL del SIGNAL 5
+        await main.source_message_handler(event(msg(mid, strat(5, "SELL", "4100,00", "4350,00"))))
+    await main.source_message_handler(event(msg(103, strat(6, "SELL", "4100,00", "4350,00"))))  # SELL del 6
+    assert all(db.get_signal(m)["status"] == "OPENED" for m in (100, 101, 102, 103))
+    # SIGNAL 4 con TP/SL: non viene toccato dalle inversioni
+    await main.source_message_handler(event(msg(104, T.SIGNAL_4_SELL.replace("4117,69", "4100,00"))))
+    assert db.get_signal(104)["status"] == "OPENED"
+
+    n = len(tg.sent)
+    mt5.bid, mt5.ask = 4080.00, 4080.30
+    await main.source_message_handler(event(msg(110, strat(5, "BUY", "4080,30", "3850,00"))))
+    for m in (100, 101, 102):
+        r = db.get_signal(m)
+        assert r["status"] == "CLOSED_MANUAL" and r["pips"] > 0, r
+    assert db.get_signal(103)["status"] == "OPENED"       # il SIGNAL 6 resta aperto
+    assert db.get_signal(104)["status"] == "OPENED"       # il SIGNAL 4 resta aperto
+    assert db.get_signal(110)["status"] == "OPENED" and db.get_signal(110)["direction"] == "BUY"
+    new = tg.sent[n:]
+    assert len(new) == 4, [m.text for m in new]           # 3 chiusure + 1 apertura
+    assert all("CHIUSA IN PROFITTO" in m.text for m in new[:3]) and "XAUUSD — BUY" in new[3].text
+    assert [m.reply_to for m in new[:3]] == [db.get_signal(x)["destination_message_id"] for x in (100, 101, 102)]
+    print("   Inversione SIGNAL 5 ->", " || ".join(m.text.replace("\n", " | ") for m in new[:1] + new[3:]))
+    if trading:
+        assert not any(p.type == mt5.POSITION_TYPE_SELL and p.price_open == 4100.00 and p.tp == 0.0
+                       and p.ticket in (db.get_signal(x)["position_ticket"] for x in (100, 101, 102))
+                       for p in mt5.positions.values())
+
+    # Il SIGNAL 6 BUY chiude solo il SELL del 6
+    await main.source_message_handler(event(msg(111, strat(6, "BUY", "4080,30", "3850,00"))))
+    assert db.get_signal(103)["status"] == "CLOSED_MANUAL" and db.get_signal(110)["status"] == "OPENED"
+
+    # SIGNAL 4 opposto (non e' di inversione): il SELL del 4 resta aperto
+    await main.source_message_handler(event(msg(112, T.SIGNAL_4_BUY.replace("4155,08", "4080,30"))))
+    assert db.get_signal(104)["status"] == "OPENED"
+
+    # Inversione in ritardo: chiude il BUY del 5 ma NON apre il nuovo SELL
+    mt5.bid, mt5.ask = 4090.00, 4090.30
+    late = msg(113, strat(5, "SELL", "4090,00", "4350,00"))
+    late.date = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    await main.source_message_handler(event(late))
+    assert db.get_signal(110)["status"] == "CLOSED_MANUAL" and db.get_signal(113) is None
+
+    # In pausa: chiude gli opposti ma non apre
+    await main.source_message_handler(event(msg(114, strat(5, "BUY", "4090,30", "3850,00"))))
+    main.BOT_STATE = "PAUSED"
+    await main.source_message_handler(event(msg(115, strat(5, "SELL", "4090,00", "4350,00"))))
+    assert db.get_signal(114)["status"] == "CLOSED_MANUAL"
+    assert db.get_signal(115)["status"] == "PAUSED_NO_NEW_TRADE"
+    main.BOT_STATE = "RUNNING"
+
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)
     old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)
