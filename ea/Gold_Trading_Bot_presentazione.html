@@ -22,7 +22,7 @@
     font-family: "Inter", "DejaVu Sans", sans-serif; font-size: 10.5pt; line-height: 1.45;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  .page { width: 210mm; height: 297mm; padding: 16mm 15mm 11mm; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  .page { width: 210mm; height: 297mm; padding: 13mm 15mm 10mm; display: flex; flex-direction: column; position: relative; overflow: hidden; }
   .page::before {
     content: ""; position: absolute; right: -60mm; top: -70mm; width: 170mm; height: 170mm; border-radius: 50%;
     background: radial-gradient(circle, rgba(217,180,90,0.20) 0%, rgba(217,180,90,0) 65%);
@@ -30,28 +30,28 @@
   .num { font-variant-numeric: tabular-nums; }
 
   .eyebrow { font-size: 8.5pt; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); font-weight: 600; }
-  h1 { font-family: "Inter Display", "Inter", sans-serif; font-size: 36pt; line-height: 1.05; font-weight: 700; margin-top: 4mm; letter-spacing: -0.01em; }
+  h1 { font-family: "Inter Display", "Inter", sans-serif; font-size: 32pt; line-height: 1.05; font-weight: 700; margin-top: 4mm; letter-spacing: -0.01em; }
   h1 span { color: var(--gold); }
   .sub { font-size: 12pt; color: var(--muted); margin-top: 3mm; max-width: 150mm; }
 
-  .hero { margin-top: 10mm; background: linear-gradient(135deg, #2a2312 0%, #17171a 100%); border: 1px solid #5a4a22; border-radius: 4mm; padding: 8mm 9mm; display: flex; align-items: center; justify-content: space-between; }
-  .hero .v { font-family: "Inter Display", "Inter", sans-serif; font-size: 54pt; font-weight: 700; line-height: 1; color: var(--gold-soft); }
+  .hero { margin-top: 8mm; background: linear-gradient(135deg, #2a2312 0%, #17171a 100%); border: 1px solid #5a4a22; border-radius: 4mm; padding: 6mm 8mm; display: flex; align-items: center; justify-content: space-between; }
+  .hero .v { font-family: "Inter Display", "Inter", sans-serif; font-size: 44pt; font-weight: 700; line-height: 1; color: var(--gold-soft); }
   .hero .k { font-size: 11pt; color: #d6c597; margin-top: 2mm; }
   .hero .right { text-align: right; font-size: 10pt; color: #cdbb8a; line-height: 1.6; }
   .hero .right b { color: var(--gold-soft); font-size: 13pt; }
 
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin-top: 4mm; }
-  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 4.5mm 5mm; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 5mm; }
   .stat .v { font-family: "Inter Display", "Inter", sans-serif; font-size: 22pt; font-weight: 700; line-height: 1.05; }
   .stat .k { font-size: 8.8pt; color: var(--muted); margin-top: 1.5mm; }
 
-  h2 { font-family: "Inter Display", "Inter", sans-serif; font-size: 14pt; font-weight: 700; margin: 11mm 0 2mm; display: flex; align-items: center; gap: 3mm; }
+  h2 { font-family: "Inter Display", "Inter", sans-serif; font-size: 14pt; font-weight: 700; margin: 6.5mm 0 2mm; display: flex; align-items: center; gap: 3mm; }
   h2::before { content: ""; width: 6mm; height: 2px; background: var(--gold); }
   .lead { font-size: 9.5pt; color: var(--muted); margin-bottom: 4mm; }
 
   table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10.5pt; background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; }
-  th { text-align: right; font-size: 8.3pt; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 3.5mm 5mm; border-bottom: 1px solid var(--line); background: #121b28; }
-  td { text-align: right; padding: 4.2mm 5mm; border-bottom: 1px solid var(--line); }
+  th { text-align: right; font-size: 8pt; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 3.2mm 4mm; border-bottom: 1px solid var(--line); background: #121b28; }
+  td { text-align: right; padding: 3mm 4mm; border-bottom: 1px solid var(--line); }
   tr:last-child td { border-bottom: 0; }
   th:first-child, td:first-child { text-align: left; }
   td.dep { font-weight: 600; }
@@ -59,11 +59,16 @@
   td.fin { color: var(--text); font-weight: 600; }
   td.mon { color: var(--gold-soft); }
 
-  .badges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 9mm; }
-  .badge { border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 3mm; text-align: center; font-size: 9pt; color: #c3ccd9; }
+  .lots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .lotbox { background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 4mm; }
+  .lotbox .l { font-size: 8.8pt; color: var(--muted); }
+  .lotbox .p { font-family: "Inter Display", "Inter", sans-serif; font-size: 15pt; font-weight: 700; color: var(--green); margin-top: 1mm; }
+  td.lot { color: var(--gold-soft); font-weight: 600; }
+  .badges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 6mm; }
+  .badge { border: 1px solid var(--line); border-radius: 3mm; padding: 2.8mm 3mm; text-align: center; font-size: 9pt; color: #c3ccd9; }
   .badge b { display: block; color: var(--text); font-size: 10pt; margin-bottom: 0.5mm; }
 
-  footer { margin-top: auto; padding-top: 5mm; border-top: 1px solid var(--line); font-size: 7.4pt; line-height: 1.45; color: #7f8ba0; }
+  footer { margin-top: auto; padding-top: 4mm; border-top: 1px solid var(--line); font-size: 7.4pt; line-height: 1.45; color: #7f8ba0; }
   footer b { color: var(--muted); }
 </style>
 </head>
@@ -75,8 +80,8 @@
 
   <div class="hero">
     <div>
-      <div class="v num">+63,8%</div>
-      <div class="k">rendimento su un conto da 1000 $</div>
+      <div class="v num">+637,89 $</div>
+      <div class="k">profitto netto ogni 0,01 lotti</div>
     </div>
     <div class="right">
       Periodo<br><b>1 gen – 21 ott 2026</b><br>meno di 10 mesi
@@ -85,19 +90,27 @@
 
   <div class="stats">
     <div class="stat"><div class="v num">1,57</div><div class="k">Profit Factor</div></div>
-    <div class="stat"><div class="v num">9,0%</div><div class="k">drawdown massimo (conto 1000 $)</div></div>
     <div class="stat"><div class="v num">229</div><div class="k">operazioni, circa 1 al giorno</div></div>
+    <div class="stat"><div class="v num">0,01</div><div class="k">lotti consigliati ogni 200 $ di deposito</div></div>
   </div>
 
   <h2>Quanto avrebbe reso il tuo deposito</h2>
-  <p class="lead">Stesso periodo, stessa gestione: lotto fisso 0,01 per ogni operazione, profitto netto +637,89 $.</p>
+  <p class="lead">Lotto consigliato in base al capitale: 0,01 lotti ogni 200 $ di deposito, minimo 0,01.</p>
   <table>
-    <tr><th>Deposito iniziale</th><th>Profitto</th><th>Saldo finale</th><th>Rendimento</th><th>Media al mese</th></tr>
-    <tr><td class="dep num">100 $</td><td class="num">+637,89 $</td><td class="fin num">737,89 $</td><td class="ret num">+637,9%</td><td class="mon num">+66,3%</td></tr>
-    <tr><td class="dep num">300 $</td><td class="num">+637,89 $</td><td class="fin num">937,89 $</td><td class="ret num">+212,6%</td><td class="mon num">+22,1%</td></tr>
-    <tr><td class="dep num">500 $</td><td class="num">+637,89 $</td><td class="fin num">1.137,89 $</td><td class="ret num">+127,6%</td><td class="mon num">+13,3%</td></tr>
-    <tr><td class="dep num">1.000 $</td><td class="num">+637,89 $</td><td class="fin num">1.637,89 $</td><td class="ret num">+63,8%</td><td class="mon num">+6,6%</td></tr>
+    <tr><th>Deposito iniziale</th><th>Lotto</th><th>Profitto</th><th>Saldo finale</th><th>Rendimento</th><th>Media al mese</th></tr>
+    <tr><td class="dep num">100 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">737,89 $</td><td class="ret num">+637,9%</td><td class="mon num">+66,3%</td></tr>
+    <tr><td class="dep num">300 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">937,89 $</td><td class="ret num">+212,6%</td><td class="mon num">+22,1%</td></tr>
+    <tr><td class="dep num">500 $</td><td class="lot num">0,02</td><td class="num">+1.275,78 $</td><td class="fin num">1.775,78 $</td><td class="ret num">+255,2%</td><td class="mon num">+26,5%</td></tr>
+    <tr><td class="dep num">1.000 $</td><td class="lot num">0,05</td><td class="num">+3.189,45 $</td><td class="fin num">4.189,45 $</td><td class="ret num">+318,9%</td><td class="mon num">+33,1%</td></tr>
   </table>
+
+  <h2>Profitto per lotto</h2>
+  <div class="lots">
+    <div class="lotbox"><div class="l">0,01 lotti</div><div class="p num">+637,89 $</div></div>
+    <div class="lotbox"><div class="l">0,02 lotti</div><div class="p num">+1.275,78 $</div></div>
+    <div class="lotbox"><div class="l">0,05 lotti</div><div class="p num">+3.189,45 $</div></div>
+    <div class="lotbox"><div class="l">0,10 lotti</div><div class="p num">+6.378,90 $</div></div>
+  </div>
 
   <div class="badges">
     <div class="badge"><b>Automatico</b>nessuna gestione manuale</div>
@@ -107,7 +120,7 @@
   </div>
 
   <footer>
-    <b>Avvertenza sui rischi.</b> Risultati ottenuti in backtest con MetaTrader 5 Strategy Tester su XAUUSD, 1 gennaio – 21 ottobre 2026, con tick reali (qualità dello storico 99%): non provengono da un conto reale. Media al mese = rendimento totale diviso per 9,6 mesi, senza capitalizzazione. Il lotto è uguale per tutti i depositi, quindi il profitto in dollari è lo stesso e sui depositi più piccoli rischio e oscillazioni in percentuale sono più alti. I risultati passati, reali o simulati, non garantiscono risultati futuri; spread, slippage e commissioni possono ridurre il rendimento. Il trading su oro e CFD con leva comporta un rischio elevato di perdita, anche dell'intero capitale. Questo documento ha scopo informativo e non costituisce consulenza finanziaria né sollecitazione all'investimento.
+    <b>Avvertenza sui rischi.</b> Risultati ottenuti in backtest con MetaTrader 5 Strategy Tester su XAUUSD, 1 gennaio – 21 ottobre 2026, con tick reali (qualità dello storico 99%), con lotto fisso 0,01: non provengono da un conto reale. I valori con lotti più grandi sono calcolati in proporzione al lotto, come anche le perdite: il calo massimo registrato nel test è stato di circa 124 $ ogni 0,01 lotti. Media al mese = rendimento totale diviso per 9,6 mesi, senza capitalizzazione. I risultati passati, reali o simulati, non garantiscono risultati futuri; spread, slippage e commissioni possono ridurre il rendimento. Il trading su oro e CFD con leva comporta un rischio elevato di perdita, anche dell'intero capitale. Questo documento ha scopo informativo e non costituisce consulenza finanziaria né sollecitazione all'investimento.
   </footer>
 </div>
 </body>
