@@ -49,13 +49,13 @@
   h2::before { content: ""; width: 6mm; height: 2px; background: var(--gold); }
   .lead { font-size: 9.5pt; color: var(--muted); margin-bottom: 4mm; }
 
-  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 9.2pt; background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; }
-  th { text-align: right; font-size: 8pt; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 3mm 2.6mm; border-bottom: 1px solid var(--line); background: #121b28; }
-  td { white-space: nowrap; text-align: right; padding: 2.8mm 2.6mm; border-bottom: 1px solid var(--line); }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10pt; background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; }
+  th { text-align: right; font-size: 8pt; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 3.2mm 4mm; border-bottom: 1px solid var(--line); background: #121b28; }
+  td { white-space: nowrap; text-align: right; padding: 3.6mm 4mm; border-bottom: 1px solid var(--line); }
   tr:last-child td { border-bottom: 0; }
   th:first-child, td:first-child { text-align: left; }
   td.dep { font-weight: 600; }
-  td.ret { color: var(--green); font-weight: 700; font-size: 10.5pt; }
+  td.ret { color: var(--green); font-weight: 700; font-size: 12pt; }
   td.fin { color: var(--text); font-weight: 600; }
   td.mon { color: var(--gold-soft); }
 
@@ -91,19 +91,18 @@
 
   <div class="stats">
     <div class="stat"><div class="v num">1,57</div><div class="k">Profit Factor</div></div>
-    <div class="stat"><div class="v num">9,0%</div><div class="k">drawdown massimo (1.000 $, 0,01 lotti)</div></div>
+    <div class="stat"><div class="v num">9,0%</div><div class="k">drawdown massimo con 0,01 lotti su un conto da 1.000 €</div></div>
     <div class="stat"><div class="v num">229</div><div class="k">operazioni, circa 1 al giorno</div></div>
     <div class="stat"><div class="v num">0,01</div><div class="k">lotti consigliati ogni 200 $ di deposito</div></div>
   </div>
 
   <h2>Quanto avrebbe reso il tuo deposito</h2>
-  <p class="lead">Lotto consigliato in base al capitale: 0,01 lotti ogni 200 $ di deposito, minimo 0,01.</p>
+  <p class="lead">Lotto consigliato in base al capitale: 0,01 lotti ogni 200 $ di deposito.</p>
   <table>
-    <tr><th>Deposito iniziale</th><th>Lotto</th><th>Profitto</th><th>Saldo finale</th><th>Rendimento</th><th>Media al mese</th><th>Drawdown max</th></tr>
-    <tr><td class="dep num">100 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">737,89 $</td><td class="ret num">+637,9%</td><td class="mon num">+66,3%</td><td class="dd num">−124 $ · 124%</td></tr>
-    <tr><td class="dep num">300 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">937,89 $</td><td class="ret num">+212,6%</td><td class="mon num">+22,1%</td><td class="dd num">−124 $ · 41%</td></tr>
-    <tr><td class="dep num">500 $</td><td class="lot num">0,02</td><td class="num">+1.275,78 $</td><td class="fin num">1.775,78 $</td><td class="ret num">+255,2%</td><td class="mon num">+26,5%</td><td class="dd num">−248 $ · 50%</td></tr>
-    <tr><td class="dep num">1.000 $</td><td class="lot num">0,05</td><td class="num">+3.189,45 $</td><td class="fin num">4.189,45 $</td><td class="ret num">+318,9%</td><td class="mon num">+33,1%</td><td class="dd num">−619 $ · 62%</td></tr>
+    <tr><th>Deposito iniziale</th><th>Lotto</th><th>Profitto</th><th>Saldo finale</th><th>Rendimento</th><th>Media al mese</th></tr>
+    <tr><td class="dep num">300 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">937,89 $</td><td class="ret num">+212,6%</td><td class="mon num">+22,1%</td></tr>
+    <tr><td class="dep num">500 $</td><td class="lot num">0,02</td><td class="num">+1.275,78 $</td><td class="fin num">1.775,78 $</td><td class="ret num">+255,2%</td><td class="mon num">+26,5%</td></tr>
+    <tr><td class="dep num">1.000 $</td><td class="lot num">0,05</td><td class="num">+3.189,45 $</td><td class="fin num">4.189,45 $</td><td class="ret num">+318,9%</td><td class="mon num">+33,1%</td></tr>
   </table>
 
   <h2>Profitto per lotto con conto da 1.000 €</h2>
@@ -122,7 +121,7 @@
   </div>
 
   <footer>
-    <b>Avvertenza sui rischi.</b> Backtest con MetaTrader 5 Strategy Tester su XAUUSD, 1 gennaio – 21 ottobre 2026, tick reali (qualità 99%), lotto 0,01: non è un conto reale. I valori con lotti più grandi sono calcolati in proporzione al lotto, perdite comprese. Drawdown max = calo massimo del test (circa 124 $ ogni 0,01 lotti) in dollari e in % sul deposito iniziale, nel caso peggiore in cui avvenga subito. Media al mese = rendimento totale diviso 9,6 mesi, senza capitalizzazione. I risultati passati, reali o simulati, non garantiscono risultati futuri; spread, slippage e commissioni possono ridurli. Il trading su oro e CFD con leva comporta un rischio elevato di perdita, anche dell'intero capitale. Documento informativo, non è consulenza finanziaria né sollecitazione all'investimento.
+    <b>Avvertenza sui rischi.</b> Backtest con MetaTrader 5 Strategy Tester su XAUUSD, 1 gennaio – 21 ottobre 2026, tick reali (qualità 99%), lotto 0,01: non è un conto reale. I valori con lotti più grandi sono calcolati in proporzione al lotto, perdite comprese. Il drawdown massimo del 9,0% si riferisce a 0,01 lotti su 1.000 $: con lotti più grandi rispetto al deposito è più alto. Media al mese = rendimento totale diviso 9,6 mesi, senza capitalizzazione. I risultati passati, reali o simulati, non garantiscono risultati futuri; spread, slippage e commissioni possono ridurli. Il trading su oro e CFD con leva comporta un rischio elevato di perdita, anche dell'intero capitale. Documento informativo, non è consulenza finanziaria né sollecitazione all'investimento.
   </footer>
 </div>
 </body>
