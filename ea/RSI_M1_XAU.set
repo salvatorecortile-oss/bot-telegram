@@ -8,6 +8,7 @@ InpRSILow=30.0||30.0||0||30.0||N
 InpRSIHigh=70.0||70.0||0||70.0||N
 InpRSIExit=50.0||50.0||0||50.0||N
 InpRSIExitSell=50.0||50.0||0||50.0||N
+InpEntryTouch=false||false||0||true||N
 ; Stop loss (ATR)
 InpATRTF=1||1||0||1||N
 InpATRPeriod=14||14||0||14||N

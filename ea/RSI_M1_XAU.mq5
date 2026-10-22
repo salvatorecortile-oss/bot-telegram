@@ -6,13 +6,15 @@
 //|  - SELL quando l'RSI sale a 70 o sopra e una candela M1 chiude   |
 //|    con l'RSI di nuovo sotto 70                                   |
 //|  Un solo trade per ogni tocco di 30/70                           |
+//|  Opzione "entrata al tocco": entra subito quando l'RSI tocca     |
+//|  30/70 (a ogni tick), senza aspettare il rientro                 |
 //|  SL = ATR x moltiplicatore (si adatta alla volatilita')          |
 //|  TP = quando l'RSI torna a 50 (livello BUY e SELL separati)      |
 //|  Opzioni (accendi/spegni): chiusura prima del weekend, fascia    |
 //|  oraria di entrata, volatilita' (ATR) minima e massima           |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "3.20"
+#property version   "3.30"
 #property description "RSI M1: entra al rientro da 30/70, esce quando l'RSI torna a 50, SL in ATR"
 
 #include <Trade\Trade.mqh>
@@ -28,6 +30,7 @@ input double InpRSILow         = 30;    // BUY quando l'RSI rientra sopra questo
 input double InpRSIHigh        = 70;    // SELL quando l'RSI rientra sotto questo livello
 input double InpRSIExit        = 50;    // TP BUY: chiude quando l'RSI sale a questo livello
 input double InpRSIExitSell    = 50;    // TP SELL: chiude quando l'RSI scende a questo livello
+input bool   InpEntryTouch     = false; // Entrata al tocco: BUY appena l'RSI tocca 30, SELL appena tocca 70 (false = al rientro)
 
 input group "Stop loss (ATR)"
 input ENUM_TIMEFRAMES InpATRTF = PERIOD_M1; // Time frame ATR
@@ -59,6 +62,8 @@ int      g_hATR      = INVALID_HANDLE;
 datetime g_lastBar   = 0;
 bool     g_os        = false;  // RSI in ipervenduto (<= 30)
 bool     g_ob        = false;  // RSI in ipercomprato (>= 70)
+bool     g_armBuy    = false;  // entrata al tocco: pronto a comprare al prossimo tocco di 30
+bool     g_armSell   = false;  // entrata al tocco: pronto a vendere al prossimo tocco di 70
 double   g_rsiNow    = 0;
 bool     g_quiet     = false;  // in ottimizzazione: niente log e niente pannello
 
@@ -119,11 +124,18 @@ void OnTick()
 
    // TP: a ogni tick, appena l'RSI torna a 50
    double now[1];
-   if(CopyBuffer(g_hRSI, 0, 0, 1, now) == 1)
+   bool   rsiOk = CopyBuffer(g_hRSI, 0, 0, 1, now) == 1;
+   if(rsiOk)
    {
       g_rsiNow = now[0];
       if(now[0] >= InpRSIExit)       CloseAll(POSITION_TYPE_BUY);
       if(now[0] <= InpRSIExitSell)   CloseAll(POSITION_TYPE_SELL);
+   }
+
+   if(InpEntryTouch)
+   {
+      if(rsiOk) EntryOnTouch();
+      return;
    }
 
    datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
@@ -150,6 +162,40 @@ void OnTick()
    }
 
    UpdatePanel();
+}
+
+// entrata al tocco: a ogni tick, appena l'RSI tocca 30 (BUY) o 70 (SELL).
+// Si riarma solo quando una candela M1 chiude con l'RSI di nuovo dentro 30-70:
+// cosi' c'e' un solo trade per ogni tocco, anche se l'RSI oscilla intorno al livello
+void EntryOnTouch()
+{
+   datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
+   if(bar0 != 0 && bar0 != g_lastBar)
+   {
+      g_lastBar = bar0;
+      double rsi[1];
+      if(CopyBuffer(g_hRSI, 0, 1, 1, rsi) == 1)
+      {
+         if(rsi[0] > InpRSILow)  g_armBuy  = true;
+         if(rsi[0] < InpRSIHigh) g_armSell = true;
+      }
+      UpdatePanel();
+   }
+
+   if(!g_armBuy && !g_armSell) return;
+   double atr[1];
+   if(CopyBuffer(g_hATR, 0, 1, 1, atr) != 1 || atr[0] <= 0) return;
+
+   if(g_armBuy && g_rsiNow <= InpRSILow)
+   {
+      g_armBuy = false;
+      Open(+1, atr[0]);
+   }
+   if(g_armSell && g_rsiNow >= InpRSIHigh)
+   {
+      g_armSell = false;
+      Open(-1, atr[0]);
+   }
 }
 
 //+------------------------------------------------------------------+
@@ -239,6 +285,7 @@ void UpdatePanel()
                            DoubleToString(InpRSIExit, 0), DoubleToString(InpRSIExitSell, 0));
    s += StringFormat("Weekend: %s  |  Fascia oraria: %s  |  Filtro ATR: %s\n", InpWeekend ? "SI" : "NO",
                      InpUseHours ? StringFormat("%04d-%04d", InpHourStart, InpHourEnd) : "NO", InpUseATRFilter ? "SI" : "NO");
+   s += InpEntryTouch ? "Entrata: al tocco di 30/70\n" : "Entrata: al rientro da 30/70\n";
    s += StringFormat("RSI: %.1f  %s\n", g_rsiNow, g_os ? "(sotto " + DoubleToString(InpRSILow, 0) + ", attendo il rientro)"
                                             : (g_ob ? "(sopra " + DoubleToString(InpRSIHigh, 0) + ", attendo il rientro)" : ""));
    s += StringFormat("Posizioni aperte: %d\n", CountOpen());

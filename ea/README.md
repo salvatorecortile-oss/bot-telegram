@@ -105,6 +105,7 @@ Sempre attivo, senza filtri. Un solo trade per ogni tocco di 30/70.
 - **`RSI_M1_XAU_definitivo.set`**: impostazioni consigliate. SL 2,5 × ATR, TP BUY a RSI 65 e TP SELL a RSI 50, fascia oraria 13–20, filtro ATR (0,05%–0,13%) e weekend accesi. Sul 2026: +638 $, PF 1,57, drawdown 9,0%, 229 trade.
 - `RSI_M1_XAU.set`: impostazioni base.
 - `RSI_M1_XAU_test_SL.set`: ottimizzazione che prova lo SL da 1 a 4 × ATR, con e senza "una operazione alla volta".
+- `RSI_M1_XAU_test_tocco.set`: confronto tra entrata al rientro e entrata al tocco di 30/70 (`InpEntryTouch`, 2 test).
 - `RSI_M1_XAU_test_TP.set`: ottimizzazione del TP, BUY da 50 a 70 × SELL da 50 a 30 (25 test).
 - `RSI_M1_XAU_test_filtri.set`: ottimizzazione che prova le 8 combinazioni dei filtri weekend, fascia oraria e ATR.
 
