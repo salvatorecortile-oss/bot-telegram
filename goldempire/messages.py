@@ -5,6 +5,42 @@ Stesso stile dei messaggi degli altri bot: modifica qui i testi.
 from html import escape
 
 
+# ============================================================
+# MODIFICHE MANUALI SU MT5 (TP / SL cambiati a mano)
+# Il bot le rileva da solo e risponde al messaggio del segnale nel canale.
+# {tp} e {sl} sono il nuovo prezzo: lasciali tra le graffe.
+# ============================================================
+
+# TP spostato a mano
+TP_UPDATED_MESSAGE_TEMPLATE = (
+    "🎯 <b>TP IMPOSTATO A {tp:.2f}</b>"
+)
+
+# TP tolto a mano
+TP_REMOVED_MESSAGE_TEMPLATE = (
+    "🎯 <b>TP RIMOSSO</b>\n"
+    "Chiusura a segnale."
+)
+
+# SL spostato a mano ma ancora in perdita (es. avvicinato al prezzo)
+SL_UPDATED_MESSAGE_TEMPLATE = (
+    "🛡️ <b>STOP LOSS IMPOSTATO A {sl:.2f}</b>"
+)
+
+# SL spostato di nuovo quando e' gia' in profitto (dopo il BE)
+SL_PROFIT_UPDATED_MESSAGE_TEMPLATE = (
+    "🛡️ <b>STOP LOSS IN PROFITTO A {sl:.2f}</b>"
+)
+
+# SL tolto a mano
+SL_REMOVED_MESSAGE_TEMPLATE = (
+    "⚠️ <b>STOP LOSS RIMOSSO</b>"
+)
+
+# La prima volta che lo SL viene portato all'ingresso o in profitto si usa
+# BE_APPLIED_MESSAGE_TEMPLATE (vedi sotto, "BE ATTIVATO").
+
+
 OPEN_TRADE_MESSAGE_TEMPLATE = (
     "👑 <b>XAUUSD — {direction}</b>\n\n"
     "🟢 <b>ENTRY:</b> {entry:.2f}\n"
@@ -24,16 +60,6 @@ TAKE_PROFIT_MESSAGE_TEMPLATE = (
     "🟢 <b>TAKE PROFIT RAGGIUNTO!</b>\n"
     "✅ <b>OPERAZIONE CHIUSA</b>\n\n"
     "📈 <b>PIPS TOTALI: {pips}</b>"
-)
-
-# TP cambiato a mano su MT5 (rilevato dal bot).
-TP_UPDATED_MESSAGE_TEMPLATE = (
-    "🎯 <b>TP IMPOSTATO A {tp:.2f}</b>"
-)
-
-TP_REMOVED_MESSAGE_TEMPLATE = (
-    "🎯 <b>TP RIMOSSO</b>\n"
-    "Chiusura a segnale."
 )
 
 BE_APPLIED_MESSAGE_TEMPLATE = (
@@ -93,6 +119,14 @@ def format_tp_updated_message(tp):
     if not tp:
         return TP_REMOVED_MESSAGE_TEMPLATE
     return TP_UPDATED_MESSAGE_TEMPLATE.format(tp=float(tp))
+
+
+def format_sl_updated_message(sl, in_profit):
+    if not sl:
+        return SL_REMOVED_MESSAGE_TEMPLATE
+    if in_profit:
+        return SL_PROFIT_UPDATED_MESSAGE_TEMPLATE.format(sl=float(sl))
+    return SL_UPDATED_MESSAGE_TEMPLATE.format(sl=float(sl))
 
 
 def format_be_applied_message(sl):

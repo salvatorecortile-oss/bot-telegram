@@ -287,14 +287,14 @@ def _own_position(position_ticket):
     return position
 
 
-def get_position_tp(position_ticket):
-    """TP attuale della posizione su MT5 (0.0 = nessun TP), None se non e' piu' aperta."""
+def get_position_levels(position_ticket):
+    """(sl, tp) attuali della posizione su MT5 (0.0 = non impostato), None se chiusa."""
     _require_mt5()
     with _MT5_LOCK:
         positions = mt5.positions_get(ticket=int(position_ticket))
         if not positions:
             return None
-        return float(positions[0].tp or 0.0)
+        return float(positions[0].sl or 0.0), float(positions[0].tp or 0.0)
 
 
 def is_position_open(position_ticket):

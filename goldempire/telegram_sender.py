@@ -4,6 +4,7 @@ from messages import (
     format_be_applied_message,
     format_close_message,
     format_open_message,
+    format_sl_updated_message,
     format_tp_updated_message,
 )
 from telegram_client import client
@@ -31,6 +32,16 @@ async def send_tp_updated_message(tp, reply_to=None):
     return await client.send_message(
         DESTINATION_CHAT,
         format_tp_updated_message(tp),
+        parse_mode="html",
+        silent=True,
+        reply_to=reply_to,
+    )
+
+
+async def send_sl_updated_message(sl, in_profit, reply_to=None):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        format_sl_updated_message(sl, in_profit),
         parse_mode="html",
         silent=True,
         reply_to=reply_to,

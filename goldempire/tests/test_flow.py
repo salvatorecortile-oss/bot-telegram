@@ -432,6 +432,38 @@ async def scenario(trading):
         await asyncio.wait_for(_one_monitor_pass(main), 5)
         assert db.get_signal(130)["status"] == "CLOSED_TP" and "TAKE PROFIT RAGGIUNTO" in tg.sent[-1].text
 
+    if trading:
+        # 20) SL modificato a mano: avvicinato -> "IMPOSTATO A", in profitto -> "BE ATTIVATO"
+        mt5.bid, mt5.ask = 4100.00, 4100.30
+        await main.source_message_handler(event(msg(140, strat(6, "SELL", "4100,00", "4350,00"))))
+        r = db.get_signal(140)
+        pos = mt5.positions[r["position_ticket"]]
+        n = len(tg.sent)
+        pos.sl = 4150.00                                   # avvicinato, ancora in perdita
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert len(tg.sent) == n + 1 and "STOP LOSS IMPOSTATO A 4150.00" in tg.sent[-1].text, tg.sent[-1].text
+        assert tg.sent[-1].reply_to == r["destination_message_id"] and not db.get_signal(140)["be_applied"]
+        print("   SL avvicinato ->", tg.sent[-1].text)
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert len(tg.sent) == n + 1                       # nessun doppione
+        pos.sl = 4100.00                                   # all'ingresso (SELL) -> BE
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert "BE ATTIVATO" in tg.sent[-1].text and db.get_signal(140)["be_applied"] == 1
+        print("   SL in profitto ->", tg.sent[-1].text.replace("\n", " | "))
+        pos.sl = 4090.00                                   # ancora piu' in profitto
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert "STOP LOSS IN PROFITTO A 4090.00" in tg.sent[-1].text
+        print("   SL spostato di nuovo ->", tg.sent[-1].text)
+        assert len(tg.sent) == n + 3
+        # Il BE fatto dal bot su messaggio del canale NON genera un secondo messaggio
+        await main.source_message_handler(event(msg(141, strat(6, "SELL", "4100,00", "4350,00"))))
+        r2 = db.get_signal(141)
+        mt5.bid, mt5.ask = 4080.00, 4080.30
+        await main.source_message_handler(event(msg(142, "🟠 SIGNAL 6 – STOP A PAREGGIO", reply_to=141)))
+        m = len(tg.sent)
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert len(tg.sent) == m and db.get_signal(141)["be_applied"] == 1
+
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)
     old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)

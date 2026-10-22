@@ -76,6 +76,7 @@ from telegram_sender import (  # noqa: E402
     send_be_applied_message,
     send_close_message,
     send_open_message,
+    send_sl_updated_message,
     send_text,
     send_tp_updated_message,
 )
@@ -459,10 +460,12 @@ async def monitor_closures():
                         current = db.get_signal(row["source_message_id"])
                         if current["status"] != db.OPEN_STATUS:
                             continue
-                        mt5_tp = await asyncio.to_thread(mt5x.get_position_tp, current["position_ticket"])
-                        if mt5_tp is None:
+                        levels = await asyncio.to_thread(mt5x.get_position_levels, current["position_ticket"])
+                        if levels is None:
                             await finalize_if_closed_on_mt5(current)
                         else:
+                            mt5_sl, mt5_tp = levels
+                            await check_sl_change(current, mt5_sl)
                             await check_tp_change(current, mt5_tp)
         except asyncio.CancelledError:
             raise
@@ -486,6 +489,40 @@ async def check_tp_change(row, mt5_tp):
         await send_tp_updated_message(mt5_tp, reply_to=row["destination_message_id"])
     except Exception:
         logger.exception("❌ ERRORE INVIO MESSAGGIO TP | #%s", row["source_message_id"])
+
+
+async def check_sl_change(row, mt5_sl):
+    """
+    SL cambiato a mano su MT5:
+    - portato all'ingresso o in profitto la prima volta -> "BE ATTIVATO"
+    - spostato ma ancora in perdita -> "STOP LOSS IMPOSTATO A ..."
+    - spostato di nuovo quando era gia' in profitto -> "STOP LOSS IN PROFITTO A ..."
+    """
+    known_sl = float(row["sl"] or 0.0)
+    if abs(mt5_sl - known_sl) < 0.005:
+        return
+    source_id = row["source_message_id"]
+    open_price = float(row["open_price"])
+    if row["direction"] == "BUY":
+        in_profit = bool(mt5_sl) and mt5_sl >= open_price - 0.005
+    else:
+        in_profit = bool(mt5_sl) and mt5_sl <= open_price + 0.005
+
+    logger.info(
+        "🛡️ SL MODIFICATO SU MT5 | SIGNAL %s %s | Position %s | %s -> %s%s",
+        row["signal_no"], row["direction"], row["position_ticket"],
+        f"{known_sl:.2f}" if known_sl else "nessuno", f"{mt5_sl:.2f}" if mt5_sl else "nessuno",
+        " (in profitto)" if in_profit else "",
+    )
+    try:
+        if in_profit and not row["be_applied"]:
+            db.mark_breakeven(source_id, mt5_sl)
+            await send_be_applied_message(mt5_sl, reply_to=row["destination_message_id"])
+        else:
+            db.update_sl(source_id, mt5_sl)
+            await send_sl_updated_message(mt5_sl, in_profit, reply_to=row["destination_message_id"])
+    except Exception:
+        logger.exception("❌ ERRORE INVIO MESSAGGIO SL | #%s", source_id)
 
 
 async def mt5_connection_keeper():
@@ -594,7 +631,7 @@ def status_text():
         tp_txt = f"{row['tp']:.2f}" if row["tp"] else "a segnale"
         lines.append(
             f"• SIGNAL {row['signal_no']} {row['direction']} @ {row['open_price']:.2f} "
-            f"| SL {row['sl']:.2f} | TP {tp_txt}{' | BE' if row['be_applied'] else ''}{profit_txt}"
+            f"| SL {row['sl'] or 0:.2f} | TP {tp_txt}{' | BE' if row['be_applied'] else ''}{profit_txt}"
         )
     if not rows:
         lines.append("Nessuna")
@@ -605,7 +642,7 @@ def status_text():
             tp_txt = f"{row['tp']:.2f}" if row["tp"] else "a segnale"
             lines.append(
                 f"• SIGNAL {row['signal_no']} {row['direction']} {row['order_type']} @ {row['entry_signal']:.2f} "
-                f"| SL {row['sl']:.2f} | TP {tp_txt}"
+                f"| SL {row['sl'] or 0:.2f} | TP {tp_txt}"
             )
     return "\n".join(lines)
 

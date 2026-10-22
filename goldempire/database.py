@@ -221,6 +221,14 @@ def update_tp(source_message_id, new_tp):
         )
 
 
+def update_sl(source_message_id, new_sl):
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE signals SET sl = ? WHERE source_message_id = ?",
+            (float(new_sl) if new_sl else None, int(source_message_id)),
+        )
+
+
 def mark_breakeven(source_message_id, new_sl):
     with get_connection() as conn:
         conn.execute(
