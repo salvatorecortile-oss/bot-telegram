@@ -176,6 +176,7 @@ def _send(request):
     if result is None:
         raise RuntimeError(f"order_send ha restituito None: {mt5.last_error()}")
     accepted = {
+        getattr(mt5, "TRADE_RETCODE_PLACED", 10008),  # ordine pendente piazzato
         getattr(mt5, "TRADE_RETCODE_DONE", 10009),
         getattr(mt5, "TRADE_RETCODE_DONE_PARTIAL", 10010),
     }
@@ -389,3 +390,123 @@ def get_bot_positions():
             p for p in (mt5.positions_get(symbol=MT5_SYMBOL) or [])
             if int(p.magic) == int(MAGIC_NUMBER)
         ]
+
+
+# ============================================================
+# ORDINI PENDENTI (BUY/SELL LIMIT, BUY/SELL STOP)
+# ============================================================
+
+@dataclass(frozen=True)
+class PendingResult:
+    order_ticket: int
+    price: float
+
+
+def _pending_type(direction, order_type):
+    return {
+        ("BUY", "LIMIT"): mt5.ORDER_TYPE_BUY_LIMIT,
+        ("SELL", "LIMIT"): mt5.ORDER_TYPE_SELL_LIMIT,
+        ("BUY", "STOP"): mt5.ORDER_TYPE_BUY_STOP,
+        ("SELL", "STOP"): mt5.ORDER_TYPE_SELL_STOP,
+    }[(direction, order_type)]
+
+
+def _already_reached(direction, order_type, entry, bid, ask):
+    """True se il prezzo di mercato ha gia' raggiunto (o superato in meglio) l'ingresso."""
+    if order_type == "LIMIT":
+        return ask <= entry if direction == "BUY" else bid >= entry
+    return ask >= entry if direction == "BUY" else bid <= entry
+
+
+def place_pending_order(signal):
+    """
+    Piazza l'ordine pendente al prezzo di Ingresso con SL e TP del segnale.
+    Se il mercato ha gia' raggiunto l'ingresso apre subito a mercato e
+    restituisce un TradeResult; altrimenti restituisce un PendingResult.
+    """
+    _require_mt5()
+    with _MT5_LOCK:
+        info = _symbol_info()
+        digits = int(info.digits)
+        direction = signal["direction"].upper()
+        order_type = signal["order_type"]
+        entry = round(float(signal["entry"]), digits)
+
+        tick = mt5.symbol_info_tick(MT5_SYMBOL)
+        if tick is None:
+            raise RuntimeError(f"Prezzo non disponibile per {MT5_SYMBOL}: {mt5.last_error()}")
+
+        if _already_reached(direction, order_type, entry, float(tick.bid), float(tick.ask)):
+            logger.info(
+                "⚡ %s %s: prezzo gia' all'ingresso %.2f, apro a mercato.", direction, order_type, entry,
+            )
+            return open_market_order(signal)
+
+        sl = round(float(signal["sl"]), digits)
+        tp = round(float(signal["tp"]), digits) if signal.get("tp") else 0.0
+        _validate_stops(direction, entry, sl, tp, info)
+
+        volume = _normalize_volume(LOT_SIZE, info)
+        result = _send({
+            "action": mt5.TRADE_ACTION_PENDING,
+            "symbol": MT5_SYMBOL,
+            "volume": volume,
+            "type": _pending_type(direction, order_type),
+            "price": entry,
+            "sl": sl,
+            "tp": tp,
+            "deviation": int(DEVIATION),
+            "magic": int(MAGIC_NUMBER),
+            "comment": ORDER_COMMENT,
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": mt5.ORDER_FILLING_RETURN,
+        })
+        return PendingResult(order_ticket=int(result.order), price=entry)
+
+
+def check_pending_order(order_ticket):
+    """
+    None = ancora pendente (o storico non ancora pronto).
+    {"filled": True, "position_ticket", "price", "volume"} = eseguito.
+    {"filled": False} = annullato / scaduto / rifiutato.
+    """
+    _require_mt5()
+    with _MT5_LOCK:
+        order_ticket = int(order_ticket)
+        if mt5.orders_get(ticket=order_ticket):
+            return None
+
+        entry_in = getattr(mt5, "DEAL_ENTRY_IN", 0)
+        for deal in mt5.history_deals_get(ticket=order_ticket) or []:
+            if int(getattr(deal, "entry", -1)) == entry_in:
+                position_ticket = int(getattr(deal, "position_id", 0) or 0) or order_ticket
+                price = float(deal.price)
+                positions = mt5.positions_get(ticket=position_ticket)
+                if positions:
+                    price = float(positions[0].price_open) or price
+                return {"filled": True, "position_ticket": position_ticket,
+                        "price": price, "volume": float(deal.volume)}
+
+        positions = mt5.positions_get(ticket=order_ticket)
+        if positions:
+            p = positions[0]
+            return {"filled": True, "position_ticket": int(p.ticket),
+                    "price": float(p.price_open), "volume": float(p.volume)}
+
+        orders = mt5.history_orders_get(ticket=order_ticket) or []
+        if orders:
+            state = int(getattr(orders[0], "state", -1))
+            if state == getattr(mt5, "ORDER_STATE_FILLED", 4):
+                return None  # eseguito, ma il deal non e' ancora nello storico
+            return {"filled": False}
+        return None
+
+
+def cancel_pending_order(order_ticket):
+    """True se annullato, False se non c'e' piu' (es. appena eseguito)."""
+    _require_mt5()
+    with _MT5_LOCK:
+        if not mt5.orders_get(ticket=int(order_ticket)):
+            return False
+        _send({"action": mt5.TRADE_ACTION_REMOVE, "order": int(order_ticket)})
+        return True

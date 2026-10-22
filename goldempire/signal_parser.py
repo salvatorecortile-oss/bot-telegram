@@ -102,6 +102,14 @@ def parse_signal(text):
             return None
 
         direction = "SELL" if direction_match.group(1) in {"VENDI", "SELL"} else "BUY"
+        # "BUY LIMIT" / "SELL LIMIT" / "BUY STOP" / "SELL STOP" -> ordine pendente
+        # al prezzo di Ingresso; altrimenti apertura a mercato.
+        if re.search(r"\bLIMIT\b", upper_header):
+            order_type = "LIMIT"
+        elif re.search(r"\b(?:BUY|SELL|COMPRA|VENDI)\s+STOP\b", upper_header):
+            order_type = "STOP"
+        else:
+            order_type = "MARKET"
         entry = _number_after(r"\b(?:INGRESSO|ENTRATA|ENTRY)\b", clean)
         # Il numero deve seguire subito l'etichetta: righe come
         # "SL a 0.01 lot = -6,31$" non vengono confuse con lo stop.
@@ -139,6 +147,7 @@ def parse_signal(text):
             "symbol": SYMBOL,
             "signal_no": signal_no,
             "direction": direction,
+            "order_type": order_type,
             "entry": entry,
             "sl": sl,
             "tp": tp,
@@ -149,6 +158,10 @@ def parse_signal(text):
     # AGGIORNAMENTI (l'ordine dei controlli conta: "STOP A PAREGGIO"
     # va riconosciuto prima del semplice "STOP").
     # ------------------------------------------------------------
+    # Ordine pendente annullato dal canale.
+    if re.search(r"\b(?:ANNULLAT[OA]|CANCELLAT[OA]|CANCELL?ED|CANCEL|ELIMINAT[OA])\b", upper_header):
+        return {"action": "CANCEL", "symbol": SYMBOL, "signal_no": signal_no}
+
     if re.search(
         r"\bOBIETTIVO\s+RAGGIUNTO\b|\bTP\s*\d?\s*(?:RAGGIUNTO|HIT|PRESO|COLPITO|CENTRATO)\b",
         upper_header,

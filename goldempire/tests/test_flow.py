@@ -24,6 +24,10 @@ class FakeMT5(types.ModuleType):
     POSITION_TYPE_BUY, POSITION_TYPE_SELL = 0, 1
     ORDER_TYPE_BUY, ORDER_TYPE_SELL = 0, 1
     TRADE_ACTION_DEAL, TRADE_ACTION_SLTP = 1, 6
+    TRADE_ACTION_PENDING, TRADE_ACTION_REMOVE = 5, 8
+    ORDER_TYPE_BUY_LIMIT, ORDER_TYPE_SELL_LIMIT, ORDER_TYPE_BUY_STOP, ORDER_TYPE_SELL_STOP = 2, 3, 4, 5
+    ORDER_STATE_CANCELED, ORDER_STATE_FILLED = 2, 4
+    TRADE_RETCODE_PLACED = 10008
     ORDER_TIME_GTC = 0
     ORDER_FILLING_FOK, ORDER_FILLING_IOC, ORDER_FILLING_RETURN = 0, 1, 2
     SYMBOL_FILLING_FOK, SYMBOL_FILLING_IOC = 1, 2
@@ -36,6 +40,8 @@ class FakeMT5(types.ModuleType):
         super().__init__("MetaTrader5")
         self.bid, self.ask = 4204.00, 4204.30
         self.positions = {}
+        self.orders = {}
+        self.history_orders = {}
         self.deals = []
         self.next_ticket = 1000
 
@@ -57,19 +63,35 @@ class FakeMT5(types.ModuleType):
             return (p,) if p else ()
         return tuple(self.positions.values())
 
+    def orders_get(self, ticket=None):
+        o = self.orders.get(int(ticket))
+        return (o,) if o else ()
+
+    def history_orders_get(self, ticket=None):
+        o = self.history_orders.get(int(ticket))
+        return (o,) if o else ()
+
     def history_deals_get(self, ticket=None, position=None):
-        if ticket is not None:
-            return tuple(d for d in self.deals if d.ticket == ticket)
+        if ticket is not None:  # ticket = ordine che ha generato il deal
+            return tuple(d for d in self.deals if d.order == ticket)
         return tuple(d for d in self.deals if d.position_id == position)
 
     def _deal(self, position_id, entry, price, reason):
         self.next_ticket += 1
-        d = SimpleNamespace(ticket=self.next_ticket, position_id=position_id, entry=entry, price=price,
-                            reason=reason, time_msc=self.next_ticket)
+        d = SimpleNamespace(ticket=self.next_ticket, order=position_id, position_id=position_id, entry=entry,
+                            price=price, reason=reason, time_msc=self.next_ticket, volume=0.01)
         self.deals.append(d)
         return d
 
     def order_send(self, req):
+        if req["action"] == self.TRADE_ACTION_PENDING:
+            self.next_ticket += 1
+            self.orders[self.next_ticket] = SimpleNamespace(ticket=self.next_ticket, **req)
+            return SimpleNamespace(retcode=10008, order=self.next_ticket, deal=0, price=req["price"], volume=req["volume"])
+        if req["action"] == self.TRADE_ACTION_REMOVE:
+            o = self.orders.pop(req["order"])
+            self.history_orders[o.ticket] = SimpleNamespace(ticket=o.ticket, state=self.ORDER_STATE_CANCELED)
+            return SimpleNamespace(retcode=10009, order=o.ticket, deal=0, price=0, volume=0)
         if req["action"] == self.TRADE_ACTION_SLTP:
             self.positions[req["position"]].sl = req["sl"]
             return SimpleNamespace(retcode=10009, order=0, deal=0, price=0, volume=0)
@@ -84,6 +106,17 @@ class FakeMT5(types.ModuleType):
                                             sl=req["sl"], tp=req["tp"], profit=0.0, time=t, time_msc=t)
         d = self._deal(t, self.DEAL_ENTRY_IN, req["price"], self.DEAL_REASON_EXPERT)
         return SimpleNamespace(retcode=10009, order=t, deal=d.ticket, price=req["price"], volume=req["volume"])
+
+    def fill_pending(self, ticket):
+        """Il prezzo raggiunge l'ordine pendente: diventa una posizione con lo stesso ticket."""
+        o = self.orders.pop(ticket)
+        is_buy = o.type in (self.ORDER_TYPE_BUY_LIMIT, self.ORDER_TYPE_BUY_STOP)
+        self.positions[ticket] = SimpleNamespace(
+            ticket=ticket, magic=o.magic, symbol=o.symbol, type=self.POSITION_TYPE_BUY if is_buy else self.POSITION_TYPE_SELL,
+            volume=o.volume, price_open=o.price, price_current=o.price, sl=o.sl, tp=o.tp, profit=0.0,
+            time=ticket, time_msc=ticket)
+        self.history_orders[ticket] = SimpleNamespace(ticket=ticket, state=self.ORDER_STATE_FILLED)
+        self._deal(ticket, self.DEAL_ENTRY_IN, o.price, self.DEAL_REASON_EXPERT)
 
     def broker_close(self, ticket, price, reason):
         self.positions.pop(ticket)
@@ -249,6 +282,54 @@ async def scenario(trading):
     await main.source_message_handler(event(msg(61, close5, reply_to=60)))
     assert db.get_signal(60)["status"] == "CLOSED_MANUAL", db.get_signal(60)
     print("   Chiusura a segnale ->", tg.sent[-1].text.replace("\n", " | "))
+
+    if trading:
+        # 13) BUY LIMIT sotto il prezzo: ordine pendente, nessun messaggio finche' non viene eseguito
+        mt5.bid, mt5.ask = 4140.00, 4140.30
+        n = len(tg.sent)
+        limit_buy = T.SIGNAL_2_BUY_NEW.replace("XAUUSD BUY", "XAUUSD BUY LIMIT")
+        await main.source_message_handler(event(msg(70, limit_buy)))
+        r8 = db.get_signal(70)
+        assert r8["status"] == "PENDING" and r8["order_ticket"] in mt5.orders, r8
+        o = mt5.orders[r8["order_ticket"]]
+        assert (o.type, o.price, o.sl, o.tp) == (mt5.ORDER_TYPE_BUY_LIMIT, 4137.44, 4131.13, 4163.40)
+        assert len(tg.sent) == n and "pendenti (1)" in main.status_text()
+        # Eseguito: il monitor lo registra e lo pubblica con l'entry reale
+        mt5.fill_pending(r8["order_ticket"])
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        r8 = db.get_signal(70)
+        assert r8["status"] == "OPENED" and r8["position_ticket"] == r8["order_ticket"], r8
+        assert "XAUUSD — BUY" in tg.sent[-1].text and "4137.44" in tg.sent[-1].text
+        print("   LIMIT eseguito ->", tg.sent[-1].text.replace("\n", " | "))
+        # Poi TP dal canale: chiusura normale
+        mt5.bid, mt5.ask = 4163.40, 4163.70
+        await main.source_message_handler(event(msg(71, "🟣 SIGNAL 2 – TP1 RAGGIUNTO ✅", reply_to=70)))
+        assert db.get_signal(70)["status"] == "CLOSED_TP"
+
+        # 14) SELL LIMIT mai eseguito e annullato dal canale: nessun messaggio nel canale
+        n = len(tg.sent)
+        sell_limit = (T.SIGNAL_2_BUY_NEW.replace("XAUUSD BUY", "XAUUSD SELL LIMIT")
+                      .replace("4137,44", "4180,00").replace("4163,40", "4150,00").replace("4131,13", "4195,00"))
+        await main.source_message_handler(event(msg(80, sell_limit)))
+        r9 = db.get_signal(80)
+        assert r9["status"] == "PENDING", r9
+        await main.source_message_handler(event(msg(81, "🟣 SIGNAL 2 – ORDINE ANNULLATO", reply_to=80)))
+        assert db.get_signal(80)["status"] == "CANCELED" and r9["order_ticket"] not in mt5.orders
+        assert len(tg.sent) == n
+
+        # 15) BUY LIMIT con prezzo gia' sotto l'ingresso: aperto subito a mercato
+        mt5.bid, mt5.ask = 4135.00, 4135.30
+        await main.source_message_handler(event(msg(90, limit_buy)))
+        r10 = db.get_signal(90)
+        assert r10["status"] == "OPENED" and r10["open_price"] == 4135.30, r10
+
+        # 16) Pendente scaduto: annullato dal monitor
+        mt5.bid, mt5.ask = 4140.00, 4140.30
+        await main.source_message_handler(event(msg(95, limit_buy)))
+        with db.get_connection() as conn:
+            conn.execute("UPDATE signals SET pending_since = '2020-01-01T00:00:00+00:00' WHERE source_message_id = 95")
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert db.get_signal(95)["status"] == "EXPIRED", db.get_signal(95)
 
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)

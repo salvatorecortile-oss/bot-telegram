@@ -33,6 +33,7 @@ from config import (
     MAX_ENTRY_DISTANCE,
     MAX_SIGNAL_AGE_SECONDS,
     MONITOR_INTERVAL_SECONDS,
+    PENDING_EXPIRY_MINUTES,
     MT5_SYMBOL,
     PIP_SIZE,
     SOURCE_CHAT,
@@ -139,7 +140,10 @@ async def handle_open(message, signal):
                 db.set_status(source_id, "MT5_NOT_READY")
                 return
             try:
-                result = await asyncio.to_thread(mt5x.open_market_order, signal)
+                if signal.get("order_type", "MARKET") == "MARKET":
+                    result = await asyncio.to_thread(mt5x.open_market_order, signal)
+                else:
+                    result = await asyncio.to_thread(mt5x.place_pending_order, signal)
             except ValueError as exc:
                 logger.warning("⏭️ TRADE NON APERTO | #%s | %s", source_id, exc)
                 db.set_status(source_id, "SKIPPED", error=str(exc))
@@ -147,6 +151,13 @@ async def handle_open(message, signal):
             except Exception as exc:
                 logger.exception("❌ ERRORE APERTURA | #%s", source_id)
                 db.set_status(source_id, "ERROR", error=str(exc))
+                return
+            if isinstance(result, mt5x.PendingResult):
+                db.mark_pending(source_id, result.order_ticket)
+                logger.info(
+                    "🕓 %s %s PIAZZATO | Order %s @ %.2f | pubblicato nel canale quando viene eseguito",
+                    signal["direction"], signal["order_type"], result.order_ticket, result.price,
+                )
                 return
             position_ticket, open_price = result.position_ticket, result.price
             volume, sl, tp = result.volume, result.sl, result.tp
@@ -158,16 +169,59 @@ async def handle_open(message, signal):
             # Modalita' TEST: nessun ordine, si usa l'ingresso del segnale.
             position_ticket, open_price = None, signal["entry"]
             volume, sl, tp = 0.0, signal["sl"], signal["tp"]
-            logger.info("🧪 TEST (nessun ordine MT5) | apertura simulata @ %.2f", open_price)
+            logger.info(
+                "🧪 TEST (nessun ordine MT5) | apertura simulata @ %.2f%s", open_price,
+                f" (ordine {signal['order_type']} considerato eseguito)"
+                if signal.get("order_type", "MARKET") != "MARKET" else "",
+            )
 
         db.mark_opened(source_id, position_ticket, open_price, volume, sl, tp)
+        await publish_open(source_id, signal["direction"], open_price, sl, tp)
 
-        try:
-            sent = await send_open_message(signal["direction"], open_price, sl, tp)
-            db.set_destination_message(source_id, sent.id)
-            logger.info("📤 SEGNALE PUBBLICATO | Destination #%s", sent.id)
-        except Exception:
-            logger.exception("❌ ERRORE INVIO SEGNALE NEL CANALE | #%s", source_id)
+
+async def publish_open(source_id, direction, open_price, sl, tp):
+    try:
+        sent = await send_open_message(direction, open_price, sl, tp)
+        db.set_destination_message(source_id, sent.id)
+        logger.info("📤 SEGNALE PUBBLICATO | Destination #%s", sent.id)
+    except Exception:
+        logger.exception("❌ ERRORE INVIO SEGNALE NEL CANALE | #%s", source_id)
+
+
+# ============================================================
+# ORDINI PENDENTI (LIMIT / STOP)
+# ============================================================
+
+async def refresh_pending(row):
+    """
+    Controlla un ordine pendente: se eseguito lo registra e lo pubblica nel
+    canale con l'entry reale; se annullato dal broker o scaduto lo chiude.
+    Da chiamare con il lock del segnale.
+    """
+    source_id = row["source_message_id"]
+    fill = await asyncio.to_thread(mt5x.check_pending_order, row["order_ticket"])
+
+    if fill is None:
+        if PENDING_EXPIRY_MINUTES > 0 and row["pending_since"]:
+            age = datetime.now(timezone.utc) - datetime.fromisoformat(row["pending_since"])
+            if age.total_seconds() > PENDING_EXPIRY_MINUTES * 60:
+                if await asyncio.to_thread(mt5x.cancel_pending_order, row["order_ticket"]):
+                    db.finish_pending(source_id, "EXPIRED")
+                    logger.info("⌛ ORDINE PENDENTE SCADUTO E ANNULLATO | Order %s | #%s",
+                                row["order_ticket"], source_id)
+        return
+
+    if not fill["filled"]:
+        db.finish_pending(source_id, "CANCELED")
+        logger.info("🚫 ORDINE PENDENTE ANNULLATO SU MT5 | Order %s | #%s", row["order_ticket"], source_id)
+        return
+
+    db.mark_opened(source_id, fill["position_ticket"], fill["price"], fill["volume"], row["sl"], row["tp"])
+    logger.info(
+        "✅ ORDINE %s ESEGUITO | Position %s | %s @ %.2f",
+        row["order_type"], fill["position_ticket"], row["direction"], fill["price"],
+    )
+    await publish_open(source_id, row["direction"], fill["price"], row["sl"], row["tp"])
 
 
 # ============================================================
@@ -224,7 +278,7 @@ async def finalize_if_closed_on_mt5(row):
 async def handle_update(message, signal):
     action = signal["action"]
     row = find_signal_row(message, signal)
-    if row is None or row["status"] != db.OPEN_STATUS:
+    if row is None or row["status"] not in (db.OPEN_STATUS, db.PENDING_STATUS):
         logger.info(
             "⏭️ %s SIGNAL %s ignorato | #%s | nessuna operazione aperta collegata.",
             action, signal.get("signal_no"), message.id,
@@ -234,10 +288,34 @@ async def handle_update(message, signal):
     source_id = row["source_message_id"]
     async with get_lock(source_id):
         row = db.get_signal(source_id)
-        if row["status"] != db.OPEN_STATUS:
+        if row["status"] not in (db.OPEN_STATUS, db.PENDING_STATUS):
             return
 
         logger.info("📩 %s | SIGNAL %s | collegato al segnale #%s", action, signal.get("signal_no"), source_id)
+
+        if row["status"] == db.PENDING_STATUS:
+            # Ordine non ancora eseguito: annullato, chiuso o stop -> lo si toglie.
+            if not MT5_READY:
+                logger.error("❌ MT5 NON PRONTO: %s non eseguito | #%s", action, source_id)
+                return
+            if action == "BREAKEVEN":
+                logger.info("⏭️ BE ignorato: ordine #%s ancora pendente.", source_id)
+                return
+            try:
+                cancelled = await asyncio.to_thread(mt5x.cancel_pending_order, row["order_ticket"])
+            except Exception:
+                logger.exception("❌ ERRORE ANNULLAMENTO ORDINE PENDENTE | #%s", source_id)
+                return
+            if cancelled:
+                db.finish_pending(source_id, "CANCELED")
+                logger.info("🚫 ORDINE PENDENTE ANNULLATO (%s) | Order %s | #%s",
+                            action, row["order_ticket"], source_id)
+                return
+            # Non c'e' piu' tra i pendenti: probabilmente appena eseguito.
+            await refresh_pending(row)
+            row = db.get_signal(source_id)
+            if row["status"] != db.OPEN_STATUS:
+                return
 
         live = TRADING_ENABLED and row["position_ticket"] is not None
         if live:
@@ -270,7 +348,10 @@ async def handle_update(message, signal):
                 logger.exception("❌ ERRORE INVIO MESSAGGIO BE | #%s", source_id)
             return
 
-        status = {"TP_HIT": "CLOSED_TP", "SL_HIT": "CLOSED_SL", "CLOSE": "CLOSED_MANUAL"}[action]
+        status = {
+            "TP_HIT": "CLOSED_TP", "SL_HIT": "CLOSED_SL",
+            "CLOSE": "CLOSED_MANUAL", "CANCEL": "CLOSED_MANUAL",
+        }[action]
         if live:
             try:
                 close_price = await asyncio.to_thread(mt5x.close_position, row["position_ticket"])
@@ -313,6 +394,11 @@ async def monitor_closures():
     while True:
         try:
             if TRADING_ENABLED and MT5_READY and BOT_STATE != "STOPPED":
+                for row in db.get_pending_signals():
+                    async with get_lock(row["source_message_id"]):
+                        current = db.get_signal(row["source_message_id"])
+                        if current["status"] == db.PENDING_STATUS:
+                            await refresh_pending(current)
                 for row in db.get_open_signals():
                     if row["position_ticket"] is None:
                         continue
@@ -384,6 +470,15 @@ async def scheduler():
 
 async def close_all_open_trades():
     closed, errors = 0, 0
+    for row in db.get_pending_signals():
+        async with get_lock(row["source_message_id"]):
+            try:
+                if TRADING_ENABLED and MT5_READY:
+                    await asyncio.to_thread(mt5x.cancel_pending_order, row["order_ticket"])
+                db.finish_pending(row["source_message_id"], "CANCELED")
+            except Exception:
+                errors += 1
+                logger.exception("❌ ERRORE ANNULLAMENTO PENDENTE | #%s", row["source_message_id"])
     for row in db.get_open_signals():
         async with get_lock(row["source_message_id"]):
             current = db.get_signal(row["source_message_id"])
@@ -431,6 +526,15 @@ def status_text():
         )
     if not rows:
         lines.append("Nessuna")
+    pending = db.get_pending_signals()
+    if pending:
+        lines.append(f"\n<b>Ordini pendenti ({len(pending)}):</b>")
+        for row in pending:
+            tp_txt = f"{row['tp']:.2f}" if row["tp"] else "a segnale"
+            lines.append(
+                f"• SIGNAL {row['signal_no']} {row['direction']} {row['order_type']} @ {row['entry_signal']:.2f} "
+                f"| SL {row['sl']:.2f} | TP {tp_txt}"
+            )
     return "\n".join(lines)
 
 

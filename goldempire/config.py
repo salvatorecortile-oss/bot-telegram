@@ -71,6 +71,10 @@ MAX_SIGNAL_AGE_SECONDS = float(os.getenv("MAX_SIGNAL_AGE_SECONDS", "120"))
 # 0 = nessun limite: si apre sempre a mercato.
 MAX_ENTRY_DISTANCE = float(os.getenv("MAX_ENTRY_DISTANCE", "0"))
 
+# Ordini pendenti (BUY/SELL LIMIT, BUY/SELL STOP): dopo quanti minuti
+# vengono annullati se non eseguiti (0 = restano finche' il canale non li annulla).
+PENDING_EXPIRY_MINUTES = float(os.getenv("PENDING_EXPIRY_MINUTES", "1440"))
+
 # Dimensione di 1 pip su XAUUSD (0,10 $ come il canale: 35,24 $ = 352,4 pips).
 PIP_SIZE = float(os.getenv("PIP_SIZE", "0.1"))
 

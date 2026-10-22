@@ -13,6 +13,10 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
 | `❌ STOP` | Chiude la posizione (se MT5 non l'ha già chiusa allo SL) → "STOP LOSS PRESO" (o "BE PRESO" se era a pareggio) |
 | `🏁 CHIUSA` | Chiude subito a mercato → "OPERAZIONE CHIUSA IN PROFITTO / PERDITA" |
 
+- `BUY LIMIT` / `SELL LIMIT` / `BUY STOP` / `SELL STOP`: piazza un **ordine pendente** al prezzo di Ingresso con SL e TP.
+  Nel tuo canale il segnale esce solo **quando l'ordine viene eseguito** (con l'entry reale). Se il prezzo ha già raggiunto
+  l'ingresso apre subito a mercato. Se il canale lo annulla, o manda TP/STOP/CHIUSA prima dell'esecuzione, l'ordine viene tolto
+  senza messaggi; dopo `PENDING_EXPIRY_MINUTES` (default 24 ore) senza esecuzione viene annullato.
 - Gli aggiornamenti vengono collegati al segnale tramite la **reply** di Telegram
   (riserva: ultimo `SIGNAL N` ancora aperto). Nel tuo canale escono in reply al segnale copiato.
 - BUY e SELL possono essere aperti **contemporaneamente** (serve un conto MT5 *hedging*).

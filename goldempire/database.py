@@ -10,6 +10,7 @@ from config import DB_PATH
 _db_path = str(DB_PATH)
 
 OPEN_STATUS = "OPENED"
+PENDING_STATUS = "PENDING"
 
 COLUMNS = (
     "source_message_id", "signal_no", "direction", "entry_signal", "sl", "tp",
@@ -67,6 +68,15 @@ def init_database():
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status)"
         )
+        # Colonne aggiunte dopo la prima versione (database gia' esistenti).
+        existing = {r["name"] for r in conn.execute("PRAGMA table_info(signals)")}
+        for column, ddl in (
+            ("order_type", "TEXT"),
+            ("order_ticket", "INTEGER"),
+            ("pending_since", "TEXT"),
+        ):
+            if column not in existing:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {column} {ddl}")
 
 
 def _row(row):
@@ -80,13 +90,14 @@ def insert_signal(source_message_id, signal):
             """
             INSERT OR IGNORE INTO signals (
                 source_message_id, signal_no, direction, entry_signal, sl, tp,
-                targets_total, status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'RECEIVED', ?)
+                targets_total, status, created_at, order_type
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'RECEIVED', ?, ?)
             """,
             (
                 int(source_message_id), signal.get("signal_no"), signal["direction"],
                 signal["entry"], signal["sl"], signal["tp"],
                 signal.get("targets_total", 1), _now(),
+                signal.get("order_type", "MARKET"),
             ),
         )
         return cur.rowcount == 1
@@ -109,10 +120,10 @@ def get_latest_open_by_signal_no(signal_no):
         row = conn.execute(
             """
             SELECT * FROM signals
-            WHERE signal_no = ? AND status = ?
+            WHERE signal_no = ? AND status IN (?, ?)
             ORDER BY source_message_id DESC LIMIT 1
             """,
-            (int(signal_no), OPEN_STATUS),
+            (int(signal_no), OPEN_STATUS, PENDING_STATUS),
         ).fetchone()
         return _row(row)
 
@@ -124,6 +135,36 @@ def get_open_signals():
             (OPEN_STATUS,),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_pending_signals():
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM signals WHERE status = ? ORDER BY source_message_id",
+            (PENDING_STATUS,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def mark_pending(source_message_id, order_ticket):
+    with get_connection() as conn:
+        conn.execute(
+            """
+            UPDATE signals SET status = ?, order_ticket = ?, pending_since = ?
+            WHERE source_message_id = ?
+            """,
+            (PENDING_STATUS, int(order_ticket), _now(), int(source_message_id)),
+        )
+
+
+def finish_pending(source_message_id, status):
+    """PENDING -> CANCELED/EXPIRED. True solo se era ancora pendente."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE signals SET status = ? WHERE source_message_id = ? AND status = ?",
+            (status, int(source_message_id), PENDING_STATUS),
+        )
+        return cur.rowcount == 1
 
 
 def set_status(source_message_id, status, error=None):
