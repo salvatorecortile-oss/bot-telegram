@@ -40,7 +40,7 @@
   .hero .right { text-align: right; font-size: 10pt; color: #cdbb8a; line-height: 1.6; }
   .hero .right b { color: var(--gold-soft); font-size: 13pt; }
 
-  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin-top: 4mm; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 4mm; }
   .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 5mm; }
   .stat .v { font-family: "Inter Display", "Inter", sans-serif; font-size: 22pt; font-weight: 700; line-height: 1.05; }
   .stat .k { font-size: 8.8pt; color: var(--muted); margin-top: 1.5mm; }
@@ -49,13 +49,13 @@
   h2::before { content: ""; width: 6mm; height: 2px; background: var(--gold); }
   .lead { font-size: 9.5pt; color: var(--muted); margin-bottom: 4mm; }
 
-  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10.5pt; background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; }
-  th { text-align: right; font-size: 8pt; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 3.2mm 4mm; border-bottom: 1px solid var(--line); background: #121b28; }
-  td { text-align: right; padding: 3mm 4mm; border-bottom: 1px solid var(--line); }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 9.2pt; background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; }
+  th { text-align: right; font-size: 8pt; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 3mm 2.6mm; border-bottom: 1px solid var(--line); background: #121b28; }
+  td { white-space: nowrap; text-align: right; padding: 2.8mm 2.6mm; border-bottom: 1px solid var(--line); }
   tr:last-child td { border-bottom: 0; }
   th:first-child, td:first-child { text-align: left; }
   td.dep { font-weight: 600; }
-  td.ret { color: var(--green); font-weight: 700; font-size: 12.5pt; }
+  td.ret { color: var(--green); font-weight: 700; font-size: 10.5pt; }
   td.fin { color: var(--text); font-weight: 600; }
   td.mon { color: var(--gold-soft); }
 
@@ -63,6 +63,7 @@
   .lotbox { background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 4mm; }
   .lotbox .l { font-size: 8.8pt; color: var(--muted); }
   .lotbox .p { font-family: "Inter Display", "Inter", sans-serif; font-size: 15pt; font-weight: 700; color: var(--green); margin-top: 1mm; }
+  td.dd { color: #e58a8a; white-space: nowrap; }
   td.lot { color: var(--gold-soft); font-weight: 600; }
   .badges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 6mm; }
   .badge { border: 1px solid var(--line); border-radius: 3mm; padding: 2.8mm 3mm; text-align: center; font-size: 9pt; color: #c3ccd9; }
@@ -90,6 +91,7 @@
 
   <div class="stats">
     <div class="stat"><div class="v num">1,57</div><div class="k">Profit Factor</div></div>
+    <div class="stat"><div class="v num">9,0%</div><div class="k">drawdown massimo (1.000 $, 0,01 lotti)</div></div>
     <div class="stat"><div class="v num">229</div><div class="k">operazioni, circa 1 al giorno</div></div>
     <div class="stat"><div class="v num">0,01</div><div class="k">lotti consigliati ogni 200 $ di deposito</div></div>
   </div>
@@ -97,11 +99,11 @@
   <h2>Quanto avrebbe reso il tuo deposito</h2>
   <p class="lead">Lotto consigliato in base al capitale: 0,01 lotti ogni 200 $ di deposito, minimo 0,01.</p>
   <table>
-    <tr><th>Deposito iniziale</th><th>Lotto</th><th>Profitto</th><th>Saldo finale</th><th>Rendimento</th><th>Media al mese</th></tr>
-    <tr><td class="dep num">100 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">737,89 $</td><td class="ret num">+637,9%</td><td class="mon num">+66,3%</td></tr>
-    <tr><td class="dep num">300 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">937,89 $</td><td class="ret num">+212,6%</td><td class="mon num">+22,1%</td></tr>
-    <tr><td class="dep num">500 $</td><td class="lot num">0,02</td><td class="num">+1.275,78 $</td><td class="fin num">1.775,78 $</td><td class="ret num">+255,2%</td><td class="mon num">+26,5%</td></tr>
-    <tr><td class="dep num">1.000 $</td><td class="lot num">0,05</td><td class="num">+3.189,45 $</td><td class="fin num">4.189,45 $</td><td class="ret num">+318,9%</td><td class="mon num">+33,1%</td></tr>
+    <tr><th>Deposito iniziale</th><th>Lotto</th><th>Profitto</th><th>Saldo finale</th><th>Rendimento</th><th>Media al mese</th><th>Drawdown max</th></tr>
+    <tr><td class="dep num">100 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">737,89 $</td><td class="ret num">+637,9%</td><td class="mon num">+66,3%</td><td class="dd num">−124 $ · 124%</td></tr>
+    <tr><td class="dep num">300 $</td><td class="lot num">0,01</td><td class="num">+637,89 $</td><td class="fin num">937,89 $</td><td class="ret num">+212,6%</td><td class="mon num">+22,1%</td><td class="dd num">−124 $ · 41%</td></tr>
+    <tr><td class="dep num">500 $</td><td class="lot num">0,02</td><td class="num">+1.275,78 $</td><td class="fin num">1.775,78 $</td><td class="ret num">+255,2%</td><td class="mon num">+26,5%</td><td class="dd num">−248 $ · 50%</td></tr>
+    <tr><td class="dep num">1.000 $</td><td class="lot num">0,05</td><td class="num">+3.189,45 $</td><td class="fin num">4.189,45 $</td><td class="ret num">+318,9%</td><td class="mon num">+33,1%</td><td class="dd num">−619 $ · 62%</td></tr>
   </table>
 
   <h2>Profitto per lotto con conto da 1.000 €</h2>
@@ -120,7 +122,7 @@
   </div>
 
   <footer>
-    <b>Avvertenza sui rischi.</b> Risultati ottenuti in backtest con MetaTrader 5 Strategy Tester su XAUUSD, 1 gennaio – 21 ottobre 2026, con tick reali (qualità dello storico 99%), con lotto fisso 0,01: non provengono da un conto reale. I valori con lotti più grandi sono calcolati in proporzione al lotto, come anche le perdite: il calo massimo registrato nel test è stato di circa 124 $ ogni 0,01 lotti. Media al mese = rendimento totale diviso per 9,6 mesi, senza capitalizzazione. I risultati passati, reali o simulati, non garantiscono risultati futuri; spread, slippage e commissioni possono ridurre il rendimento. Il trading su oro e CFD con leva comporta un rischio elevato di perdita, anche dell'intero capitale. Questo documento ha scopo informativo e non costituisce consulenza finanziaria né sollecitazione all'investimento.
+    <b>Avvertenza sui rischi.</b> Backtest con MetaTrader 5 Strategy Tester su XAUUSD, 1 gennaio – 21 ottobre 2026, tick reali (qualità 99%), lotto 0,01: non è un conto reale. I valori con lotti più grandi sono calcolati in proporzione al lotto, perdite comprese. Drawdown max = calo massimo del test (circa 124 $ ogni 0,01 lotti) in dollari e in % sul deposito iniziale, nel caso peggiore in cui avvenga subito. Media al mese = rendimento totale diviso 9,6 mesi, senza capitalizzazione. I risultati passati, reali o simulati, non garantiscono risultati futuri; spread, slippage e commissioni possono ridurli. Il trading su oro e CFD con leva comporta un rischio elevato di perdita, anche dell'intero capitale. Documento informativo, non è consulenza finanziaria né sollecitazione all'investimento.
   </footer>
 </div>
 </body>
