@@ -77,6 +77,7 @@ from telegram_sender import (  # noqa: E402
     send_close_message,
     send_open_message,
     send_text,
+    send_tp_updated_message,
 )
 import reports  # noqa: E402
 from messages import GOOD_MORNING_MESSAGE_TEMPLATE  # noqa: E402
@@ -458,14 +459,33 @@ async def monitor_closures():
                         current = db.get_signal(row["source_message_id"])
                         if current["status"] != db.OPEN_STATUS:
                             continue
-                        if await asyncio.to_thread(mt5x.is_position_open, current["position_ticket"]):
-                            continue
-                        await finalize_if_closed_on_mt5(current)
+                        mt5_tp = await asyncio.to_thread(mt5x.get_position_tp, current["position_ticket"])
+                        if mt5_tp is None:
+                            await finalize_if_closed_on_mt5(current)
+                        else:
+                            await check_tp_change(current, mt5_tp)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("❌ ERRORE MONITOR")
         await asyncio.sleep(MONITOR_INTERVAL_SECONDS)
+
+
+async def check_tp_change(row, mt5_tp):
+    """TP cambiato a mano su MT5: lo registra e lo comunica in reply al segnale."""
+    known_tp = float(row["tp"] or 0.0)
+    if abs(mt5_tp - known_tp) < 0.005:
+        return
+    db.update_tp(row["source_message_id"], mt5_tp)
+    logger.info(
+        "🎯 TP MODIFICATO SU MT5 | SIGNAL %s %s | Position %s | %s -> %s",
+        row["signal_no"], row["direction"], row["position_ticket"],
+        f"{known_tp:.2f}" if known_tp else "nessuno", f"{mt5_tp:.2f}" if mt5_tp else "nessuno",
+    )
+    try:
+        await send_tp_updated_message(mt5_tp, reply_to=row["destination_message_id"])
+    except Exception:
+        logger.exception("❌ ERRORE INVIO MESSAGGIO TP | #%s", row["source_message_id"])
 
 
 async def mt5_connection_keeper():

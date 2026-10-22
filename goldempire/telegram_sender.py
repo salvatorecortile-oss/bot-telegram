@@ -1,6 +1,11 @@
 """Invio dei messaggi nel canale di destinazione."""
 from config import DESTINATION_CHAT
-from messages import format_be_applied_message, format_close_message, format_open_message
+from messages import (
+    format_be_applied_message,
+    format_close_message,
+    format_open_message,
+    format_tp_updated_message,
+)
 from telegram_client import client
 
 
@@ -16,6 +21,16 @@ async def send_be_applied_message(sl, reply_to=None):
     return await client.send_message(
         DESTINATION_CHAT,
         format_be_applied_message(sl),
+        parse_mode="html",
+        silent=True,
+        reply_to=reply_to,
+    )
+
+
+async def send_tp_updated_message(tp, reply_to=None):
+    return await client.send_message(
+        DESTINATION_CHAT,
+        format_tp_updated_message(tp),
         parse_mode="html",
         silent=True,
         reply_to=reply_to,

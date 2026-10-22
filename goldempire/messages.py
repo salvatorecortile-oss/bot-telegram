@@ -26,6 +26,16 @@ TAKE_PROFIT_MESSAGE_TEMPLATE = (
     "📈 <b>PIPS TOTALI: {pips}</b>"
 )
 
+# TP cambiato a mano su MT5 (rilevato dal bot).
+TP_UPDATED_MESSAGE_TEMPLATE = (
+    "🎯 <b>TP IMPOSTATO A {tp:.2f}</b>"
+)
+
+TP_REMOVED_MESSAGE_TEMPLATE = (
+    "🎯 <b>TP RIMOSSO</b>\n"
+    "Chiusura a segnale."
+)
+
 BE_APPLIED_MESSAGE_TEMPLATE = (
     "🟢 <b>BE ATTIVATO</b>\n"
     "🛡️ Stop Loss spostato a <b>{sl:.2f}</b>"
@@ -77,6 +87,12 @@ def format_open_message(direction, entry, sl, tp):
         sl=float(sl),
         tp=float(tp),
     )
+
+
+def format_tp_updated_message(tp):
+    if not tp:
+        return TP_REMOVED_MESSAGE_TEMPLATE
+    return TP_UPDATED_MESSAGE_TEMPLATE.format(tp=float(tp))
 
 
 def format_be_applied_message(sl):

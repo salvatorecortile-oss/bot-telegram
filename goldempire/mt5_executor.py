@@ -287,6 +287,16 @@ def _own_position(position_ticket):
     return position
 
 
+def get_position_tp(position_ticket):
+    """TP attuale della posizione su MT5 (0.0 = nessun TP), None se non e' piu' aperta."""
+    _require_mt5()
+    with _MT5_LOCK:
+        positions = mt5.positions_get(ticket=int(position_ticket))
+        if not positions:
+            return None
+        return float(positions[0].tp or 0.0)
+
+
 def is_position_open(position_ticket):
     _require_mt5()
     with _MT5_LOCK:

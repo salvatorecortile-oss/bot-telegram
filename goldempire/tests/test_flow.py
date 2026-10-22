@@ -406,6 +406,32 @@ async def scenario(trading):
     await main.source_message_handler(event(msg(127, close_reply, reply_to=121)))
     assert len(tg.sent) - n == 2
 
+    if trading:
+        # 19) TP impostato a mano su MT5: il bot lo comunica in reply al segnale, una volta sola
+        mt5.bid, mt5.ask = 4100.00, 4100.30
+        await main.source_message_handler(event(msg(130, strat(5, "SELL", "4100,00", "4350,00"))))
+        r = db.get_signal(130)
+        n = len(tg.sent)
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert len(tg.sent) == n                          # nessuna modifica: nessun messaggio
+        mt5.positions[r["position_ticket"]].tp = 4050.00  # TP messo a mano
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert len(tg.sent) == n + 1 and "TP IMPOSTATO A 4050.00" in tg.sent[-1].text
+        assert tg.sent[-1].reply_to == r["destination_message_id"] and db.get_signal(130)["tp"] == 4050.00
+        print("   TP manuale ->", tg.sent[-1].text)
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert len(tg.sent) == n + 1                      # nessun doppione
+        assert "TP 4050.00" in main.status_text()
+        mt5.positions[r["position_ticket"]].tp = 0.0      # TP tolto a mano
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert "TP RIMOSSO" in tg.sent[-1].text and db.get_signal(130)["tp"] is None
+        mt5.positions[r["position_ticket"]].tp = 4050.00
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        # TP preso da MT5: messaggio di TP raggiunto
+        mt5.broker_close(r["position_ticket"], 4050.00, mt5.DEAL_REASON_TP)
+        await asyncio.wait_for(_one_monitor_pass(main), 5)
+        assert db.get_signal(130)["status"] == "CLOSED_TP" and "TAKE PROFIT RAGGIUNTO" in tg.sent[-1].text
+
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)
     old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)
