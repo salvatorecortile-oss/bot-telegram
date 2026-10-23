@@ -22,6 +22,11 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
   nell'altra direzione (pubblicando la chiusura di ognuna) e poi apre la nuova. Il 5 chiude solo il 5, il 6 solo il 6;
   gli altri SIGNAL (con TP/SL) non vengono mai chiusi da un segnale opposto. Se il segnale arriva in ritardo o il bot è
   in pausa, le operazioni opposte vengono chiuse lo stesso ma la nuova non viene aperta.
+- **Chiusure scritte a parole** ("Chiudiamo…", "Chiudete…", anche se il messaggio viene modificato): in reply a un segnale
+  chiude quell'operazione; senza reply chiude l'operazione aperta **più recente**. Frasi con "non", "domani", "al TP", "se…"
+  o domande vengono ignorate. Dopo una chiusura senza reply, per `FREE_CLOSE_COOLDOWN_MINUTES` (default 10) altri messaggi
+  simili senza reply vengono ignorati (il canale spesso scrive 2 messaggi per la stessa chiusura). I SIGNAL 5 e 6 non
+  vengono mai chiusi così.
 - Gli aggiornamenti vengono collegati al segnale tramite la **reply** di Telegram
   (riserva: ultimo `SIGNAL N` ancora aperto). Nel tuo canale escono in reply al segnale copiato.
 - BUY e SELL possono essere aperti **contemporaneamente** (serve un conto MT5 *hedging*).

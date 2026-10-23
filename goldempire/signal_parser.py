@@ -78,6 +78,30 @@ def _exit_and_pips(text):
     return exit_price, pips
 
 
+# Chiusura scritta a parole, senza "SIGNAL N" (es. "Chiudiamo quindi 1 trade su 4").
+_FREE_CLOSE_VERB = r"\b(?:CHIUDIAMO|CHIUDETE|CHIUDERE|CHIUDO|CHIUDI|USCIAMO|USCITE)\b"
+# "non chiudiamo", "non lo chiudiamo ancora"...
+_FREE_CLOSE_NEGATION = r"\bNON\s+(?:\w+\s+){0,2}?(?:CHIUD|USC)"
+# "chiudiamo domani", "chiudiamo al TP", "chiudiamo se..." -> non e' una chiusura adesso
+_FREE_CLOSE_LATER = (
+    _FREE_CLOSE_VERB
+    + r"(?:\s+\w+){0,3}?\s+(?:DOMANI|DOPO|PIU|PIÙ|STASERA|STANOTTE|LUNEDI|LUNEDÌ|A\s+TP|AL\s+TP|IN\s+TP|"
+    r"ALLO\s+SL|SE|QUANDO|APPENA)\b"
+)
+
+
+def _parse_free_close(clean):
+    upper = clean.upper()
+    if not re.search(_FREE_CLOSE_VERB, upper):
+        return None
+    if re.search(_FREE_CLOSE_NEGATION, upper) or re.search(_FREE_CLOSE_LATER, upper):
+        return None
+    # Domanda ("chiudiamo?"): non e' un'istruzione.
+    if re.search(_FREE_CLOSE_VERB + r"[^.!\n]*\?", upper):
+        return None
+    return {"action": "FREE_CLOSE", "symbol": SYMBOL, "signal_no": None}
+
+
 def parse_signal(text):
     clean = _clean(text)
     if not clean:
@@ -85,7 +109,7 @@ def parse_signal(text):
 
     header = _header(clean)
     if not header:
-        return None
+        return _parse_free_close(clean)
 
     signal_no = _signal_number(header)
     upper_header = header.upper()

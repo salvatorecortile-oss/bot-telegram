@@ -464,6 +464,37 @@ async def scenario(trading):
         await asyncio.wait_for(_one_monitor_pass(main), 5)
         assert len(tg.sent) == m and db.get_signal(141)["be_applied"] == 1
 
+    # 21) Chiusure scritte a parole ("Chiudiamo...")
+    mt5.bid, mt5.ask = 4155.00, 4155.30
+    await main.source_message_handler(event(msg(150, T.SIGNAL_4_BUY)))                # SIGNAL 4
+    await main.source_message_handler(event(msg(151, T.SIGNAL_3_BUY.replace("4160,08", "4155,30"))))  # SIGNAL 3, piu' recente
+    await main.source_message_handler(event(msg(152, strat(5, "BUY", "4155,30", "3900,00"))))  # SIGNAL 5, ignorato
+    main._last_free_close["at"] = 0.0
+    mt5.bid, mt5.ask = 4158.00, 4158.30
+    n = len(tg.sent)
+    await main.source_message_handler(event(msg(153, "CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO...")))
+    assert db.get_signal(151)["status"] == "CLOSED_MANUAL"          # la piu' recente (non 5/6)
+    assert db.get_signal(150)["status"] == "OPENED" and db.get_signal(152)["status"] == "OPENED"
+    assert len(tg.sent) == n + 1 and tg.sent[-1].reply_to == db.get_signal(151)["destination_message_id"]
+    print("   Chiusura a parole ->", tg.sent[-1].text.replace("\n", " | "))
+    # Secondo messaggio subito dopo ("Chiudiamo quindi 1 trade su 4"): stessa chiusura, ignorato
+    await main.source_message_handler(event(msg(154, "Chiudiamo quindi 1 trade su 4")))
+    assert db.get_signal(150)["status"] == "OPENED" and len(tg.sent) == n + 1
+    # Il primo messaggio viene poi modificato: gia' gestito, ignorato
+    await main.source_edited_handler(event(msg(153, "CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO... (modificato)")))
+    assert db.get_signal(150)["status"] == "OPENED"
+    # In reply a un SIGNAL 5: non viene toccato
+    await main.source_message_handler(event(msg(155, "Chiudiamo", reply_to=152)))
+    assert db.get_signal(152)["status"] == "OPENED"
+    # In reply a un segnale preciso: chiude quello, anche subito dopo un'altra chiusura
+    await main.source_message_handler(event(msg(156, "Chiudete questo", reply_to=150)))
+    assert db.get_signal(150)["status"] == "CLOSED_MANUAL"
+    # Frase che non e' una chiusura: niente
+    m = len(tg.sent)
+    main._last_free_close["at"] = 0.0
+    await main.source_message_handler(event(msg(157, "Non chiudiamo ancora, lasciamo correre")))
+    assert len(tg.sent) == m
+
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)
     old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)

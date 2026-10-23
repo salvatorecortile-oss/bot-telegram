@@ -82,6 +82,11 @@ REVERSAL_SIGNALS = {
     int(n) for n in os.getenv("REVERSAL_SIGNALS", "5,6").replace(";", ",").split(",") if n.strip()
 }
 
+# Chiusure scritte a parole senza reply ("Chiudiamo..."): dopo una chiusura,
+# per questi minuti altri messaggi simili vengono ignorati (il canale spesso
+# scrive 2 messaggi per la stessa chiusura).
+FREE_CLOSE_COOLDOWN_MINUTES = float(os.getenv("FREE_CLOSE_COOLDOWN_MINUTES", "10"))
+
 # Dimensione di 1 pip su XAUUSD (0,10 $ come il canale: 35,24 $ = 352,4 pips).
 PIP_SIZE = float(os.getenv("PIP_SIZE", "0.1"))
 

@@ -19,6 +19,7 @@ Avvio:  python main.py
 import asyncio
 import logging
 import sys
+import time
 from datetime import datetime, timezone
 
 from telethon import events
@@ -33,6 +34,7 @@ from config import (
     MAX_ENTRY_DISTANCE,
     MAX_SIGNAL_AGE_SECONDS,
     MONITOR_INTERVAL_SECONDS,
+    FREE_CLOSE_COOLDOWN_MINUTES,
     PENDING_EXPIRY_MINUTES,
     REVERSAL_SIGNALS,
     MT5_SYMBOL,
@@ -329,9 +331,10 @@ async def finalize_if_closed_on_mt5(row):
     return True
 
 
-async def handle_update(message, signal):
+async def handle_update(message, signal, row=None):
     action = signal["action"]
-    row = find_signal_row(message, signal)
+    if row is None:
+        row = find_signal_row(message, signal)
     if row is None or row["status"] not in (db.OPEN_STATUS, db.PENDING_STATUS):
         logger.info(
             "⏭️ %s SIGNAL %s ignorato | #%s | nessuna operazione aperta collegata.",
@@ -423,6 +426,68 @@ async def handle_update(message, signal):
 # HANDLER CANALE SORGENTE
 # ============================================================
 
+# ============================================================
+# CHIUSURE SCRITTE A PAROLE ("Chiudiamo...", senza SIGNAL N)
+# ============================================================
+
+_last_free_close = {"at": 0.0}
+
+
+async def handle_free_close(message):
+    """
+    - in reply a un segnale -> chiude quell'operazione
+    - senza reply -> chiude l'operazione aperta piu' recente
+    I SIGNAL di inversione (5 e 6) non vengono mai chiusi cosi'.
+    """
+    key = f"freeclose:{message.id}"
+    if db.was_sent(key):
+        return  # stesso messaggio gia' gestito (es. poi modificato)
+    db.mark_sent(key)
+
+    row = None
+    reply_to = getattr(message, "reply_to_msg_id", None)
+    if reply_to:
+        row = db.get_signal(reply_to)
+    if row is not None:
+        if row["signal_no"] in REVERSAL_SIGNALS:
+            logger.info("⏭️ CHIUSURA A PAROLE #%s ignorata: SIGNAL %s si chiude solo con i suoi messaggi.",
+                        message.id, row["signal_no"])
+            return
+    else:
+        elapsed = time.monotonic() - _last_free_close["at"]
+        if _last_free_close["at"] and elapsed < FREE_CLOSE_COOLDOWN_MINUTES * 60:
+            logger.info("⏭️ CHIUSURA A PAROLE #%s ignorata: chiusura gia' fatta %.0f secondi fa.",
+                        message.id, elapsed)
+            return
+        candidates = [r for r in db.get_open_signals() if r["signal_no"] not in REVERSAL_SIGNALS]
+        if not candidates:
+            logger.info("⏭️ CHIUSURA A PAROLE #%s: nessuna operazione aperta da chiudere.", message.id)
+            return
+        row = max(candidates, key=lambda r: (r["opened_at"] or "", r["source_message_id"]))
+
+    logger.info("✂️ CHIUSURA A PAROLE #%s -> SIGNAL %s %s (#%s)",
+                message.id, row["signal_no"], row["direction"], row["source_message_id"])
+    _last_free_close["at"] = time.monotonic()
+    await handle_update(
+        message,
+        {"action": "CLOSE", "symbol": "XAUUSD", "signal_no": row["signal_no"],
+         "exit_price": None, "pips": None},
+        row=row,
+    )
+
+
+async def source_edited_handler(event):
+    """Messaggi modificati: si considerano solo le chiusure scritte a parole."""
+    if BOT_STATE == "STOPPED":
+        return
+    signal = parse_signal(event.message.raw_text or "")
+    if signal is not None and signal["action"] == "FREE_CLOSE":
+        try:
+            await handle_free_close(event.message)
+        except Exception:
+            logger.exception("❌ ERRORE GESTIONE MESSAGGIO MODIFICATO #%s", event.message.id)
+
+
 async def source_message_handler(event):
     if BOT_STATE == "STOPPED":
         return
@@ -432,7 +497,9 @@ async def source_message_handler(event):
         logger.info("ℹ️ Messaggio #%s non operativo: ignorato.", message.id)
         return
     try:
-        if signal["action"] == "OPEN":
+        if signal["action"] == "FREE_CLOSE":
+            await handle_free_close(message)
+        elif signal["action"] == "OPEN":
             await handle_open(message, signal)
         else:
             await handle_update(message, signal)
@@ -724,6 +791,7 @@ async def main():
             sys.exit(1)
 
     client.add_event_handler(source_message_handler, events.NewMessage(chats=SOURCE_CHAT))
+    client.add_event_handler(source_edited_handler, events.MessageEdited(chats=SOURCE_CHAT))
     client.add_event_handler(saved_messages_handler, events.NewMessage(chats="me"))
 
     tasks = [asyncio.create_task(monitor_closures()), asyncio.create_task(scheduler())]

@@ -95,7 +95,19 @@ SIGNAL_5_BUY_NO_TP = """🟠 SIGNAL 5 – XAUUSD BUY
 
 ⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
 
+FREE_CLOSE = {"action": "FREE_CLOSE", "symbol": "XAUUSD", "signal_no": None}
+
 TESTS = [
+    # Chiusure scritte a parole (screen del canale)
+    ("CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO... SE TORNA INDIETRO E PRENDE SL CON IL SEGNALE "
+     "CHIUSO NON ABBIAMO PERSO NULLA", FREE_CLOSE),
+    ("Chiudiamo quindi 1 trade su 4", FREE_CLOSE),
+    ("Chiudete tutto ragazzi", FREE_CLOSE),
+    ("Non chiudiamo ancora, lasciamo correre", None),
+    ("Chiudiamo domani", None),
+    ("Chiudiamo al TP", None),
+    ("Chiudiamo?", None),
+    ("Lo chiudiamo se rompe 4100", None),
     # Ordini pendenti
     (SIGNAL_2_BUY_NEW.replace("XAUUSD BUY", "XAUUSD BUY LIMIT"),
      {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 2, "direction": "BUY", "order_type": "LIMIT",
