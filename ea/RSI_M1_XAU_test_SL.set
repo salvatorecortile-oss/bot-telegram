@@ -14,6 +14,10 @@ InpEntryTouch=false||false||0||true||N
 InpATRTF=1||1||0||1||N
 InpATRPeriod=14||14||0||14||N
 InpSLATR=2.0||1.0||0.5||4.0||Y
+; Break-even
+InpBreakEven=false||false||0||true||N
+InpBERSI=50.0||50.0||0||50.0||N
+InpBELockPts=0||0||0||0||N
 ; Operazioni
 InpOneAtTime=true||false||0||true||Y
 ; Weekend (ora di MT5)
