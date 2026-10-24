@@ -47,7 +47,7 @@ def build_messages():
     top = max((i for i in all_infos if i), key=lambda i: i["score"])
     alert = messages.format_alert(
         top["level"], top["category"], to_italian(top["title"]),
-        to_italian(top["summary"]) if top["summary"] else "",
+        "",  # solo il titolo, come le ULTIM'ORA vere
         top["source"], top["num_sources"], top["link"],
     )
     return [PROVA + morning, PROVA + alert]

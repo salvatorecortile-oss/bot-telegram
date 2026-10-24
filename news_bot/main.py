@@ -135,9 +135,9 @@ class NewsBot:
                      config.MAX_ALERTS_PER_DAY)
             return
         title_it = await asyncio.to_thread(to_italian, best["title"])
-        summary_it = await asyncio.to_thread(to_italian, best["summary"]) if best["summary"] else ""
+        # Solo il titolo: niente sottotitolo o pezzi di articolo, per tutte le fonti.
         text = messages.format_alert(
-            best["level"], best["category"], title_it, summary_it,
+            best["level"], best["category"], title_it, "",
             best["source"], best["num_sources"], best["link"],
         )
         try:

@@ -63,7 +63,7 @@ Quante notizie arrivano al massimo:
 
 ## Traduzione in italiano: DeepL API Free (gratis)
 
-Il bot traduce **solo le notizie che pubblica** (titolo e, se c'è, il breve riassunto).
+Il bot traduce **solo le notizie che pubblica**: delle ULTIM'ORA solo il titolo.
 
 1. Vai su <https://www.deepl.com/pro-api> e scegli il piano **DeepL API Free** (0 €).
    DeepL chiede una carta solo per verificare l'identità: il piano Free **non addebita nulla**
