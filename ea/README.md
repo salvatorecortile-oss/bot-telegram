@@ -142,10 +142,23 @@ Due strategie nello stesso EA, su XAUUSD M1:
 | | Fibonacci (mattina) | Kairos RSI (pomeriggio) |
 |---|---|---|
 | Entrate (ora MT5) | 10:00–13:00 (9–12 italiane) | 13:00–20:00 (12–19 italiane) |
-| Logica | pin bar sul ritracciamento 0,5 / 0,618, SL a 1.1, TP RR 1:2, filtro EMA | RSI(28) al rientro da 30/70, TP BUY a RSI 65 e SELL a RSI 50, SL 2,5 × ATR, filtro ATR, chiusura prima del weekend |
+| Logica | pin bar sul ritracciamento 0,5 / 0,618, SL a 1.1, TP RR 1:3, impulso minimo 4 × ATR, filtro EMA | RSI(28) al rientro da 30/70, TP BUY a RSI 65 e SELL a RSI 50, SL 2,5 × ATR, filtro ATR, chiusura prima del weekend |
 | Magic number | 61800 | 54001 |
 
 - Ogni strategia ha il suo magic number e gestisce solo le sue posizioni, esattamente come se fossero due bot separati. Nel report puoi distinguerle dal commento: `FIB500`/`FIB618` per il Fibonacci, `RSI M1` per il Kairos.
 - `InpFbOn` e `InpRsOn` accendono o spengono ciascuna strategia.
-- Set: `KairosFibo_M1_XAU.set`, con il set 28 per il Fibonacci e il set definitivo per il Kairos. La parte Fibonacci verrà aggiornata con il risultato della fase 2.
+- Set: `KairosFibo_M1_XAU.set`, con il set definitivo del Fibonacci (passaggio 489 della fase 2) e il set definitivo del Kairos.
 - Serve un conto **hedging**.
+
+## FiboRetraceM1 — set definitivo
+
+`FiboRetraceM1_XAU_definitivo.set`, passaggio 489 della fase 2:
+- pin bar su 0,5 e 0,618, coda 60%;
+- SL a 1.1, TP RR 1:3;
+- swing 3, impulso minimo 4 × ATR, filtro EMA;
+- entrate 10–13 MT5.
+
+| Periodo | Profitto | Trade | PF | DD |
+|---|---|---|---|---|
+| Back (gen–lug 2026) | +507 $ | 139 | 1,69 | 13,6% |
+| Forward (lug–ott 2026) | +194 $ | 79 | 1,64 | 5,7% |

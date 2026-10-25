@@ -2,7 +2,7 @@
 //|                                           KairosFibo_M1_XAU.mq5  |
 //|  Due strategie in un solo bot, su XAUUSD M1:                     |
 //|  - MATTINA  -> Fibonacci: ritracciamento 0.5 / 0.618 dell'ultimo |
-//|    impulso, ingresso dopo pin bar, SL a 1.1, TP RR 1:2           |
+//|    impulso, ingresso dopo pin bar, SL a 1.1, TP RR 1:3           |
 //|  - POMERIGGIO -> Kairos: RSI(28), entra al rientro da 30/70,     |
 //|    esce quando l'RSI torna al livello di uscita, SL in ATR       |
 //|  Ogni strategia ha il suo magic number: le posizioni restano     |
@@ -56,11 +56,11 @@ input bool        InpFbLvl618     = true;          // Entra a 0.618
 input double      InpFbTouchTol   = 0.06;          // Mercato: entra solo entro questa frazione dello swing oltre il livello
 input double      InpFbPinWick    = 0.6;           // Pin bar: coda almeno questa frazione della candela
 input double      InpFbSLFib      = 1.1;           // SL sul livello di Fibonacci (1.1 = oltre lo swing)
-input TPMode      InpFbTPMode     = TP_RR2;        // Take profit
+input TPMode      InpFbTPMode     = TP_RR3;        // Take profit
 input double      InpFbTPATRMult  = 2.0;           // TP ATR: multiplo dell'ATR M1
 input int         InpFbSwingDepth = 3;             // Candele a sinistra e a destra per confermare uno swing
 input int         InpFbLookback   = 300;           // Candele M1 analizzate
-input double      InpFbMinLegATR  = 3.0;           // Impulso minimo = ATR M1 x questo
+input double      InpFbMinLegATR  = 4.0;           // Impulso minimo = ATR M1 x questo
 input int         InpFbMinLegPts  = 0;             // Impulso minimo in punti (0 = off)
 input int         InpFbMaxLegBars = 60;            // Ignora l'impulso dopo X candele dalla fine
 input TrendFilter InpFbTrend      = TREND_EMA;     // Filtro trend

@@ -1,5 +1,5 @@
-; KairosFibo M1 XAUUSD - Fibonacci la mattina (set 28) + Kairos il pomeriggio (set definitivo)
-; Fibonacci: pin bar su 0.5/0.618, SL 1.1, TP RR 1:2, EMA, entrate 10:00-13:00 MT5 (9-12 italiane), magic 61800
+; KairosFibo M1 XAUUSD - Fibonacci la mattina (set definitivo, passaggio 489) + Kairos il pomeriggio (set definitivo)
+; Fibonacci: pin bar su 0.5/0.618, SL 1.1, TP RR 1:3, impulso minimo 4 x ATR, EMA, entrate 10:00-13:00 MT5 (9-12 italiane), magic 61800
 ; Kairos: RSI 28, TP BUY RSI 65 / SELL RSI 50, SL 2.5 x ATR, entrate 13:00-20:00 MT5 (12-19 italiane), filtro ATR, weekend, magic 54001
 ; Test: XAUUSD M1, tick reali, deposito 1000
 ; FIBONACCI (mattina)
@@ -15,11 +15,11 @@ InpFbLvl618=true||false||0||true||N
 InpFbTouchTol=0.06||0.06||0.1||0.06||N
 InpFbPinWick=0.6||0.6||0.1||0.6||N
 InpFbSLFib=1.1||1.1||0.1||1.1||N
-InpFbTPMode=2||2||1||2||N
+InpFbTPMode=3||3||1||3||N
 InpFbTPATRMult=2.0||2.0||0.1||2.0||N
 InpFbSwingDepth=3||3||1||3||N
 InpFbLookback=300||300||1||300||N
-InpFbMinLegATR=3.0||3.0||0.1||3.0||N
+InpFbMinLegATR=4.0||4.0||0.1||4.0||N
 InpFbMinLegPts=0||0||1||0||N
 InpFbMaxLegBars=60||60||1||60||N
 InpFbTrend=1||1||1||1||N
