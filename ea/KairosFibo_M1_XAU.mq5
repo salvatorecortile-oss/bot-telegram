@@ -83,7 +83,7 @@ input bool        InpRsBreakEven  = false;         // Break-even quando l'RSI to
 input double      InpRsBERSI      = 50;            // Livello RSI del break-even
 input int         InpRsBELockPts  = 0;             // Punti bloccati oltre l'entrata
 input bool        InpRsOneAtTime  = true;          // Una operazione Kairos alla volta
-input bool        InpRsWeekend    = true;          // Venerdi': niente trade nuovi la sera e chiusura prima del weekend
+input bool        InpRsWeekend    = true;          // Venerdi': niente trade nuovi la sera e chiusura prima del weekend (anche il Fibonacci)
 input int         InpRsFriNoNew   = 2100;          // Venerdi': niente trade nuovi dalle (HHMM)
 input int         InpRsFriClose   = 2245;          // Venerdi': chiude tutto alle (HHMM)
 input bool        InpRsUseHours   = true;          // Entra solo nella fascia oraria
@@ -260,6 +260,10 @@ bool FbInSession()
 
 void FbOnTick()
   {
+   // weekend: stessa chiusura del venerdi' sera del Kairos, cosi' nessun trade resta aperto sul gap del lunedi'
+   if(InpRsWeekend && IsFriday(TimeCurrent()) && HHMM(TimeCurrent()) >= InpRsFriClose)
+      FbCloseAll();
+
    datetime bt = iTime(_Symbol, PERIOD_M1, 0);
    bool newBar = (bt != g_fbLastBar && bt != 0);
    if(newBar)
@@ -600,6 +604,19 @@ void FbCancelPendings()
          g_fbTrade.OrderDelete(t);
       else
          g_fbUsed[k] = true;   // nel frattempo e' stato eseguito
+     }
+  }
+
+void FbCloseAll()
+  {
+   for(int k = PositionsTotal() - 1; k >= 0; k--)
+     {
+      ulong tk = PositionGetTicket(k);
+      if(tk == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpFbMagic) continue;
+      if(g_fbTrade.PositionClose(tk))
+         Log("Fibonacci: posizione chiusa prima del weekend");
      }
   }
 

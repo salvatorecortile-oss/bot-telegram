@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Kairos Trading Bot</title>
+<style>
+  @page { size: A4; margin: 0; }
+  :root {
+    --bg: #0d1420;
+    --panel: #151f2e;
+    --line: #26344a;
+    --gold: #d9b45a;
+    --gold-soft: #f1dca3;
+    --text: #e9edf3;
+    --muted: #9aa7ba;
+    --green: #5fc58a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 210mm; height: 297mm; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Inter", "DejaVu Sans", sans-serif; font-size: 10.5pt; line-height: 1.45;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .page { width: 210mm; height: 297mm; padding: 11mm 15mm 8mm; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+  .page::before {
+    content: ""; position: absolute; right: -60mm; top: -70mm; width: 170mm; height: 170mm; border-radius: 50%;
+    background: radial-gradient(circle, rgba(217,180,90,0.20) 0%, rgba(217,180,90,0) 65%);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .eyebrow { font-size: 8.5pt; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); font-weight: 600; }
+  h1 { font-family: "Inter Display", "Inter", sans-serif; font-size: 32pt; line-height: 1.05; font-weight: 700; margin-top: 4mm; letter-spacing: -0.01em; }
+  h1 span { color: var(--gold); }
+  .sub { font-size: 12pt; color: var(--muted); margin-top: 3mm; max-width: 150mm; }
+
+  .hero { margin-top: 5mm; background: linear-gradient(135deg, #2a2312 0%, #17171a 100%); border: 1px solid #5a4a22; border-radius: 4mm; padding: 6mm 8mm; display: flex; align-items: center; justify-content: space-between; }
+  .hero .v { font-family: "Inter Display", "Inter", sans-serif; font-size: 44pt; font-weight: 700; line-height: 1; color: var(--gold-soft); }
+  .hero .k { font-size: 11pt; color: #d6c597; margin-top: 2mm; }
+  .hero .right { text-align: right; font-size: 10pt; color: #cdbb8a; line-height: 1.6; }
+  .hero .right b { color: var(--gold-soft); font-size: 22pt; line-height: 1.25; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 4mm; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 3mm 5mm; }
+  .stat .v { font-family: "Inter Display", "Inter", sans-serif; font-size: 22pt; font-weight: 700; line-height: 1.05; }
+  .stat .k { font-size: 8.8pt; color: var(--muted); margin-top: 1.5mm; }
+
+  h2 { font-family: "Inter Display", "Inter", sans-serif; font-size: 14pt; font-weight: 700; margin: 4.5mm 0 1.5mm; display: flex; align-items: center; gap: 3mm; }
+  h2::before { content: ""; width: 6mm; height: 2px; background: var(--gold); }
+  .lead { font-size: 9.5pt; color: var(--muted); margin-bottom: 3mm; }
+
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 10pt; background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; overflow: hidden; }
+  th { text-align: right; font-size: 8pt; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 2.6mm 4mm; border-bottom: 1px solid var(--line); background: #121b28; }
+  td { white-space: nowrap; text-align: right; padding: 2.2mm 4mm; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  th:first-child, td:first-child { text-align: left; }
+  td.dep { font-weight: 600; }
+  td.ret { color: var(--green); font-weight: 700; font-size: 12pt; }
+  td.fin { color: var(--text); font-weight: 600; }
+  td.mon { color: var(--gold-soft); }
+
+  .lots { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; }
+  .lotbox { background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 3mm 4mm; }
+  .lotbox .l { font-size: 8.8pt; color: var(--muted); }
+  .lotbox .p { font-family: "Inter Display", "Inter", sans-serif; font-size: 13.5pt; white-space: nowrap; font-weight: 700; color: var(--green); margin-top: 1mm; }
+  td.dd { color: #e58a8a; white-space: nowrap; }
+  td.lot { color: var(--gold-soft); font-weight: 600; }
+  .badges { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-top: 4mm; }
+  .badge { border: 1px solid var(--line); border-radius: 3mm; padding: 2.8mm 3mm; text-align: center; font-size: 9pt; color: #c3ccd9; }
+  .badge b { display: block; color: var(--text); font-size: 10pt; margin-bottom: 0.5mm; }
+
+  footer { margin-top: auto; padding-top: 3mm; border-top: 1px solid var(--line); font-size: 7.4pt; line-height: 1.45; color: #7f8ba0; }
+  footer b { color: var(--muted); }
+
+ .perf { margin-top: 4mm; background: var(--panel); border: 1px solid var(--line); border-radius: 3mm; padding: 3.5mm 5mm 2.5mm; display: grid; grid-template-columns: 1fr 44mm; gap: 5mm; align-items: center; }
+ .perf .t { font-size: 8.8pt; color: var(--muted); margin-bottom: 1.5mm; }
+ .perf .t b { color: var(--text); font-weight: 600; }
+ .curve { width: 100%; height: 19mm; display: block; overflow: visible; }
+ .curve .grid line { stroke: #26344a; stroke-width: 1; }
+ .curve text { font-size: 9px; fill: #7f8ba0; font-family: "Inter", "DejaVu Sans", sans-serif; }
+ .curve .gy { text-anchor: end; }
+ .hl { display: flex; flex-direction: column; gap: 2.5mm; }
+ .hl div { font-size: 8.6pt; color: var(--muted); line-height: 1.3; }
+ .hl b { display: block; font-family: "Inter Display", "Inter", sans-serif; font-size: 16pt; color: var(--green); line-height: 1.1; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="eyebrow">Expert Advisor · MetaTrader 5 · XAUUSD</div>
+  <h1>Kairos <span>Trading Bot</span></h1>
+  <p class="sub">Trading automatico sull'oro, senza interventi manuali.</p>
+
+  <div class="hero">
+    <div>
+      <div class="v num">+1.360,85 $</div>
+      <div class="k">profitto netto nel 2026 ogni 0,01 lotti</div>
+    </div>
+    <div class="right">
+      Testato sul<br><b>2026</b><br>risultati da inizio anno a oggi
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v num">1,63</div><div class="k">Profit Factor</div></div>
+    <div class="stat"><div class="v num">10,5%</div><div class="k">drawdown massimo con 0,01 lotti su un conto da 1.000 €</div></div>
+    <div class="stat"><div class="v num">450</div><div class="k">operazioni, circa 2 al giorno</div></div>
+    <div class="stat"><div class="v num">0,01</div><div class="k">lotti consigliati ogni 500 $ di deposito</div></div>
+  </div>
+
+
+  <div class="perf">
+    <div>
+      <div class="t"><b>Il conto nel 2026:</b> da 1.000 $ a 2.360 $ con 0,01 lotti</div>
+      <svg class="curve" viewBox="0 -4 600 128" preserveAspectRatio="none">
+<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d9b45a" stop-opacity="0.35"/><stop offset="1" stop-color="#d9b45a" stop-opacity="0"/></linearGradient></defs>
+<g class="grid"><line x1="0" x2="600" y1="97.1" y2="97.1"/><text class="gy" x="598" y="94.1">1.000 $</text><line x1="0" x2="600" y1="64.7" y2="64.7"/><text class="gy" x="598" y="61.7">1.500 $</text><line x1="0" x2="600" y1="32.4" y2="32.4"/><text class="gy" x="598" y="29.4">2.000 $</text></g>
+<polygon points="0,110 0.0,97.1 2.0,98.9 8.1,98.9 10.1,99.3 12.2,100.5 14.2,100.9 16.2,99.7 22.3,100.4 24.3,101.1 28.4,101.6 30.4,102.5 36.5,102.9 38.5,101.6 40.5,102.0 42.6,102.5 44.6,100.1 50.7,102.3 52.7,102.9 54.7,100.6 56.8,99.0 58.8,100.9 64.9,95.0 68.9,86.6 73.0,85.6 81.1,84.3 83.1,81.5 85.1,81.7 87.2,81.2 93.2,81.6 95.3,82.7 97.3,84.5 99.3,85.0 101.4,85.2 107.4,84.3 109.5,86.2 111.5,84.7 113.5,84.0 115.5,83.2 123.6,74.3 125.7,75.1 129.7,70.7 135.8,71.3 137.8,68.8 139.9,66.9 141.9,67.1 143.9,68.3 150.0,69.6 152.0,68.2 154.1,67.7 156.1,62.7 158.1,58.4 166.2,59.9 168.2,61.2 172.3,60.1 178.4,59.6 180.4,59.9 182.4,54.1 184.5,54.8 192.6,55.7 194.6,56.7 196.6,55.2 198.6,56.6 200.7,55.8 206.8,55.6 208.8,55.0 210.8,55.3 212.8,56.7 214.9,58.2 220.9,58.3 223.0,59.0 225.0,56.9 227.0,57.1 229.1,57.4 235.1,56.8 237.2,56.2 239.2,53.9 241.2,53.4 243.2,52.0 249.3,49.6 251.4,49.9 253.4,49.6 255.4,51.3 263.5,51.3 265.5,48.7 267.6,49.4 269.6,50.1 271.6,47.7 277.7,46.6 279.7,48.1 281.8,45.3 283.8,45.8 285.8,45.2 291.9,45.4 293.9,47.5 295.9,49.3 298.0,47.8 300.0,45.9 308.1,46.1 310.1,45.3 312.2,44.0 314.2,46.7 322.3,48.6 324.3,48.5 336.5,48.8 338.5,48.5 340.5,46.0 342.6,44.7 348.6,44.2 350.7,42.5 352.7,43.0 354.7,40.8 362.8,40.5 364.9,40.3 366.9,41.3 368.9,42.2 370.9,42.5 377.0,43.9 379.1,44.4 381.1,45.0 391.2,45.9 393.2,43.7 395.3,45.2 397.3,44.0 399.3,44.7 405.4,44.9 409.5,44.8 411.5,44.8 413.5,45.5 419.6,45.9 421.6,44.0 423.6,45.3 425.7,43.9 427.7,42.4 433.8,39.4 435.8,39.2 437.8,40.3 439.9,39.4 441.9,39.0 450.0,37.5 452.0,36.9 456.1,34.2 462.2,35.8 466.2,36.1 468.2,34.3 470.3,32.8 476.4,33.5 478.4,31.8 480.4,32.4 482.4,29.8 484.5,29.9 490.5,28.7 492.6,28.8 494.6,30.5 496.6,30.3 504.7,29.1 506.8,28.9 508.8,28.2 518.9,23.1 520.9,22.3 523.0,19.2 525.0,18.8 527.0,20.2 533.1,19.7 535.1,18.6 537.2,17.5 539.2,16.6 541.2,14.0 547.3,13.0 549.3,13.3 551.4,13.3 555.4,13.7 561.5,15.0 565.5,12.3 567.6,13.1 569.6,13.3 575.7,13.5 577.7,12.2 579.7,12.7 581.8,13.0 583.8,13.2 589.9,11.6 591.9,10.6 593.9,10.8 595.9,8.7 598.0,9.0 598.0,110" fill="url(#g)"/>
+<polyline points="0.0,97.1 2.0,98.9 8.1,98.9 10.1,99.3 12.2,100.5 14.2,100.9 16.2,99.7 22.3,100.4 24.3,101.1 28.4,101.6 30.4,102.5 36.5,102.9 38.5,101.6 40.5,102.0 42.6,102.5 44.6,100.1 50.7,102.3 52.7,102.9 54.7,100.6 56.8,99.0 58.8,100.9 64.9,95.0 68.9,86.6 73.0,85.6 81.1,84.3 83.1,81.5 85.1,81.7 87.2,81.2 93.2,81.6 95.3,82.7 97.3,84.5 99.3,85.0 101.4,85.2 107.4,84.3 109.5,86.2 111.5,84.7 113.5,84.0 115.5,83.2 123.6,74.3 125.7,75.1 129.7,70.7 135.8,71.3 137.8,68.8 139.9,66.9 141.9,67.1 143.9,68.3 150.0,69.6 152.0,68.2 154.1,67.7 156.1,62.7 158.1,58.4 166.2,59.9 168.2,61.2 172.3,60.1 178.4,59.6 180.4,59.9 182.4,54.1 184.5,54.8 192.6,55.7 194.6,56.7 196.6,55.2 198.6,56.6 200.7,55.8 206.8,55.6 208.8,55.0 210.8,55.3 212.8,56.7 214.9,58.2 220.9,58.3 223.0,59.0 225.0,56.9 227.0,57.1 229.1,57.4 235.1,56.8 237.2,56.2 239.2,53.9 241.2,53.4 243.2,52.0 249.3,49.6 251.4,49.9 253.4,49.6 255.4,51.3 263.5,51.3 265.5,48.7 267.6,49.4 269.6,50.1 271.6,47.7 277.7,46.6 279.7,48.1 281.8,45.3 283.8,45.8 285.8,45.2 291.9,45.4 293.9,47.5 295.9,49.3 298.0,47.8 300.0,45.9 308.1,46.1 310.1,45.3 312.2,44.0 314.2,46.7 322.3,48.6 324.3,48.5 336.5,48.8 338.5,48.5 340.5,46.0 342.6,44.7 348.6,44.2 350.7,42.5 352.7,43.0 354.7,40.8 362.8,40.5 364.9,40.3 366.9,41.3 368.9,42.2 370.9,42.5 377.0,43.9 379.1,44.4 381.1,45.0 391.2,45.9 393.2,43.7 395.3,45.2 397.3,44.0 399.3,44.7 405.4,44.9 409.5,44.8 411.5,44.8 413.5,45.5 419.6,45.9 421.6,44.0 423.6,45.3 425.7,43.9 427.7,42.4 433.8,39.4 435.8,39.2 437.8,40.3 439.9,39.4 441.9,39.0 450.0,37.5 452.0,36.9 456.1,34.2 462.2,35.8 466.2,36.1 468.2,34.3 470.3,32.8 476.4,33.5 478.4,31.8 480.4,32.4 482.4,29.8 484.5,29.9 490.5,28.7 492.6,28.8 494.6,30.5 496.6,30.3 504.7,29.1 506.8,28.9 508.8,28.2 518.9,23.1 520.9,22.3 523.0,19.2 525.0,18.8 527.0,20.2 533.1,19.7 535.1,18.6 537.2,17.5 539.2,16.6 541.2,14.0 547.3,13.0 549.3,13.3 551.4,13.3 555.4,13.7 561.5,15.0 565.5,12.3 567.6,13.1 569.6,13.3 575.7,13.5 577.7,12.2 579.7,12.7 581.8,13.0 583.8,13.2 589.9,11.6 591.9,10.6 593.9,10.8 595.9,8.7 598.0,9.0" fill="none" stroke="#f1dca3" stroke-width="2" stroke-linejoin="round"/>
+<g class="mx"><text x="4" y="123">Gen</text><text x="67" y="123">Feb</text><text x="124" y="123">Mar</text><text x="186" y="123">Apr</text><text x="247" y="123">Mag</text><text x="310" y="123">Giu</text><text x="371" y="123">Lug</text><text x="434" y="123">Ago</text><text x="497" y="123">Set</text><text x="557" y="123">Ott</text></g>
+</svg>
+    </div>
+    <div class="hl">
+      <div><b>8 mesi su 10</b>chiusi in profitto</div>
+      <div><b>12 volte</b>il profitto rispetto al drawdown massimo</div>
+    </div>
+  </div>
+
+  <h2>Quanto avrebbe reso il tuo deposito nel 2026</h2>
+  <p class="lead">Lotto consigliato in base al capitale: 0,01 lotti ogni 500 $ di deposito.</p>
+  <table>
+    <tr><th>Deposito iniziale</th><th>Lotto</th><th>Profitto 2026</th><th>Saldo finale</th><th>Rendimento</th><th>Media al mese</th></tr>
+    <tr><td class="dep num">500 $</td><td class="lot num">0,01</td><td class="num">+1.360,85 $</td><td class="fin num">1.860,85 $</td><td class="ret num">+272,2%</td><td class="mon num">+28,1%</td></tr>
+    <tr><td class="dep num">1.000 $</td><td class="lot num">0,02</td><td class="num">+2.721,70 $</td><td class="fin num">3.721,70 $</td><td class="ret num">+272,2%</td><td class="mon num">+28,1%</td></tr>
+    <tr><td class="dep num">2.500 $</td><td class="lot num">0,05</td><td class="num">+6.804,25 $</td><td class="fin num">9.304,25 $</td><td class="ret num">+272,2%</td><td class="mon num">+28,1%</td></tr>
+  </table>
+
+  <h2>Profitto 2026 per lotto</h2>
+  <div class="lots">
+    <div class="lotbox"><div class="l">0,01 lotti</div><div class="p num">+1.360,85 $</div></div>
+    <div class="lotbox"><div class="l">0,02 lotti</div><div class="p num">+2.721,70 $</div></div>
+    <div class="lotbox"><div class="l">0,05 lotti</div><div class="p num">+6.804,25 $</div></div>
+    <div class="lotbox"><div class="l">0,10 lotti</div><div class="p num">+13.608,50 $</div></div>
+  </div>
+
+  <div class="badges">
+    <div class="badge"><b>Automatico</b>nessuna gestione manuale</div>
+    <div class="badge"><b>Stop loss</b>su ogni operazione</div>
+    <div class="badge"><b>No martingala</b>niente raddoppi del lotto</div>
+    <div class="badge"><b>No weekend</b>nessuna posizione aperta</div>
+  </div>
+
+  <footer>
+    <b>Avvertenza sui rischi.</b> Backtest con MetaTrader 5 su XAUUSD, tick reali (qualità 99%), lotto 0,01. I valori con lotti più grandi sono calcolati in proporzione al lotto, perdite comprese. Il drawdown massimo del 10,5% si riferisce a 0,01 lotti su 1.000 $: con lotti più grandi rispetto al deposito è più alto. Media al mese = rendimento totale diviso 9,7 mesi, senza capitalizzazione. I risultati passati, reali o simulati, non garantiscono risultati futuri; spread, slippage e commissioni possono ridurli. Il trading su oro e CFD con leva comporta un rischio elevato di perdita, anche dell'intero capitale. Documento informativo, non è consulenza finanziaria né sollecitazione all'investimento.
+  </footer>
+</div>
+</body>
+</html>
