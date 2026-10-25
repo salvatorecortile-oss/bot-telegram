@@ -3,35 +3,36 @@
 ; Fissi: ingresso pin bar, 0.382 spento, 0.5 acceso, solo fascia 1 (9-12 italiane).
 ; Provati: 0.618 si'/no, TP (RR 1:2, RR 1:3, swing, -0.272), swing 3-7, impulso minimo 2-4 ATR,
 ; filtro EMA o struttura, coda della pin bar 50-70%.
+; Ogni riga ha ||N o ||Y: le spunte del set precedente non restano attive.
 ; 2 x 4 x 5 x 5 x 2 x 3 = 1200 combinazioni: "Algoritmo completo lento", criterio "Custom max", tick reali, forward 1/3.
 ; Base
-InpLots=0.01
-InpMagic=61800
+InpLots=0.01||0.01||0.1||0.01||N
+InpMagic=61800||61800||1||61800||N
 ; Ingresso: 2 = mercato dopo pin bar
-InpEntryMode=2
-InpLvl382=false
-InpLvl500=true
+InpEntryMode=2||2||1||2||N
+InpLvl382=false||false||0||true||N
+InpLvl500=true||false||0||true||N
 InpLvl618=true||false||0||true||Y
-InpTouchTol=0.06
+InpTouchTol=0.06||0.06||0.1||0.06||N
 InpPinWick=0.6||0.5||0.1||0.7||Y
 ; SL sul livello 1.1 (oltre lo swing low/high)
-InpSLFib=1.1
+InpSLFib=1.1||1.1||0.1||1.1||N
 ; TP: 2=RR 1:2 3=RR 1:3 4=livello 0 (swing) 5=estensione -0.272
 InpTPMode=2||2||1||5||Y
-InpTPATRMult=2.0
+InpTPATRMult=2.0||2.0||0.1||2.0||N
 ; Swing e trend (trend: 1=EMA 2=struttura massimi/minimi)
 InpSwingDepth=3||3||1||7||Y
-InpLookback=300
+InpLookback=300||300||1||300||N
 InpMinLegATR=3.0||2.0||0.5||4.0||Y
-InpMinLegPts=0
-InpMaxLegBars=60
+InpMinLegPts=0||0||1||0||N
+InpMaxLegBars=60||60||1||60||N
 InpTrendFilter=1||1||1||2||Y
-InpEMAPeriod=50
+InpEMAPeriod=50||50||1||50||N
 ; Orari (ora di MT5 = italiana + 1): 1 = 10-13 (9-12 italiane)
-InpSessMode=1
-InpSess1Start=10
-InpSess1End=13
-InpSess2Start=15
-InpSess2End=19
+InpSessMode=1||1||1||1||N
+InpSess1Start=10||10||1||10||N
+InpSess1End=13||13||1||13||N
+InpSess2Start=15||15||1||15||N
+InpSess2End=19||19||1||19||N
 ; Ottimizzazione
-InpMinTrades=30
+InpMinTrades=30||30||1||30||N

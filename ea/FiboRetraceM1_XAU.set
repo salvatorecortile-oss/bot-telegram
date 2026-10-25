@@ -1,33 +1,33 @@
 ; FiboRetraceM1 v1 - XAUUSD M1, 0.01 lotti, impostazione di partenza
 ; Dopo l'ottimizzazione copia qui i valori del passaggio migliore.
 ; Base
-InpLots=0.01
-InpMagic=61800
+InpLots=0.01||0.01||0.1||0.01||N
+InpMagic=61800||61800||1||61800||N
 ; Ingresso: 0=limit 1=mercato 2=mercato+pin bar 3=mercato+engulfing 4=mercato+pin o engulfing
-InpEntryMode=0
-InpLvl382=true
-InpLvl500=true
-InpLvl618=true
-InpTouchTol=0.06
-InpPinWick=0.6
+InpEntryMode=0||0||1||0||N
+InpLvl382=true||false||0||true||N
+InpLvl500=true||false||0||true||N
+InpLvl618=true||false||0||true||N
+InpTouchTol=0.06||0.06||0.1||0.06||N
+InpPinWick=0.6||0.6||0.1||0.6||N
 ; SL sul livello 1.1 (oltre lo swing low/high)
-InpSLFib=1.1
+InpSLFib=1.1||1.1||0.1||1.1||N
 ; TP: 0=RR 1:1 1=RR 1:1.5 2=RR 1:2 3=RR 1:3 4=livello 0 (swing) 5=estensione -0.272 6=estensione -0.618 7=ATR x InpTPATRMult
-InpTPMode=2
-InpTPATRMult=2.0
+InpTPMode=2||2||1||2||N
+InpTPATRMult=2.0||2.0||0.1||2.0||N
 ; Swing e trend (trend: 0=nessuno 1=EMA 2=struttura massimi/minimi)
-InpSwingDepth=5
-InpLookback=300
-InpMinLegATR=2.0
-InpMinLegPts=0
-InpMaxLegBars=60
-InpTrendFilter=0
-InpEMAPeriod=50
+InpSwingDepth=5||5||1||5||N
+InpLookback=300||300||1||300||N
+InpMinLegATR=2.0||2.0||0.1||2.0||N
+InpMinLegPts=0||0||1||0||N
+InpMaxLegBars=60||60||1||60||N
+InpTrendFilter=0||0||1||0||N
+InpEMAPeriod=50||50||1||50||N
 ; Orari (ora di MT5 = italiana + 1): 0=tutto il giorno 1=10-13 (9-12 ita) 2=15-19 (14-18 ita) 3=entrambe
-InpSessMode=0
-InpSess1Start=10
-InpSess1End=13
-InpSess2Start=15
-InpSess2End=19
+InpSessMode=0||0||1||0||N
+InpSess1Start=10||10||1||10||N
+InpSess1End=13||13||1||13||N
+InpSess2Start=15||15||1||15||N
+InpSess2End=19||19||1||19||N
 ; Ottimizzazione
-InpMinTrades=30
+InpMinTrades=30||30||1||30||N
