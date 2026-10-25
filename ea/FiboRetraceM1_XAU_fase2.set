@@ -1,0 +1,37 @@
+; FiboRetraceM1 v1 - OTTIMIZZAZIONE FASE 2 XAUUSD M1, 0.01 lotti
+; Rifinisce intorno al passaggio 28 (pin bar, 0.5 + 0.618, RR 1:2, EMA, fascia 10-13).
+; Fissi: ingresso pin bar, 0.382 spento, 0.5 acceso, solo fascia 1 (9-12 italiane).
+; Provati: 0.618 si'/no, TP (RR 1:2, RR 1:3, swing, -0.272), swing 3-7, impulso minimo 2-4 ATR,
+; filtro EMA o struttura, coda della pin bar 50-70%.
+; 2 x 4 x 5 x 5 x 2 x 3 = 1200 combinazioni: "Algoritmo completo lento", criterio "Custom max", tick reali, forward 1/3.
+; Base
+InpLots=0.01
+InpMagic=61800
+; Ingresso: 2 = mercato dopo pin bar
+InpEntryMode=2
+InpLvl382=false
+InpLvl500=true
+InpLvl618=true||false||0||true||Y
+InpTouchTol=0.06
+InpPinWick=0.6||0.5||0.1||0.7||Y
+; SL sul livello 1.1 (oltre lo swing low/high)
+InpSLFib=1.1
+; TP: 2=RR 1:2 3=RR 1:3 4=livello 0 (swing) 5=estensione -0.272
+InpTPMode=2||2||1||5||Y
+InpTPATRMult=2.0
+; Swing e trend (trend: 1=EMA 2=struttura massimi/minimi)
+InpSwingDepth=3||3||1||7||Y
+InpLookback=300
+InpMinLegATR=3.0||2.0||0.5||4.0||Y
+InpMinLegPts=0
+InpMaxLegBars=60
+InpTrendFilter=1||1||1||2||Y
+InpEMAPeriod=50
+; Orari (ora di MT5 = italiana + 1): 1 = 10-13 (9-12 italiane)
+InpSessMode=1
+InpSess1Start=10
+InpSess1End=13
+InpSess2Start=15
+InpSess2End=19
+; Ottimizzazione
+InpMinTrades=30

@@ -1,0 +1,33 @@
+; FiboRetraceM1 v1 - XAUUSD M1, 0.01 lotti - passaggio 28 (unico positivo sia in back che in forward)
+; Back +287 (255 trade, PF 1.26, DD 15.8%) - Forward +73 (144 trade, PF 1.17, DD 7.7%)
+; Base
+InpLots=0.01
+InpMagic=61800
+; Ingresso: 0=limit 1=mercato 2=mercato+pin bar 3=mercato+engulfing 4=mercato+pin o engulfing
+InpEntryMode=2
+InpLvl382=false
+InpLvl500=true
+InpLvl618=true
+InpTouchTol=0.06
+InpPinWick=0.6
+; SL sul livello 1.1 (oltre lo swing low/high)
+InpSLFib=1.1
+; TP: 0=RR 1:1 1=RR 1:1.5 2=RR 1:2 3=RR 1:3 4=livello 0 (swing) 5=estensione -0.272 6=estensione -0.618 7=ATR x InpTPATRMult
+InpTPMode=2
+InpTPATRMult=2.0
+; Swing e trend (trend: 0=nessuno 1=EMA 2=struttura massimi/minimi)
+InpSwingDepth=3
+InpLookback=300
+InpMinLegATR=3.0
+InpMinLegPts=0
+InpMaxLegBars=60
+InpTrendFilter=1
+InpEMAPeriod=50
+; Orari (ora di MT5 = italiana + 1): 0=tutto il giorno 1=10-13 (9-12 ita) 2=15-19 (14-18 ita) 3=entrambe
+InpSessMode=1
+InpSess1Start=10
+InpSess1End=13
+InpSess2Start=15
+InpSess2End=19
+; Ottimizzazione
+InpMinTrades=30
