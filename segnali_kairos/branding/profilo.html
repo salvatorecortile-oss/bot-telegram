@@ -1,0 +1,70 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<style>
+  html,body{margin:0;padding:0;background:#070b13}
+  svg{display:block}
+</style></head>
+<body>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="42%" r="70%">
+      <stop offset="0" stop-color="#1b2a44"/>
+      <stop offset="0.55" stop-color="#0d1420"/>
+      <stop offset="1" stop-color="#05080e"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="40%" r="40%">
+      <stop offset="0" stop-color="#d9b45a" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#d9b45a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff0c2"/>
+      <stop offset="0.35" stop-color="#f1d58e"/>
+      <stop offset="0.7" stop-color="#d9b45a"/>
+      <stop offset="1" stop-color="#9c7a2e"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f6e2a8"/>
+      <stop offset="0.5" stop-color="#b8923f"/>
+      <stop offset="1" stop-color="#f6e2a8"/>
+    </linearGradient>
+    <linearGradient id="line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5fc58a" stop-opacity="0"/>
+      <stop offset="0.25" stop-color="#5fc58a"/>
+      <stop offset="1" stop-color="#8fe3b0"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+
+  <!-- griglia leggera -->
+  <g stroke="#26344a" stroke-width="2" opacity="0.55">
+    <line x1="150" y1="640" x2="874" y2="640"/>
+    <line x1="150" y1="560" x2="874" y2="560"/>
+    <line x1="150" y1="480" x2="874" y2="480"/>
+  </g>
+
+  <!-- anelli -->
+  <circle cx="512" cy="512" r="452" fill="none" stroke="url(#ring)" stroke-width="10"/>
+  <circle cx="512" cy="512" r="430" fill="none" stroke="#d9b45a" stroke-opacity="0.35" stroke-width="2"/>
+
+  <!-- curva in salita dietro la K -->
+  <polyline points="170,650 260,630 330,642 400,600 470,612 540,560 610,575 690,505 760,515 850,430"
+            fill="none" stroke="url(#line)" stroke-width="12" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>
+  <circle cx="850" cy="430" r="14" fill="#8fe3b0"/>
+
+  <!-- monogramma K -->
+  <text x="512" y="585" text-anchor="middle" font-family="Inter Display, Inter, sans-serif" font-weight="800"
+        font-size="430" fill="url(#gold)" filter="url(#shadow)" letter-spacing="-10">K</text>
+
+  <!-- nome -->
+  <text x="512" y="720" text-anchor="middle" font-family="Inter Display, Inter, sans-serif" font-weight="700"
+        font-size="84" fill="#f1dca3" letter-spacing="18">KAIROS</text>
+  <line x1="372" y1="760" x2="652" y2="760" stroke="#d9b45a" stroke-opacity="0.6" stroke-width="3"/>
+  <text x="512" y="818" text-anchor="middle" font-family="Inter, sans-serif" font-weight="500"
+        font-size="44" fill="#c9b37a" letter-spacing="6">by YardFX</text>
+</svg>
+</body></html>
