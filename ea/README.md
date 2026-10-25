@@ -132,3 +132,20 @@ Lavora su M1 (pensato per XAUUSD, 0,01 lotti). Entra nella direzione dell'impuls
   - tick reali;
   - forward 1/3.
 - `FiboRetraceM1_XAU.set`: impostazione singola, dove copiare il passaggio migliore.
+
+---
+
+# KairosFibo_M1_XAU — Kairos + Fibonacci in un solo bot
+
+Due strategie nello stesso EA, su XAUUSD M1:
+
+| | Fibonacci (mattina) | Kairos RSI (pomeriggio) |
+|---|---|---|
+| Entrate (ora MT5) | 10:00–13:00 (9–12 italiane) | 13:00–20:00 (12–19 italiane) |
+| Logica | pin bar sul ritracciamento 0,5 / 0,618, SL a 1.1, TP RR 1:2, filtro EMA | RSI(28) al rientro da 30/70, TP BUY a RSI 65 e SELL a RSI 50, SL 2,5 × ATR, filtro ATR, chiusura prima del weekend |
+| Magic number | 61800 | 54001 |
+
+- Ogni strategia ha il suo magic number e gestisce solo le sue posizioni, esattamente come se fossero due bot separati. Nel report puoi distinguerle dal commento: `FIB500`/`FIB618` per il Fibonacci, `RSI M1` per il Kairos.
+- `InpFbOn` e `InpRsOn` accendono o spengono ciascuna strategia.
+- Set: `KairosFibo_M1_XAU.set`, con il set 28 per il Fibonacci e il set definitivo per il Kairos. La parte Fibonacci verrà aggiornata con il risultato della fase 2.
+- Serve un conto **hedging**.
