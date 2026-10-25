@@ -51,6 +51,7 @@ MT5_PASSWORD = os.getenv("MT5_PASSWORD", "")
 MT5_SERVER = os.getenv("MT5_SERVER", "")
 
 # Magic number delle operazioni da pubblicare (Fibonacci 61800, Kairos RSI 54001).
+# Vuoto = tutte le operazioni del conto (anche quelle manuali e di altri bot).
 MAGIC_NUMBERS = _int_list(os.getenv("MAGIC_NUMBERS", "61800,54001"))
 
 # Solo questo simbolo (vuoto = tutti i simboli con quei magic number).

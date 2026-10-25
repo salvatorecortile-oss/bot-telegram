@@ -42,7 +42,7 @@ def is_connected():
 
 def get_positions():
     """
-    Posizioni aperte dei magic number seguiti, come dizionari.
+    Posizioni aperte dei magic number seguiti (tutte se MAGIC_NUMBERS e' vuoto), come dizionari.
     None se MT5 non risponde: in quel caso NON vanno considerate chiuse.
     """
     _require_mt5()
@@ -52,7 +52,7 @@ def get_positions():
         return None
     result = []
     for p in positions:
-        if int(p.magic) not in MAGIC_NUMBERS:
+        if MAGIC_NUMBERS and int(p.magic) not in MAGIC_NUMBERS:
             continue
         result.append({
             "ticket": int(p.ticket),

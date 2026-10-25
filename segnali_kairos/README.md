@@ -19,6 +19,7 @@ Legge le operazioni che il **Kairos Trading Bot** apre su MetaTrader 5 (magic **
 - Gli aggiornamenti escono in reply al messaggio di apertura, senza notifica.
 - All'avvio le posizioni già aperte vengono pubblicate solo se aperte da meno di 5 minuti (`MAX_OPEN_AGE_SECONDS`). Le altre vengono seguite in silenzio, così dopo un riavvio non escono doppioni.
 - Se MT5 per un attimo non risponde, nessuna posizione viene considerata chiusa.
+- Con `MAGIC_NUMBERS=` vuoto pubblica **tutte** le operazioni del conto, anche quelle aperte a mano o da altri bot.
 
 I testi si modificano in `messages.py`.
 

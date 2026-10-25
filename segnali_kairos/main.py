@@ -199,7 +199,7 @@ async def main():
     logger.info("=" * 60)
     logger.info("🚀 SALA SEGNALI KAIROS: MT5 -> TELEGRAM")
     logger.info("CANALE      : %s", DESTINATION_CHAT)
-    logger.info("MAGIC       : %s", ", ".join(str(m) for m in sorted(MAGIC_NUMBERS)))
+    logger.info("MAGIC       : %s", ", ".join(str(m) for m in sorted(MAGIC_NUMBERS)) or "tutti (ogni operazione del conto)")
     logger.info("SIMBOLO     : %s", MT5_SYMBOL or "tutti")
     logger.info("COMANDI     : %scomandi (in Messaggi salvati)", COMMAND_PREFIX)
     logger.info("PROGRAMMATI : buongiorno lun-ven 06:00 | report giornaliero lun-ven 23:00 | "
