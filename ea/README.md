@@ -77,3 +77,58 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 - **`InpTestExtraSpread`** (solo nello Strategy Tester): simula punti di spread in più sui tick reali. Ad esempio con 30 i tick Demo2 a 18 diventano un conto a 48. Il bot si comporta come con lo spread largo: entrata, break-even e filtri. Il costo in più però non compare nel report standard: lo trovi nel risultato **Custom** e nella riga `RISULTATO` del journal.
 - **Risultato Custom** (ottimizzazione con "Custom max"): profitto meno lo spread simulato, più il rebate stimato (`InpRebatePerLot` × lotti). Un passaggio che tocca il minimo di capitale viene scartato.
 - Set: `StraddleM1_XAU_spread48.set` (dal vivo) e `StraddleM1_XAU_spread48_ottimizza.set` (ottimizzazione).
+
+---
+
+# FiboRetraceM1 — EA MT5 ritracciamento di Fibonacci
+
+Lavora su M1 (pensato per XAUUSD, 0,01 lotti). Entra nella direzione dell'impulso quando il prezzo ritraccia sui livelli 0,382, 0,5 e 0,618.
+
+## Come lavora
+
+- **Impulso:** trova l'ultimo swing low e l'ultimo swing high confermati (frattali con `InpSwingDepth` candele per lato).
+  - Se il più recente è il massimo, l'impulso è rialzista: Fibonacci dallo swing low allo swing high, cerca BUY.
+  - Se il più recente è il minimo, l'impulso è ribassista: Fibonacci dallo swing high allo swing low, cerca SELL.
+  - L'impulso deve essere almeno `InpMinLegATR` × ATR M1.
+  - Lo disegna sul grafico.
+- **Filtro trend** (`InpTrendFilter`):
+  - 0 = nessuno;
+  - 1 = EMA 50 in salita per i buy, in discesa per i sell;
+  - 2 = struttura: massimi e minimi crescenti per i buy, decrescenti per i sell.
+- **Ingresso** (`InpEntryMode`):
+  - 0 = ordini **limit** sui livelli attivi;
+  - 1 = **mercato** appena il prezzo tocca il livello;
+  - 2 = mercato dopo una **pin bar** nella zona;
+  - 3 = mercato dopo un'**engulfing** nella zona;
+  - 4 = mercato dopo **pin bar o engulfing**.
+- **Livelli** (`InpLvl382`, `InpLvl500`, `InpLvl618`):
+  - un solo livello attivo = un ingresso;
+  - più livelli attivi = ingressi **scalati**, uno per livello.
+  - Con la candela di conferma apre un trade per conferma, sul livello più profondo raggiunto.
+- **SL** sul livello **1.1** di Fibonacci, cioè oltre lo swing low o high di partenza.
+- **TP** (`InpTPMode`):
+  - rischio/rendimento 1:1, 1:1,5, 1:2 o 1:3;
+  - ritorno allo swing (livello 0);
+  - estensione −0,272 o −0,618;
+  - ATR × `InpTPATRMult`.
+- **Annullamento:**
+  - se il prezzo fa un nuovo massimo oltre lo swing (o minimo nei sell), aspetta lo swing successivo;
+  - se chiude oltre l'inizio dell'impulso o tocca il livello SL, l'impulso non vale più;
+  - dopo `InpMaxLegBars` candele l'impulso scade.
+
+  In tutti questi casi i limit non eseguiti vengono cancellati.
+- **Orari** (`InpSessMode`, ora di MT5 = italiana + 1):
+  - 0 = tutto il giorno;
+  - 1 = 10–13 (9–12 italiane);
+  - 2 = 15–19 (14–18 italiane);
+  - 3 = entrambe le fasce.
+- Nessun filtro spread e nessun limite di trade.
+
+## Set
+
+- `FiboRetraceM1_XAU_ottimizza.set`: tutte le combinazioni in un solo file, circa 34.000. Impostazioni:
+  - "Algoritmo genetico veloce";
+  - criterio **Custom max** (profitto / drawdown; scarta i passaggi con meno di 30 trade);
+  - tick reali;
+  - forward 1/3.
+- `FiboRetraceM1_XAU.set`: impostazione singola, dove copiare il passaggio migliore.
