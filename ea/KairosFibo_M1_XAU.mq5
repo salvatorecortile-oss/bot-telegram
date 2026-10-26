@@ -410,10 +410,10 @@ void FbUpdateLeg()
       g_fbStatus = StringFormat("impulso %s %s -> %s", dir > 0 ? "rialzista" : "ribassista",
                                 DoubleToString(dir > 0 ? L : H, _Digits), DoubleToString(dir > 0 ? H : L, _Digits));
 
+      FbDraw();
       string why = "";
       if(!FbLegValid(dir, s, hi, lo, sh, nsh, sl, nsl, why))
-         FbKill(why);
-      FbDraw();
+         FbKill(why);   // impulso scartato: il disegno diventa grigio
      }
    if(g_fbLegDead)
       return;
@@ -494,9 +494,12 @@ void FbNoLeg(string why)
 
 void FbKill(string why)
   {
+   bool wasAlive = !g_fbLegDead;
    g_fbLegDead = true;
    g_fbStatus  = why;
    FbCancelPendings();
+   if(wasAlive)
+      FbDrawDead();
   }
 
 //--- livelli, SL e TP -----------------------------------------------
@@ -724,15 +727,38 @@ void FbOpenMarket(int k, const MqlTick &tk)
              ? g_fbTrade.Buy(lots, _Symbol, 0, sl, tp, FbLevelCmt(k))
              : g_fbTrade.Sell(lots, _Symbol, 0, sl, tp, FbLevelCmt(k));
    if(!ok)
+     {
       Log(StringFormat("Fibonacci: ordine %s rifiutato: %d %s", FbLevelCmt(k), g_fbTrade.ResultRetcode(), g_fbTrade.ResultRetcodeDescription()));
+      return;
+     }
+   double px = g_fbTrade.ResultPrice() > 0 ? g_fbTrade.ResultPrice() : entry;
+   Log(StringFormat("Fibonacci %s %s: entrata %s SL %s TP %s (impulso %s -> %s)", FbLevelCmt(k), g_fbDir > 0 ? "BUY" : "SELL",
+                    DoubleToString(px, _Digits), DoubleToString(sl, _Digits), DoubleToString(tp, _Digits),
+                    DoubleToString(g_fbDir > 0 ? g_fbL : g_fbH, _Digits), DoubleToString(g_fbDir > 0 ? g_fbH : g_fbL, _Digits)));
+   FbDrawTrade(k, px, sl, tp);
   }
 
 //--- grafico --------------------------------------------------------
+// Fibonacci dell'impulso corrente: si aggiorna a ogni impulso nuovo
 void FbDraw()
   {
    if(!g_draw)
       return;
-   string nm = "FIBM1_leg";
+   FbDrawFibo("FIBM1_leg", true, g_fbDir > 0 ? clrDodgerBlue : clrOrangeRed, false);
+   ChartRedraw();
+  }
+
+// impulso annullato: il disegno resta ma diventa grigio
+void FbDrawDead()
+  {
+   if(!g_draw || ObjectFind(0, "FIBM1_leg") < 0)
+      return;
+   FbDrawFibo("FIBM1_leg", true, clrDimGray, true);
+   ChartRedraw();
+  }
+
+void FbDrawFibo(string nm, bool rayRight, color legColor, bool dim)
+  {
    ObjectDelete(0, nm);
    // primo punto = inizio dell'impulso (livello 1), secondo = fine (livello 0)
    datetime t1 = (g_fbDir > 0) ? g_fbTL : g_fbTH;
@@ -747,12 +773,45 @@ void FbDraw()
    ObjectSetInteger(0, nm, OBJPROP_LEVELS, cnt);
    for(int i = 0; i < cnt; i++)
      {
+      color c = dim ? clrDimGray : (i == 5 ? clrRed : (lv[i] > 0.3 && lv[i] < 0.7) ? clrGold : clrSilver);
       ObjectSetDouble(0, nm, OBJPROP_LEVELVALUE, i, lv[i]);
-      ObjectSetString(0, nm, OBJPROP_LEVELTEXT, i, (i == 5 ? "SL " : "") + DoubleToString(lv[i], 3) + "  %$");
-      ObjectSetInteger(0, nm, OBJPROP_LEVELCOLOR, i, i == 5 ? clrRed : (lv[i] > 0.3 && lv[i] < 0.7) ? clrGold : clrSilver);
+      ObjectSetString(0, nm, OBJPROP_LEVELTEXT, i, (dim && i == 0 ? "ANNULLATO " : "") + (i == 5 ? "SL " : "") + DoubleToString(lv[i], 3) + "  %$");
+      ObjectSetInteger(0, nm, OBJPROP_LEVELCOLOR, i, c);
      }
-   ObjectSetInteger(0, nm, OBJPROP_COLOR, g_fbDir > 0 ? clrDodgerBlue : clrOrangeRed);
-   ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, true);
+   ObjectSetInteger(0, nm, OBJPROP_COLOR, legColor);
+   ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, rayRight);
+   ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, true);
+  }
+
+// a ogni trade Fibonacci lascia sul grafico il suo schema fisso: Fibonacci dell'impulso,
+// freccia sull'entrata e scritta con livello, entrata, SL e TP (restano anche dopo la chiusura)
+void FbDrawTrade(int k, double entry, double sl, double tp)
+  {
+   if(!g_draw)
+      return;
+   datetime now = TimeCurrent();
+   string id = "FIBT_" + IntegerToString((long)now) + "_" + IntegerToString(k);
+   bool buy = (g_fbDir > 0);
+   color c = buy ? clrDodgerBlue : clrOrangeRed;
+
+   FbDrawFibo(id + "_fib", false, c, false);
+
+   string ar = id + "_arrow";
+   if(ObjectCreate(0, ar, buy ? OBJ_ARROW_BUY : OBJ_ARROW_SELL, 0, now, entry))
+     {
+      ObjectSetInteger(0, ar, OBJPROP_COLOR, c);
+      ObjectSetInteger(0, ar, OBJPROP_WIDTH, 3);
+     }
+
+   string tx = id + "_txt";
+   if(ObjectCreate(0, tx, OBJ_TEXT, 0, now, sl))
+     {
+      ObjectSetString(0, tx, OBJPROP_TEXT, StringFormat("%s %s %s  SL %s  TP %s", FbLevelCmt(k), buy ? "BUY" : "SELL",
+                      DoubleToString(entry, _Digits), DoubleToString(sl, _Digits), DoubleToString(tp, _Digits)));
+      ObjectSetInteger(0, tx, OBJPROP_COLOR, c);
+      ObjectSetInteger(0, tx, OBJPROP_FONTSIZE, 8);
+      ObjectSetInteger(0, tx, OBJPROP_ANCHOR, buy ? ANCHOR_LEFT_UPPER : ANCHOR_LEFT_LOWER);
+     }
    ChartRedraw();
   }
 
