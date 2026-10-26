@@ -1,0 +1,54 @@
+; Kairos RSI M1 XAUUSD - SOLO RSI, set definitivo
+; Stesso codice del bot unico con la parte Fibonacci spenta (InpFbOn=false). Test C: +649 $, 232 trade, PF 1.57
+; Kairos: RSI 28, TP BUY RSI 65 / SELL RSI 50, SL 2.5 x ATR, entrate 13:00-20:00 MT5 (12-19 italiane), filtro ATR, weekend, magic 54001
+; Test: XAUUSD M1, tick reali, deposito 1000
+; FIBONACCI (mattina)
+InpFbOn=false||false||0||true||N
+InpFbLots=0.01||0.01||0.1||0.01||N
+InpFbMagic=61800||61800||1||61800||N
+InpFbHourStart=1000||1000||1||1000||N
+InpFbHourEnd=1200||1200||1||1200||N
+InpFbEntryMode=2||2||1||2||N
+InpFbLvl382=false||false||0||true||N
+InpFbLvl500=true||false||0||true||N
+InpFbLvl618=true||false||0||true||N
+InpFbTouchTol=0.06||0.06||0.1||0.06||N
+InpFbPinWick=0.6||0.6||0.1||0.6||N
+InpFbSLFib=1.1||1.1||0.1||1.1||N
+InpFbTPMode=3||3||1||3||N
+InpFbTPATRMult=2.0||2.0||0.1||2.0||N
+InpFbSwingDepth=3||3||1||3||N
+InpFbLookback=300||300||1||300||N
+InpFbMinLegATR=4.0||4.0||0.1||4.0||N
+InpFbMinLegPts=0||0||1||0||N
+InpFbMaxLegBars=60||60||1||60||N
+InpFbTrend=1||1||1||1||N
+InpFbEMAPeriod=50||50||1||50||N
+; KAIROS RSI (pomeriggio)
+InpRsOn=true||false||0||true||N
+InpRsLots=0.01||0.01||0.1||0.01||N
+InpRsMagic=54001||54001||1||54001||N
+InpRsPeriod=28||28||1||28||N
+InpRsLow=30||30||1||30||N
+InpRsHigh=70||70||1||70||N
+InpRsExit=65||65||1||65||N
+InpRsExitSell=50||50||1||50||N
+InpRsEntryTouch=false||false||0||true||N
+InpRsATRTF=1||1||1||1||N
+InpRsATRPeriod=14||14||1||14||N
+InpRsSLATR=2.5||2.5||0.1||2.5||N
+InpRsBreakEven=false||false||0||true||N
+InpRsBERSI=50||50||1||50||N
+InpRsBELockPts=0||0||1||0||N
+InpRsOneAtTime=true||false||0||true||N
+InpRsWeekend=true||false||0||true||N
+InpRsFriNoNew=2100||2100||1||2100||N
+InpRsFriClose=2245||2245||1||2245||N
+InpRsUseHours=true||false||0||true||N
+InpRsHourStart=1300||1300||1||1300||N
+InpRsHourEnd=2000||2000||1||2000||N
+InpRsUseATRFilter=true||false||0||true||N
+InpRsMinATRPct=0.05||0.05||0.1||0.05||N
+InpRsMaxATRPct=0.13||0.13||0.1||0.13||N
+; Ottimizzazione
+InpMinTrades=30||30||1||30||N

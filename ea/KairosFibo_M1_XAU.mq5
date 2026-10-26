@@ -1,7 +1,7 @@
 //+------------------------------------------------------------------+
 //|                                           KairosFibo_M1_XAU.mq5  |
 //|  Due strategie in un solo bot, su XAUUSD M1:                     |
-//|  - MATTINA  -> Fibonacci: ritracciamento 0.382/0.5/0.618 ultimo  |
+//|  - MATTINA  -> Fibonacci: ritracciamento 0.5 / 0.618 dell'ultimo |
 //|    impulso, ingresso dopo pin bar, SL a 1.1, TP RR 1:3           |
 //|  - POMERIGGIO -> Kairos: RSI(28), entra al rientro da 30/70,     |
 //|    esce quando l'RSI torna al livello di uscita, SL in ATR       |
@@ -47,10 +47,10 @@ input group "=== FIBONACCI (mattina) ==="
 input bool        InpFbOn         = true;          // Strategia Fibonacci attiva
 input double      InpFbLots       = 0.01;          // Lotti
 input long        InpFbMagic      = 61800;         // Magic number
-input int         InpFbHourStart  = 800;           // Entra dalle (HHMM, ora MT5 = italiana + 1)
+input int         InpFbHourStart  = 1000;          // Entra dalle (HHMM, ora MT5 = italiana + 1)
 input int         InpFbHourEnd    = 1200;          // Entra fino alle (HHMM)
 input EntryMode   InpFbEntryMode  = ENTRY_PINBAR;  // Tipo di ingresso
-input bool        InpFbLvl382     = true;          // Entra a 0.382
+input bool        InpFbLvl382     = false;         // Entra a 0.382
 input bool        InpFbLvl500     = true;          // Entra a 0.5
 input bool        InpFbLvl618     = true;          // Entra a 0.618
 input double      InpFbTouchTol   = 0.06;          // Mercato: entra solo entro questa frazione dello swing oltre il livello

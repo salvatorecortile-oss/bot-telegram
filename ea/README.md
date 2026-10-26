@@ -141,13 +141,13 @@ Due strategie nello stesso EA, su XAUUSD M1:
 
 | | Fibonacci (mattina) | Kairos RSI (pomeriggio) |
 |---|---|---|
-| Entrate (ora MT5) | 08:00–12:00 (7–11 italiane) | 13:00–20:00 (12–19 italiane) |
-| Logica | pin bar sul ritracciamento 0,382 / 0,5 / 0,618, SL a 1.1, TP RR 1:3, impulso minimo 4 × ATR, filtro EMA | RSI(28) al rientro da 30/70, TP BUY a RSI 65 e SELL a RSI 50, SL 2,5 × ATR, filtro ATR, chiusura prima del weekend |
+| Entrate (ora MT5) | 10:00–12:00 (9–11 italiane) | 13:00–20:00 (12–19 italiane) |
+| Logica | pin bar sul ritracciamento 0,5 / 0,618, SL a 1.1, TP RR 1:3, impulso minimo 4 × ATR, filtro EMA | RSI(28) al rientro da 30/70, TP BUY a RSI 65 e SELL a RSI 50, SL 2,5 × ATR, filtro ATR, chiusura prima del weekend |
 | Magic number | 61800 | 54001 |
 
 - Ogni strategia ha il suo magic number e gestisce solo le sue posizioni, esattamente come se fossero due bot separati. Nel report puoi distinguerle dal commento: `FIB500`/`FIB618` per il Fibonacci, `RSI M1` per il Kairos.
 - `InpFbOn` e `InpRsOn` accendono o spengono ciascuna strategia.
-- Set: `KairosFibo_M1_XAU.set`, con il set definitivo v2 del Fibonacci (7–11 italiane e 0,382 attivo) e il set definitivo del Kairos.
+- Set: `KairosFibo_M1_XAU.set`, con il Fibonacci in versione C (9–11 italiane, senza 0,382) e il set definitivo del Kairos.
 - Serve un conto **hedging**.
 
 ## FiboRetraceM1 — set definitivo
@@ -171,3 +171,19 @@ Due strategie nello stesso EA, su XAUUSD M1:
 |---|---|---|---|---|
 | Back (gen–lug 2026) | +877 $ | 241 | 1,51 | 12,3% |
 | Forward (lug–ott 2026) | +294 $ | 117 | 1,61 | 7,7% |
+
+## Versione C e bot separati
+
+Bot unico (`KairosFibo_M1_XAU.set`) con il Fibonacci in **versione C**: entrate 10–12 MT5 (9–11 italiane), livelli 0,5 e 0,618, senza 0,382. Il set v2 (7–11 + 0,382) guadagna di più ma con più del doppio del drawdown.
+
+Test del bot unico, gennaio – 25 ottobre 2026, 0,01, deposito 1.000 $, tick reali:
+
+| | Profitto | Trade | PF | Drawdown max (saldo) |
+|---|---|---|---|---|
+| Fibonacci | +724 $ | 148 | 2,02 | 102 $ |
+| Kairos RSI | +649 $ | 232 | 1,57 | 113 $ |
+| **Insieme** | **+1.372 $** | 380 | 1,74 | 112 $ (equity 8,4%) |
+
+Bot separati, con lo **stesso codice** del bot unico e l'altra parte spenta (stessi trade, stessi magic):
+- `Kairos_Fibonacci_M1_XAU.mq5` + `Kairos_Fibonacci_M1_XAU.set`: solo Fibonacci (versione C);
+- `Kairos_RSI_M1_XAU.mq5` + `Kairos_RSI_M1_XAU.set`: solo Kairos RSI (set definitivo).
