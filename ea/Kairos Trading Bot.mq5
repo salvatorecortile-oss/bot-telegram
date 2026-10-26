@@ -169,6 +169,12 @@ int OnInit()
    if(InpRsOn && RsInit() != INIT_SUCCEEDED)
       return INIT_FAILED;
 
+   if(g_draw && InpPanel)
+     {
+      EventSetTimer(1);   // dashboard aggiornata ogni secondo anche senza tick (mercato fermo)
+      ShowPanel(true);
+     }
+
    Log(StringFormat("Kairos Trading Bot su %s: Fibonacci %s (%04d-%04d), RSI %s (%s)", _Symbol,
                     InpFbOn ? "ON" : "OFF", InpFbHourStart, InpFbHourEnd,
                     InpRsOn ? "ON" : "OFF", InpRsUseHours ? StringFormat("%04d-%04d", InpRsHourStart, InpRsHourEnd) : "sempre"));
@@ -177,6 +183,7 @@ int OnInit()
 
 void OnDeinit(const int reason)
   {
+   EventKillTimer();
    FbDeinit();
    RsDeinit();
    ObjectsDeleteAll(0, PNL);
@@ -187,7 +194,12 @@ void OnTick()
   {
    if(InpFbOn) FbOnTick();
    if(InpRsOn) RsOnTick();
-   ShowPanel();
+   ShowPanel(false);
+  }
+
+void OnTimer()
+  {
+   ShowPanel(true);
   }
 
 // la dashboard e' disegnata in fondo al file (sezione DASHBOARD)
@@ -1193,12 +1205,12 @@ void CalcToday()
      }
   }
 
-void ShowPanel()
+void ShowPanel(bool force)
   {
    if(!g_draw || !InpPanel)
       return;
    ulong ms = GetTickCount64();
-   if(ms - g_pnlLastMs < 300)
+   if(!force && ms - g_pnlLastMs < 300)
       return;
    g_pnlLastMs = ms;
    if(ms - g_statsLastMs > 5000)
