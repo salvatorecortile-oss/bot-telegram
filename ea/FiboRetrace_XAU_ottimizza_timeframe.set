@@ -1,0 +1,44 @@
+; FiboRetrace v1.1 - OTTIMIZZAZIONE TIME FRAME XAUUSD, 0.01 lotti, deposito 1000
+; Base: set definitivo M1 (pin bar su 0.5/0.618, SL 1.1, filtro EMA).
+; Provati in un solo file: time frame M5 / M15 / H1 / H4, orari 9-12 italiane o tutto il giorno,
+; weekend si/no, TP RR 1:2 o 1:3, swing 3/5/7 candele, impulso minimo 2/3/4 x ATR.
+; 4 x 2 x 2 x 2 x 3 x 3 = 288 combinazioni: "Algoritmo completo lento", criterio "Custom max", forward 1/3.
+; Simbolo XAUUSD, grafico M1 (il time frame lo sceglie InpTF). Per velocita' usa il modello "OHLC M1",
+; poi conferma la combinazione migliore con un test singolo "Ogni tick basato su tick reali".
+; Base
+InpLots=0.01||0.01||0.1||0.01||N
+InpMagic=61800||61800||1||61800||N
+; Time frame: 0=M1 1=M5 2=M15 3=H1 4=H4
+InpTF=1||1||1||4||Y
+; Ingresso: 0=limit 1=mercato 2=mercato+pin bar 3=mercato+engulfing 4=mercato+pin o engulfing
+InpEntryMode=2||2||1||2||N
+InpLvl382=false||false||0||true||N
+InpLvl500=true||false||0||true||N
+InpLvl618=true||false||0||true||N
+InpTouchTol=0.06||0.06||0.1||0.06||N
+InpPinWick=0.6||0.6||0.1||0.6||N
+; SL sul livello 1.1 (oltre lo swing low/high)
+InpSLFib=1.1||1.1||0.1||1.1||N
+; TP: 0=RR 1:1 1=RR 1:1.5 2=RR 1:2 3=RR 1:3 4=livello 0 (swing) 5=estensione -0.272 6=estensione -0.618 7=ATR x InpTPATRMult
+InpTPMode=3||2||1||3||Y
+InpTPATRMult=2.0||2.0||0.1||2.0||N
+; Swing e trend (trend: 0=nessuno 1=EMA 2=struttura massimi/minimi)
+InpSwingDepth=3||3||2||7||Y
+InpLookback=300||300||1||300||N
+InpMinLegATR=4.0||2.0||1.0||4.0||Y
+InpMinLegPts=0||0||1||0||N
+InpMaxLegBars=60||60||1||60||N
+InpTrendFilter=1||1||1||1||N
+InpEMAPeriod=50||50||1||50||N
+; Orari (ora di MT5 = italiana + 1): 0=tutto il giorno 1=10-13 MT5 (9-12 italiane)
+InpSessMode=1||0||1||1||Y
+InpSess1Start=10||10||1||10||N
+InpSess1End=13||13||1||13||N
+InpSess2Start=15||15||1||15||N
+InpSess2End=19||19||1||19||N
+; Weekend: venerdi' niente trade nuovi dalle 21:00 e chiusura di tutto alle 22:45 (ora MT5)
+InpWeekend=true||false||0||true||Y
+InpFriNoNew=2100||2100||1||2100||N
+InpFriClose=2245||2245||1||2245||N
+; Ottimizzazione
+InpMinTrades=20||20||1||20||N

@@ -1,6 +1,8 @@
 //+------------------------------------------------------------------+
 //|                                              FiboRetraceM1.mq5   |
-//|  v1 - Ritracciamento di Fibonacci su M1 (0.382 / 0.5 / 0.618)    |
+//|  v1.1 - Ritracciamento di Fibonacci (0.382 / 0.5 / 0.618)        |
+//|  - time frame a scelta: M1 (default), M5, M15, H1, H4            |
+//|  - chiusura prima del weekend (opzionale)                         |
 //|  - trova l'ultimo impulso M1 (swing low -> swing high o viceversa)|
 //|  - quando il prezzo ritraccia nella zona apre nella direzione     |
 //|    dell'impulso: limit, mercato, oppure mercato dopo pin bar /    |
@@ -10,7 +12,7 @@
 //|  - pensato per l'ottimizzazione: ogni combinazione e' un input    |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.00"
+#property version   "1.10"
 #property description "Ritracciamento di Fibonacci su M1: ingresso a 0.382 / 0.5 / 0.618, SL a 1.1"
 
 #include <Trade\Trade.mqh>
@@ -43,6 +45,15 @@ enum TrendFilter
    TREND_STRUCT = 2  // Struttura: massimi e minimi crescenti (buy) / decrescenti (sell)
   };
 
+enum FiboTF
+  {
+   TF_M1  = 0, // M1
+   TF_M5  = 1, // M5
+   TF_M15 = 2, // M15
+   TF_H1  = 3, // H1
+   TF_H4  = 4  // H4
+  };
+
 enum SessMode
   {
    SESS_ALL  = 0, // Tutto il giorno
@@ -55,6 +66,7 @@ enum SessMode
 input group "Base"
 input double      InpLots        = 0.01;         // Lotti
 input long        InpMagic       = 61800;        // Magic number
+input FiboTF      InpTF          = TF_M1;        // Time frame di swing, candele e indicatori
 
 input group "Ingresso"
 input EntryMode   InpEntryMode   = ENTRY_LIMIT;  // Tipo di ingresso
@@ -67,12 +79,12 @@ input double      InpPinWick     = 0.6;          // Pin bar: coda almeno questa 
 input group "Stop loss / Take profit"
 input double      InpSLFib       = 1.1;          // SL sul livello di Fibonacci (1.1 = oltre lo swing)
 input TPMode      InpTPMode      = TP_RR2;       // Take profit
-input double      InpTPATRMult   = 2.0;          // TP ATR: multiplo dell'ATR M1
+input double      InpTPATRMult   = 2.0;          // TP ATR: multiplo dell'ATR del time frame
 
 input group "Swing e trend"
 input int         InpSwingDepth  = 5;            // Candele a sinistra e a destra per confermare uno swing
-input int         InpLookback    = 300;          // Candele M1 analizzate
-input double      InpMinLegATR   = 2.0;          // Impulso minimo = ATR M1 x questo
+input int         InpLookback    = 300;          // Candele analizzate (del time frame scelto)
+input double      InpMinLegATR   = 2.0;          // Impulso minimo = ATR del time frame x questo
 input int         InpMinLegPts   = 0;            // Impulso minimo in punti (0 = off)
 input int         InpMaxLegBars  = 60;           // Ignora l'impulso dopo X candele dalla fine
 input TrendFilter InpTrendFilter = TREND_NONE;   // Filtro trend
@@ -85,6 +97,11 @@ input int         InpSess1End    = 13;           // Fascia 1 fine (13 = 12:00 it
 input int         InpSess2Start  = 15;           // Fascia 2 inizio (15 = 14:00 italiane)
 input int         InpSess2End    = 19;           // Fascia 2 fine (19 = 18:00 italiane)
 
+input group "Weekend (ora di MT5)"
+input bool        InpWeekend     = false;        // Venerdi': niente trade nuovi la sera e chiusura prima del weekend
+input int         InpFriNoNew    = 2100;         // Venerdi': niente trade nuovi dalle (HHMM)
+input int         InpFriClose    = 2245;         // Venerdi': chiude tutto alle (HHMM)
+
 input group "Ottimizzazione"
 input int         InpMinTrades   = 30;           // Custom max: scarta i passaggi con meno trade
 
@@ -92,6 +109,7 @@ input int         InpMinTrades   = 30;           // Custom max: scarta i passagg
 #define MAX_SWINGS 40
 
 CTrade   g_trade;
+ENUM_TIMEFRAMES g_tf = PERIOD_M1;
 int      g_hATR = INVALID_HANDLE;
 int      g_hEMA = INVALID_HANDLE;
 datetime g_lastBar = 0;
@@ -122,12 +140,21 @@ int OnInit()
    if(InpSwingDepth < 1 || InpLookback < 4 * InpSwingDepth + 10 || InpSLFib <= 1.0)
       return INIT_PARAMETERS_INCORRECT;
 
+   switch(InpTF)
+     {
+      case TF_M5:  g_tf = PERIOD_M5;  break;
+      case TF_M15: g_tf = PERIOD_M15; break;
+      case TF_H1:  g_tf = PERIOD_H1;  break;
+      case TF_H4:  g_tf = PERIOD_H4;  break;
+      default:     g_tf = PERIOD_M1;  break;
+     }
+
    g_trade.SetExpertMagicNumber(InpMagic);
    g_trade.SetTypeFillingBySymbol(_Symbol);
    g_trade.SetDeviationInPoints(50);
 
-   g_hATR = iATR(_Symbol, PERIOD_M1, 14);
-   g_hEMA = iMA(_Symbol, PERIOD_M1, InpEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
+   g_hATR = iATR(_Symbol, g_tf, 14);
+   g_hEMA = iMA(_Symbol, g_tf, InpEMAPeriod, 0, MODE_EMA, PRICE_CLOSE);
    if(g_hATR == INVALID_HANDLE || g_hEMA == INVALID_HANDLE)
      {
       Print("Errore creazione indicatori: ", GetLastError());
@@ -141,8 +168,8 @@ int OnInit()
    ArrayInitialize(g_pend, 0);
    DeleteStrayOrders();
 
-   PrintFormat("FiboRetraceM1 su %s: ingresso=%s livelli=%s%s%s SL=%.3f TP=%s orari=%s trend=%s",
-               _Symbol, EnumToString(InpEntryMode),
+   PrintFormat("FiboRetrace %s su %s: ingresso=%s livelli=%s%s%s SL=%.3f TP=%s orari=%s trend=%s",
+               EnumToString(g_tf), _Symbol, EnumToString(InpEntryMode),
                InpLvl382 ? "0.382 " : "", InpLvl500 ? "0.5 " : "", InpLvl618 ? "0.618" : "",
                InpSLFib, EnumToString(InpTPMode), EnumToString(InpSessMode), EnumToString(InpTrendFilter));
    return INIT_SUCCEEDED;
@@ -160,7 +187,14 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   datetime bt = iTime(_Symbol, PERIOD_M1, 0);
+   // weekend: il venerdi' sera chiude tutto, cosi' nessun trade resta aperto sul gap del lunedi'
+   if(InpWeekend && IsFriday(TimeCurrent()) && HHMM(TimeCurrent()) >= InpFriClose)
+     {
+      CancelPendings();
+      CloseAll();
+     }
+
+   datetime bt = iTime(_Symbol, g_tf, 0);
    bool newBar = (bt != g_lastBar && bt != 0);
    if(newBar)
      {
@@ -241,8 +275,8 @@ void UpdateLeg()
    ArraySetAsSeries(lo, true);
    ArraySetAsSeries(cl, true);
    ArraySetAsSeries(tm, true);
-   if(CopyHigh(_Symbol, PERIOD_M1, 0, n, hi) < n || CopyLow(_Symbol, PERIOD_M1, 0, n, lo) < n ||
-      CopyClose(_Symbol, PERIOD_M1, 0, n, cl) < n || CopyTime(_Symbol, PERIOD_M1, 0, n, tm) < n)
+   if(CopyHigh(_Symbol, g_tf, 0, n, hi) < n || CopyLow(_Symbol, g_tf, 0, n, lo) < n ||
+      CopyClose(_Symbol, g_tf, 0, n, cl) < n || CopyTime(_Symbol, g_tf, 0, n, tm) < n)
       return;
 
    double a[];
@@ -569,7 +603,7 @@ void CheckConfirm(const MqlTick &tk)
 
    // la candela di conferma deve stare nella zona di ritracciamento
    double zone = FibPrice(0.382);
-   if(bull ? iLow(_Symbol, PERIOD_M1, 1) > zone : iHigh(_Symbol, PERIOD_M1, 1) < zone)
+   if(bull ? iLow(_Symbol, g_tf, 1) > zone : iHigh(_Symbol, g_tf, 1) < zone)
       return;
 
    // un solo trade per conferma, sul livello piu' profondo raggiunto e non ancora usato
@@ -592,8 +626,8 @@ void CheckConfirm(const MqlTick &tk)
 
 bool IsPinBar(bool bull)
   {
-   double o = iOpen(_Symbol, PERIOD_M1, 1), h = iHigh(_Symbol, PERIOD_M1, 1);
-   double l = iLow(_Symbol, PERIOD_M1, 1),  c = iClose(_Symbol, PERIOD_M1, 1);
+   double o = iOpen(_Symbol, g_tf, 1), h = iHigh(_Symbol, g_tf, 1);
+   double l = iLow(_Symbol, g_tf, 1),  c = iClose(_Symbol, g_tf, 1);
    double range = h - l;
    if(range <= 0)
       return false;
@@ -607,8 +641,8 @@ bool IsPinBar(bool bull)
 
 bool IsEngulfing(bool bull)
   {
-   double o1 = iOpen(_Symbol, PERIOD_M1, 1), c1 = iClose(_Symbol, PERIOD_M1, 1);
-   double o2 = iOpen(_Symbol, PERIOD_M1, 2), c2 = iClose(_Symbol, PERIOD_M1, 2);
+   double o1 = iOpen(_Symbol, g_tf, 1), c1 = iClose(_Symbol, g_tf, 1);
+   double o2 = iOpen(_Symbol, g_tf, 2), c2 = iClose(_Symbol, g_tf, 2);
    if(MathAbs(c1 - o1) <= MathAbs(c2 - o2))
       return false;
    if(bull)
@@ -631,8 +665,37 @@ void OpenMarket(int k, const MqlTick &tk)
   }
 
 //+------------------------------------------------------------------+
+int HHMM(datetime t)
+  {
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   return dt.hour * 100 + dt.min;
+  }
+
+bool IsFriday(datetime t)
+  {
+   MqlDateTime dt;
+   TimeToStruct(t, dt);
+   return dt.day_of_week == 5;
+  }
+
+void CloseAll()
+  {
+   for(int k = PositionsTotal() - 1; k >= 0; k--)
+     {
+      ulong tk = PositionGetTicket(k);
+      if(tk == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC) != InpMagic) continue;
+      if(g_trade.PositionClose(tk))
+         Print("Posizione chiusa prima del weekend: ", tk);
+     }
+  }
+
 bool InSession()
   {
+   if(InpWeekend && IsFriday(TimeCurrent()) && HHMM(TimeCurrent()) >= InpFriNoNew)
+      return false;
    if(InpSessMode == SESS_ALL)
       return true;
    MqlDateTime dt;
