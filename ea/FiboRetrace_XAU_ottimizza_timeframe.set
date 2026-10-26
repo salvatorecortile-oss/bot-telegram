@@ -3,8 +3,8 @@
 ; Provati in un solo file: time frame M5 / M15 / H1 / H4, orari 9-12 italiane o tutto il giorno,
 ; weekend si/no, TP RR 1:2 o 1:3, swing 3/5/7 candele, impulso minimo 2/3/4 x ATR.
 ; 4 x 2 x 2 x 2 x 3 x 3 = 288 combinazioni: "Algoritmo completo lento", criterio "Custom max", forward 1/3.
-; Simbolo XAUUSD, grafico M1 (il time frame lo sceglie InpTF). Per velocita' usa il modello "OHLC M1",
-; poi conferma la combinazione migliore con un test singolo "Ogni tick basato su tick reali".
+; Simbolo XAUUSD, grafico M1 (il time frame lo sceglie InpTF). Modello "Ogni tick basato su tick reali":
+; e' lento ma con "OHLC M1" i trade cambiano troppo (pin bar e tocchi di SL/TP dipendono dai tick).
 ; Base
 InpLots=0.01||0.01||0.1||0.01||N
 InpMagic=61800||61800||1||61800||N
