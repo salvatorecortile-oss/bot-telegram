@@ -88,6 +88,9 @@ input bool        InpRsBreakEven  = false;         // Break-even quando l'RSI to
 input double      InpRsBERSI      = 50;            // Livello RSI del break-even
 input int         InpRsBELockPts  = 0;             // Punti bloccati oltre l'entrata
 input bool        InpRsOneAtTime  = true;          // Una operazione Kairos alla volta
+input double      InpRsConfirmPts = 0;             // Filtro rumore: il rientro deve chiudere oltre 30/70 di almeno X punti (0 = off)
+input int         InpRsConfirmBars= 1;             // Filtro rumore: candele M1 di fila oltre la soglia prima di entrare (1 = off)
+input int         InpRsSLPauseMin = 0;             // Filtro rumore: dopo uno SL, minuti senza nuovi trade nella stessa direzione (0 = off)
 input bool        InpRsWeekend    = true;          // Venerdi': niente trade nuovi la sera e chiusura prima del weekend (anche il Fibonacci)
 input int         InpRsFriNoNew   = 2100;          // Venerdi': niente trade nuovi dalle (HHMM)
 input int         InpRsFriClose   = 2245;          // Venerdi': chiude tutto alle (HHMM)
@@ -846,6 +849,8 @@ int      g_rsATR     = INVALID_HANDLE;
 datetime g_rsLastBar = 0;
 bool     g_rsOS      = false;  // RSI in ipervenduto (<= 30)
 bool     g_rsOB      = false;  // RSI in ipercomprato (>= 70)
+int      g_rsUpBars  = 0;      // candele di fila con il rientro confermato (BUY)
+int      g_rsDnBars  = 0;      // candele di fila con il rientro confermato (SELL)
 bool     g_rsArmBuy  = false;  // entrata al tocco: pronto a comprare al prossimo tocco di 30
 bool     g_rsArmSell = false;  // entrata al tocco: pronto a vendere al prossimo tocco di 70
 double   g_rsNow     = 0;
@@ -911,19 +916,63 @@ void RsOnTick()
    if(CopyBuffer(g_rsRSI, 0, 1, 1, rsi) != 1) return;
    if(CopyBuffer(g_rsATR, 0, 1, 1, atr) != 1 || atr[0] <= 0) return;
 
-   if(rsi[0] <= InpRsLow) g_rsOS = true;
+   // con i filtri spenti (0 punti, 1 candela) entra alla prima chiusura sopra 30 / sotto 70, come sempre
+   if(rsi[0] <= InpRsLow)
+     {
+      g_rsOS = true;
+      g_rsUpBars = 0;
+     }
    else if(g_rsOS)
      {
-      g_rsOS = false;
-      RsOpen(+1, atr[0]);
+      g_rsUpBars = (rsi[0] >= InpRsLow + InpRsConfirmPts) ? g_rsUpBars + 1 : 0;
+      if(g_rsUpBars >= MathMax(InpRsConfirmBars, 1))
+        {
+         g_rsOS = false;
+         g_rsUpBars = 0;
+         RsOpen(+1, atr[0]);
+        }
      }
 
-   if(rsi[0] >= InpRsHigh) g_rsOB = true;
+   if(rsi[0] >= InpRsHigh)
+     {
+      g_rsOB = true;
+      g_rsDnBars = 0;
+     }
    else if(g_rsOB)
      {
-      g_rsOB = false;
-      RsOpen(-1, atr[0]);
+      g_rsDnBars = (rsi[0] <= InpRsHigh - InpRsConfirmPts) ? g_rsDnBars + 1 : 0;
+      if(g_rsDnBars >= MathMax(InpRsConfirmBars, 1))
+        {
+         g_rsOB = false;
+         g_rsDnBars = 0;
+         RsOpen(-1, atr[0]);
+        }
      }
+  }
+
+// true se negli ultimi InpRsSLPauseMin minuti un trade RSI nella direzione dir e' stato chiuso dallo stop loss
+bool RsRecentSL(int dir)
+  {
+   if(InpRsSLPauseMin <= 0)
+      return false;
+   datetime now = TimeCurrent();
+   if(!HistorySelect(now - InpRsSLPauseMin * 60, now + 60))
+      return false;
+   for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
+     {
+      ulong d = HistoryDealGetTicket(i);
+      if(d == 0) continue;
+      if(HistoryDealGetInteger(d, DEAL_MAGIC) != InpRsMagic) continue;
+      if(HistoryDealGetString(d, DEAL_SYMBOL) != _Symbol) continue;
+      if(HistoryDealGetInteger(d, DEAL_REASON) != DEAL_REASON_SL) continue;
+      long entry = HistoryDealGetInteger(d, DEAL_ENTRY);
+      if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_OUT_BY) continue;
+      // un BUY si chiude con un deal SELL e viceversa
+      long type = HistoryDealGetInteger(d, DEAL_TYPE);
+      if((dir > 0 && type == DEAL_TYPE_SELL) || (dir < 0 && type == DEAL_TYPE_BUY))
+         return true;
+     }
+   return false;
   }
 
 // entrata al tocco: a ogni tick, appena l'RSI tocca 30 (BUY) o 70 (SELL).
@@ -1022,6 +1071,7 @@ void RsOpen(int dir, double atr)
   {
    string name = dir > 0 ? "BUY" : "SELL";
    if(InpRsOneAtTime && CountOpen(InpRsMagic) > 0) { Log("Kairos " + name + ": c'e' gia' un'operazione aperta, segnale ignorato"); return; }
+   if(RsRecentSL(dir)) { Log(StringFormat("Kairos %s: stop loss negli ultimi %d minuti, segnale ignorato", name, InpRsSLPauseMin)); return; }
 
    datetime t  = TimeCurrent();
    int      hm = HHMM(t);
@@ -1286,6 +1336,7 @@ void ShowPanel(bool force)
       color  sc = CLR_TEXT;
       if(g_rsOS)               { st = "ipervenduto, attendo il rientro"; sc = CLR_BLUE; }
       else if(g_rsOB)          { st = "ipercomprato, attendo il rientro"; sc = CLR_RED; }
+      if(RsRecentSL(+1) || RsRecentSL(-1)) { st = "pausa dopo uno stop loss"; sc = CLR_MUTED; }
       PRow("rs2", y, StringFormat("RSI (%d)", InpRsPeriod), StringFormat("%.1f  " + U(0x00B7) + "  %s", g_rsNow, st), sc);
       double atr[1];
       string vol = "-";
