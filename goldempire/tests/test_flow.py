@@ -495,6 +495,18 @@ async def scenario(trading):
     await main.source_message_handler(event(msg(157, "Non chiudiamo ancora, lasciamo correre")))
     assert len(tg.sent) == m
 
+    # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY
+    mt5.bid, mt5.ask = 4100.00, 4100.30
+    await main.source_message_handler(event(msg(160, strat(5, "SELL", "4100,00", "4350,00"))))
+    mt5.bid, mt5.ask = 4059.39, 4059.60
+    n = len(tg.sent)
+    await main.source_message_handler(event(msg(161, T.SIGNAL_5_INVERSIONE, reply_to=160)))
+    r_old, r_new = db.get_signal(160), db.get_signal(161)
+    assert r_old["status"] == "CLOSED_MANUAL" and r_old["pips"] > 0, r_old
+    assert r_new["status"] == "OPENED" and r_new["direction"] == "BUY" and r_new["tp"] is None, r_new
+    assert any("CHIUSA IN PROFITTO" in m.text for m in tg.sent[n:]) and "XAUUSD — BUY" in tg.sent[-1].text
+    print("   INVERSIONE ->", " || ".join(m.text.replace("\n", " | ") for m in tg.sent[n:]))
+
     # 12) Segnale troppo vecchio: ignorato
     old = msg(50, T.SIGNAL_3_BUY)
     old.date = datetime(2020, 1, 1, tzinfo=timezone.utc)

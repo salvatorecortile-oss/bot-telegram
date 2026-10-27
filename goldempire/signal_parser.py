@@ -119,7 +119,18 @@ def parse_signal(text):
     #   "SIGNAL 2 ⬇️ VENDI XAUUSD" + Ingresso / Stop / Obiettivo (1)
     #   "SIGNAL 2 – XAUUSD BUY"    + Ingresso: / TP1: / SL:
     # ------------------------------------------------------------
-    direction_match = re.search(r"\b(VENDI|COMPRA|SELL|BUY)\b", upper_header)
+    if re.search(r"\bINVERSIONE\b", upper_header):
+        # "SIGNAL 5 🔄 INVERSIONE XAUUSD" + "CHIUDI ⬇️ VENDI" + "APRI ⬆️ COMPRA":
+        # la direzione nuova e' quella della riga APRI (la chiusura della
+        # vecchia la fa l'inversione del SIGNAL 5/6 prima di aprire).
+        direction_match = re.search(r"\bAPRI\b[^\n]*?\b(VENDI|COMPRA|SELL|BUY)\b", clean.upper())
+        if direction_match is None:
+            # Solo "CHIUDI" senza nuova apertura: chiusura del SIGNAL.
+            exit_price, pips = _exit_and_pips(clean)
+            return {"action": "CLOSE", "symbol": SYMBOL, "signal_no": signal_no,
+                    "exit_price": exit_price, "pips": pips}
+    else:
+        direction_match = re.search(r"\b(VENDI|COMPRA|SELL|BUY)\b", upper_header)
     if direction_match:
         # Solo XAUUSD: qualunque altro strumento viene ignorato.
         if not re.search(r"\bXAU\s*/?\s*USD\b", clean, re.IGNORECASE):

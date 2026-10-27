@@ -95,9 +95,30 @@ SIGNAL_5_BUY_NO_TP = """🟠 SIGNAL 5 – XAUUSD BUY
 
 ⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
 
+# Inversione SIGNAL 5 (screen del canale)
+SIGNAL_5_INVERSIONE = """🟠 SIGNAL 5  🔄 INVERSIONE   XAUUSD
+
+CHIUDI ⬇️ VENDI
+🏁 Uscita: 4059,39
+
+💰 Risultato a 0.01 lot = +28,68$ (+286,8 pips)
+
+APRI ⬆️ COMPRA
+Ingresso    4059,60
+Stop        3816,02  ·  rete di sicurezza, non il piano
+Uscita      al segnale della strategia
+
+Valori per 0,01 lotti · XAUUSD"""
+
 FREE_CLOSE = {"action": "FREE_CLOSE", "symbol": "XAUUSD", "signal_no": None}
 
 TESTS = [
+    (SIGNAL_5_INVERSIONE, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5, "direction": "BUY",
+                           "entry": 4059.60, "sl": 3816.02, "tp": None, "targets_total": 1}),
+    (SIGNAL_5_INVERSIONE.replace("CHIUDI ⬇️ VENDI", "CHIUDI ⬆️ COMPRA").replace("APRI ⬆️ COMPRA", "APRI ⬇️ VENDI")
+     .replace("3816,02", "4300,00"),
+     {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5, "direction": "SELL",
+      "entry": 4059.60, "sl": 4300.0, "tp": None, "targets_total": 1}),
     # Chiusure scritte a parole (screen del canale)
     ("CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO... SE TORNA INDIETRO E PRENDE SL CON IL SEGNALE "
      "CHIUSO NON ABBIAMO PERSO NULLA", FREE_CLOSE),
