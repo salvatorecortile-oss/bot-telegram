@@ -52,8 +52,8 @@ input group "=== FIBONACCI (mattina) ==="
 input bool        InpFbOn         = true;          // Strategia Fibonacci attiva
 input double      InpFbLots       = 0.01;          // Lotti
 input long        InpFbMagic      = 61800;         // Magic number
-input int         InpFbHourStart  = 1000;          // Entra dalle (HHMM, ora MT5 = italiana + 1)
-input int         InpFbHourEnd    = 1200;          // Entra fino alle (HHMM)
+input int         InpFbHourStart  = 1000;          // Entra dalle (HHMM, ora FPG fissa)
+input int         InpFbHourEnd    = 1200;          // Entra fino alle (HHMM, ora FPG fissa)
 input EntryMode   InpFbEntryMode  = ENTRY_PINBAR;  // Tipo di ingresso
 input bool        InpFbLvl382     = false;         // Entra a 0.382
 input bool        InpFbLvl500     = true;          // Entra a 0.5
