@@ -1,4 +1,4 @@
-; GoldTitan Quattro 2.20 - OTTIMIZZAZIONE della sola strategia RSI + EMA (le altre 3 spente)
+; GoldTitan Quattro 2.30 - OTTIMIZZAZIONE della sola strategia RSI + EMA (le altre 3 spente)
 ; Varia: SL 120-240 (passo 30), TP 100-220 (passo 30), periodo RSI 7/14/21, livello 65/70/75 (BUY 35/30/25), filtro H1 si/no
 ; 5 x 5 x 3 x 3 x 2 = 450 combinazioni. Versione attuale = SL 180, TP 160, periodo 14, livello 70, H1 si.
 ; Tester: XAUUSD, "Ogni tick basato su tick reali", "Algoritmo completo lento" (o genetico per fare prima), criterio "Custom max".
@@ -9,6 +9,8 @@ InpUseBrk=false||false||0||true||N
 InpUseAsia=false||false||0||true||N
 InpUseFib=false||false||0||true||N
 InpUseKairos=false||false||0||true||N
+InpRsiPreset=0||0||1||0||N
+InpAsiaPreset=0||0||1||0||N
 ; Lotto
 InpLots=0.01||0.01||1||0.01||N
 InpBalancePerLot=0.0||0.0||1||0.0||N

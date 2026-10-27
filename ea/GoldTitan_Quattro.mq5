@@ -20,11 +20,14 @@
 //|  2.20: quinta strategia KAIROS RSI (RSI 28 su M1 contro gli      |
 //|  eccessi, uscita sull'RSI, SL 2.5 x ATR), dal bot Kairos con     |
 //|  logica invariata. Spenta di default (InpUseKairos = false).     |
+//|  2.30: profili pronti per RSI e Asia (InpRsiPreset,              |
+//|  InpAsiaPreset): spenta / base / proficua / prudente, per        |
+//|  provare tutte le combinazioni in un'unica ottimizzazione.       |
 //|  In ottimizzazione scrive in Common\Files il file                |
 //|  GoldTitan_Quattro_ottimizzazione.csv con il risultato di ogni   |
 //|  strategia per ogni combinazione provata.                        |
 //+------------------------------------------------------------------+
-#property version   "2.20"
+#property version   "2.30"
 #property description "GoldTitan Quattro - RSI+EMA (M5), rottura del canale (M15), range asiatico (M5) e Fibonacci (M1) su XAUUSD."
 
 #include <Trade\Trade.mqh>
@@ -50,6 +53,15 @@ enum TPMode
    TP_ATR    = 7  // ATR M1 x InpFbTPATRMult
   };
 
+enum StratPreset
+  {
+   PS_INPUTS    = 0, // Usa l'interruttore e i valori degli Inputs
+   PS_OFF       = 1, // Spenta
+   PS_BASE      = 2, // Base (versione testata)
+   PS_PROFICUA  = 3, // Proficua (dall'ottimizzazione)
+   PS_PRUDENTE  = 4  // Prudente (dall'ottimizzazione)
+  };
+
 enum TrendFilter
   {
    TREND_NONE   = 0, // Nessuno: basta la direzione dell'impulso
@@ -63,6 +75,8 @@ input bool   InpUseBrk        = true;      // ROTTURA: attiva la strategia
 input bool   InpUseAsia       = true;      // RANGE ASIATICO: attiva la strategia
 input bool   InpUseFib        = true;      // FIBONACCI: attiva la strategia
 input bool   InpUseKairos     = false;     // KAIROS RSI: attiva la strategia
+input StratPreset InpRsiPreset  = PS_INPUTS; // RSI + EMA: profilo (Inputs = usa interruttore e valori qui sotto)
+input StratPreset InpAsiaPreset = PS_INPUTS; // RANGE ASIATICO: profilo (Inputs = usa interruttore e valori qui sotto)
 
 //--- Lotto
 input double InpLots          = 0.01;      // Lotto (uguale per tutte le strategie)
@@ -239,6 +253,62 @@ color    PNL_BAD  = C'240,80,80';
 bool     g_quiet = false;   // in ottimizzazione: niente log del Fibonacci
 bool     g_draw  = false;   // Fibonacci sul grafico
 
+//--- valori effettivi di RSI e Asia: quelli degli Inputs oppure quelli del profilo scelto
+bool     gUseRsi, gRsiEmaFilter, gRsiH1Filter;
+int      gRsiSlPips, gRsiTpPips, gRsiPeriod;
+double   gRsiLevel;
+bool     gUseAsia, gAsiaH1Filter;
+int      gAsiaSlPips, gAsiaTpPips, gAsiaStartHour, gAsiaEndHour, gAsiaLastHour;
+double   gAsiaMinRange, gAsiaMaxRange;
+
+//+------------------------------------------------------------------+
+//| Profili pronti (dalle ottimizzazioni di RSI e Asia, gen-ott 2026)|
+//|  RSI  base     : SL 180 TP 160            (+502 $, DD ~112 $)    |
+//|  RSI  proficua : SL 180 TP 220            (+614 $, DD ~134 $)    |
+//|  RSI  prudente : SL 150 TP 220            (+547 $, DD ~108 $)    |
+//|  ASIA base     : SL 400 TP 300, 1-9, 13   (+958 $, DD ~281 $)    |
+//|  ASIA proficua : SL 350 TP 250, 1-9, 14   (+1046 $, DD ~219 $)   |
+//|  ASIA prudente : SL 300 TP 350, 1-8, 12, H1 (+718 $, DD ~141 $)  |
+//+------------------------------------------------------------------+
+void ApplyPresets()
+  {
+   gUseRsi = InpUseRsi;  gRsiSlPips = InpRsiSlPips;  gRsiTpPips = InpRsiTpPips;
+   gRsiPeriod = InpRsiPeriod;  gRsiLevel = InpRsiLevel;
+   gRsiEmaFilter = InpRsiEmaFilter;  gRsiH1Filter = InpRsiH1Filter;
+   if(InpRsiPreset != PS_INPUTS)
+     {
+      gUseRsi = (InpRsiPreset != PS_OFF);
+      gRsiPeriod = 14;  gRsiLevel = 70.0;  gRsiEmaFilter = true;  gRsiH1Filter = true;
+      if(InpRsiPreset == PS_PROFICUA)      { gRsiSlPips = 180; gRsiTpPips = 220; }
+      else if(InpRsiPreset == PS_PRUDENTE) { gRsiSlPips = 150; gRsiTpPips = 220; }
+      else                                 { gRsiSlPips = 180; gRsiTpPips = 160; }
+     }
+
+   gUseAsia = InpUseAsia;  gAsiaSlPips = InpAsiaSlPips;  gAsiaTpPips = InpAsiaTpPips;
+   gAsiaStartHour = InpAsiaStartHour;  gAsiaEndHour = InpAsiaEndHour;  gAsiaLastHour = InpAsiaLastHour;
+   gAsiaH1Filter = InpAsiaH1Filter;  gAsiaMinRange = InpAsiaMinRange;  gAsiaMaxRange = InpAsiaMaxRange;
+   if(InpAsiaPreset != PS_INPUTS)
+     {
+      gUseAsia = (InpAsiaPreset != PS_OFF);
+      gAsiaStartHour = 1;  gAsiaMinRange = 0.0;  gAsiaMaxRange = 0.0;
+      if(InpAsiaPreset == PS_PROFICUA)
+        { gAsiaSlPips = 350; gAsiaTpPips = 250; gAsiaEndHour = 9; gAsiaLastHour = 14; gAsiaH1Filter = false; }
+      else if(InpAsiaPreset == PS_PRUDENTE)
+        { gAsiaSlPips = 300; gAsiaTpPips = 350; gAsiaEndHour = 8; gAsiaLastHour = 12; gAsiaH1Filter = true; }
+      else
+        { gAsiaSlPips = 400; gAsiaTpPips = 300; gAsiaEndHour = 9; gAsiaLastHour = 13; gAsiaH1Filter = false; }
+     }
+  }
+
+string PresetName(const StratPreset p, const bool on)
+  {
+   if(p == PS_INPUTS)    return(on ? "inputs" : "spenta");
+   if(p == PS_OFF)       return("spenta");
+   if(p == PS_PROFICUA)  return("proficua");
+   if(p == PS_PRUDENTE)  return("prudente");
+   return("base");
+  }
+
 //+------------------------------------------------------------------+
 int StratIdx(const ulong m)
   {
@@ -257,12 +327,13 @@ string StratName(const int k)
 
 bool StratOn(const int k)
   {
-   return(k == 0 ? InpUseRsi : (k == 1 ? InpUseBrk : (k == 2 ? InpUseAsia : (k == 3 ? InpUseFib : InpUseKairos))));
+   return(k == 0 ? gUseRsi : (k == 1 ? InpUseBrk : (k == 2 ? gUseAsia : (k == 3 ? InpUseFib : InpUseKairos))));
   }
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
+   ApplyPresets();
    if(StringFind(_Symbol, "XAU") < 0 && StringFind(_Symbol, "GOLD") < 0)
       Print("ATTENZIONE: l'EA e' pensato per XAUUSD, simbolo attuale: ", _Symbol);
 
@@ -295,26 +366,26 @@ int OnInit()
 
    double point   = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
    double minDist = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * point;
-   if(InpRsiSlPips <= 0 || InpRsiTpPips <= 0 || InpBrkSlPips <= 0 || InpBrkTpPips <= 0 ||
-      InpRsiSlPips * PIP_SIZE < minDist || InpRsiTpPips * PIP_SIZE < minDist ||
+   if(gRsiSlPips <= 0 || gRsiTpPips <= 0 || InpBrkSlPips <= 0 || InpBrkTpPips <= 0 ||
+      gRsiSlPips * PIP_SIZE < minDist || gRsiTpPips * PIP_SIZE < minDist ||
       InpBrkSlPips * PIP_SIZE < minDist || InpBrkTpPips * PIP_SIZE < minDist ||
-      InpAsiaSlPips <= 0 || InpAsiaTpPips <= 0 ||
-      InpAsiaSlPips * PIP_SIZE < minDist || InpAsiaTpPips * PIP_SIZE < minDist)
+      gAsiaSlPips <= 0 || gAsiaTpPips <= 0 ||
+      gAsiaSlPips * PIP_SIZE < minDist || gAsiaTpPips * PIP_SIZE < minDist)
      {
       Print("SL/TP non validi o sotto lo stop level del broker");
       return(INIT_PARAMETERS_INCORRECT);
      }
 
-   if(InpRsiPeriod < 2 || InpRsiLevel <= 50.0 || InpRsiLevel >= 100.0 ||
-      InpAsiaStartHour < 0 || InpAsiaStartHour >= InpAsiaEndHour || InpAsiaEndHour >= InpAsiaLastHour ||
-      InpAsiaLastHour > 24 || InpAsiaMinRange < 0.0 || InpAsiaMaxRange < 0.0 ||
-      (InpAsiaMaxRange > 0.0 && InpAsiaMaxRange <= InpAsiaMinRange))
+   if(gRsiPeriod < 2 || gRsiLevel <= 50.0 || gRsiLevel >= 100.0 ||
+      gAsiaStartHour < 0 || gAsiaStartHour >= gAsiaEndHour || gAsiaEndHour >= gAsiaLastHour ||
+      gAsiaLastHour > 24 || gAsiaMinRange < 0.0 || gAsiaMaxRange < 0.0 ||
+      (gAsiaMaxRange > 0.0 && gAsiaMaxRange <= gAsiaMinRange))
      {
       Print("Parametri di RSI o del range asiatico non validi");
       return(INIT_PARAMETERS_INCORRECT);
      }
 
-   rsiHandle     = iRSI(_Symbol, RSI_TF, InpRsiPeriod, PRICE_CLOSE);
+   rsiHandle     = iRSI(_Symbol, RSI_TF, gRsiPeriod, PRICE_CLOSE);
    emaFastHandle = iMA(_Symbol, RSI_TF, EMA_FAST_PERIOD, 0, MODE_EMA, PRICE_CLOSE);
    emaSlowHandle = iMA(_Symbol, RSI_TF, EMA_SLOW_PERIOD, 0, MODE_EMA, PRICE_CLOSE);
    h1FastHandle  = iMA(_Symbol, PERIOD_H1, EMA_FAST_PERIOD, 0, MODE_EMA, PRICE_CLOSE);
@@ -362,9 +433,13 @@ int OnInit()
         }
      }
 
-   PrintFormat("GoldTitan Quattro 2.20 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
-               _Symbol, InpUseRsi ? "ON" : "OFF", InpUseBrk ? "ON" : "OFF", InpUseAsia ? "ON" : "OFF",
+   PrintFormat("GoldTitan Quattro 2.30 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
+               _Symbol, gUseRsi ? "ON" : "OFF", InpUseBrk ? "ON" : "OFF", gUseAsia ? "ON" : "OFF",
                InpUseFib ? "ON" : "OFF", InpFbHourStart, InpFbHourEnd, InpLots, InpBalancePerLot);
+   PrintFormat("Profili: RSI %s (SL %d TP %d) | Asia %s (SL %d TP %d, range %d-%d, fino alle %d, H1 %s)",
+               PresetName(InpRsiPreset, gUseRsi), gRsiSlPips, gRsiTpPips,
+               PresetName(InpAsiaPreset, gUseAsia), gAsiaSlPips, gAsiaTpPips, gAsiaStartHour, gAsiaEndHour, gAsiaLastHour,
+               gAsiaH1Filter ? "si" : "no");
    PrintFormat("Kairos RSI %s (%s)", InpUseKairos ? "ON" : "OFF",
                InpKrUseHours ? StringFormat("%04d-%04d", InpKrHourStart, InpKrHourEnd) : "sempre");
    PanelInit();
@@ -444,17 +519,18 @@ double OnTester()
                   newsCount, InpNewsBeforeMin, InpNewsAfterMin, newsSkips, newsCloses);
    PrintFormat("TOTALE  : netto reale %.2f $", realNet);
 
-   double data[NSTRAT * 3 + 4];
+   double data[NSTRAT * 4 + 4];
    for(int k = 0; k < NSTRAT; k++)
      {
-      data[k * 3 + 0] = n[k];
-      data[k * 3 + 1] = win[k];
-      data[k * 3 + 2] = prof[k] - slip[k];
+      data[k * 4 + 0] = n[k];
+      data[k * 4 + 1] = win[k];
+      data[k * 4 + 2] = prof[k] - slip[k];
+      data[k * 4 + 3] = StratOn(k) ? 1.0 : 0.0;
      }
-   data[NSTRAT * 3 + 0] = TesterStatistics(STAT_PROFIT_FACTOR);
-   data[NSTRAT * 3 + 1] = TesterStatistics(STAT_EQUITY_DD);
-   data[NSTRAT * 3 + 2] = TesterStatistics(STAT_EQUITYDD_PERCENT);
-   data[NSTRAT * 3 + 3] = TesterStatistics(STAT_TRADES);
+   data[NSTRAT * 4 + 0] = TesterStatistics(STAT_PROFIT_FACTOR);
+   data[NSTRAT * 4 + 1] = TesterStatistics(STAT_EQUITY_DD);
+   data[NSTRAT * 4 + 2] = TesterStatistics(STAT_EQUITYDD_PERCENT);
+   data[NSTRAT * 4 + 3] = TesterStatistics(STAT_TRADES);
    FrameAdd("q", 0, realNet, data);
    return(NormalizeDouble(realNet, 2));
   }
@@ -472,7 +548,7 @@ void OnTesterInit()
       return;
      }
    // annota quali parametri variano: diventano colonne del CSV (interi e bool con la versione long, i double con quella double)
-   string cand[] = {"InpRsiSlPips", "InpRsiTpPips", "InpRsiPeriod", "InpRsiLevel", "InpRsiEmaFilter", "InpRsiH1Filter",
+   string cand[] = {"InpRsiPreset", "InpAsiaPreset", "InpRsiSlPips", "InpRsiTpPips", "InpRsiPeriod", "InpRsiLevel", "InpRsiEmaFilter", "InpRsiH1Filter",
                     "InpBrkSlPips", "InpBrkTpPips", "InpBrkAdxMin",
                     "InpAsiaSlPips", "InpAsiaTpPips", "InpAsiaStartHour", "InpAsiaEndHour", "InpAsiaLastHour",
                     "InpAsiaH1Filter", "InpAsiaMinRange", "InpAsiaMaxRange",
@@ -525,10 +601,9 @@ void OnTesterPass()
    long   id;
    double value;
    double data[];
-   string keys[NSTRAT] = {"InpUseRsi", "InpUseBrk", "InpUseAsia", "InpUseFib", "InpUseKairos"};
    while(FrameNext(pass, name, id, value, data))
      {
-      if(name != "q" || ArraySize(data) < NSTRAT * 3 + 4 || optFile == INVALID_HANDLE)
+      if(name != "q" || ArraySize(data) < NSTRAT * 4 + 4 || optFile == INVALID_HANDLE)
          continue;
 
       string params[];
@@ -539,19 +614,18 @@ void OnTesterPass()
       if(FrameInputs(pass, params, pcount))
          for(uint j = 0; j < pcount; j++)
            {
-            for(int k = 0; k < NSTRAT; k++)
-               if(StringFind(params[j], keys[k] + "=") == 0)
-                 {
-                  string v = StringSubstr(params[j], StringLen(keys[k]) + 1);
-                  on[k] = (v == "true" || v == "1") ? "SI" : "no";
-                 }
             for(int i = 0; i < ArraySize(optNames); i++)
                if(StringFind(params[j], optNames[i] + "=") == 0)
                  {
                   pv[i] = StringSubstr(params[j], StringLen(optNames[i]) + 1);
                   StringReplace(pv[i], ".", ",");
+                  if(StringFind(optNames[i], "Preset") > 0)
+                     pv[i] = PresetName((StratPreset)StringToInteger(pv[i]), true);
                  }
            }
+
+      for(int k = 0; k < NSTRAT; k++)
+         on[k] = data[k * 4 + 3] > 0.5 ? "SI" : "no";
 
       string list = "";
       for(int k = 0; k < NSTRAT; k++)
@@ -568,13 +642,13 @@ void OnTesterPass()
          line += ";" + pv[i];
       for(int k = 0; k < NSTRAT; k++)
         {
-         double nk = data[k * 3 + 0], wk = data[k * 3 + 1];
+         double nk = data[k * 4 + 0], wk = data[k * 4 + 1];
          line += ";" + Num(nk, 0) + ";" + Num(wk, 0) + ";" + Num(nk > 0 ? 100.0 * wk / nk : 0.0, 1) +
-                 ";" + Num(data[k * 3 + 2], 2);
+                 ";" + Num(data[k * 4 + 2], 2);
         }
-      double dd = data[NSTRAT * 3 + 1];
-      line += ";" + Num(data[NSTRAT * 3 + 3], 0) + ";" + Num(value, 2) + ";" + Num(data[NSTRAT * 3 + 0], 2) +
-              ";" + Num(dd, 2) + ";" + Num(data[NSTRAT * 3 + 2], 2) + ";" + Num(dd > 0 ? value / dd : 0.0, 2);
+      double dd = data[NSTRAT * 4 + 1];
+      line += ";" + Num(data[NSTRAT * 4 + 3], 0) + ";" + Num(value, 2) + ";" + Num(data[NSTRAT * 4 + 0], 2) +
+              ";" + Num(dd, 2) + ";" + Num(data[NSTRAT * 4 + 2], 2) + ";" + Num(dd > 0 ? value / dd : 0.0, 2);
       FileWriteString(optFile, line + "\r\n");
       FileFlush(optFile);
       optRows++;
@@ -661,7 +735,7 @@ void OnTick()
 
    // Ogni strategia valuta il segnale alla chiusura di una candela del proprio timeframe.
    // La candela e' segnata come valutata solo se i dati erano pronti (altrimenti si riprova).
-   if(InpUseRsi)
+   if(gUseRsi)
      {
       datetime rsiBar = iTime(_Symbol, RSI_TF, 0);
       if(rsiBar != 0 && rsiBar != rsiLastBar)
@@ -681,7 +755,7 @@ void OnTick()
         }
      }
 
-   if(InpUseAsia)
+   if(gUseAsia)
      {
       datetime asiaBar = iTime(_Symbol, ASIA_TF, 0);
       if(asiaBar != 0 && asiaBar != asiaLastBar)
@@ -713,12 +787,12 @@ bool CheckAsia(const datetime barTime)
 
    MqlDateTime t;
    TimeToStruct(barTime, t);
-   if(t.hour < InpAsiaEndHour || t.hour >= InpAsiaLastHour)
+   if(t.hour < gAsiaEndHour || t.hour >= gAsiaLastHour)
       return(true);
 
    double hi[], lo[], cl[];
-   datetime from = dayStart + (datetime)(InpAsiaStartHour * 3600);
-   datetime to   = dayStart + (datetime)(InpAsiaEndHour * 3600 - 1);
+   datetime from = dayStart + (datetime)(gAsiaStartHour * 3600);
+   datetime to   = dayStart + (datetime)(gAsiaEndHour * 3600 - 1);
    int nh = CopyHigh(_Symbol, ASIA_TF, from, to, hi);
    int nl = CopyLow(_Symbol, ASIA_TF, from, to, lo);
    if(nh < 2 || nl < 2 || CopyClose(_Symbol, ASIA_TF, 1, 1, cl) != 1)
@@ -729,7 +803,7 @@ bool CheckAsia(const datetime barTime)
 
    // Range troppo stretto o troppo largo: niente segnale per tutto il giorno.
    double width = upper - lower;
-   if((InpAsiaMinRange > 0.0 && width < InpAsiaMinRange) || (InpAsiaMaxRange > 0.0 && width > InpAsiaMaxRange))
+   if((gAsiaMinRange > 0.0 && width < gAsiaMinRange) || (gAsiaMaxRange > 0.0 && width > gAsiaMaxRange))
      {
       asiaDay = dayStart;
       return(true);
@@ -741,7 +815,7 @@ bool CheckAsia(const datetime barTime)
       return(true);
 
    // Filtro trend H1: una rottura contro il trend non conta, si aspetta quella a favore.
-   if(InpAsiaH1Filter)
+   if(gAsiaH1Filter)
      {
       bool ready = true;
       if(!H1TrendOk(buySignal, ready))
@@ -749,7 +823,7 @@ bool CheckAsia(const datetime barTime)
      }
 
    asiaDay = dayStart;   // un solo segnale al giorno, anche se i filtri lo scartano
-   OpenTrade(buySignal, InpAsiaSlPips, InpAsiaTpPips, InpAsiaMagic, "ASIA");
+   OpenTrade(buySignal, gAsiaSlPips, gAsiaTpPips, InpAsiaMagic, "ASIA");
    return(true);
   }
 
@@ -763,20 +837,20 @@ bool CheckRsi(const datetime barTime)
    double rsi[];
    ArraySetAsSeries(rsi, true);
    // rsi[0] = ultima candela chiusa, rsi[1] = quella precedente
-   if(BarsCalculated(rsiHandle) < InpRsiPeriod + 3 ||
+   if(BarsCalculated(rsiHandle) < gRsiPeriod + 3 ||
       CopyBuffer(rsiHandle, 0, 1, 2, rsi) != 2 ||
       rsi[0] == EMPTY_VALUE || rsi[1] == EMPTY_VALUE)
       return(NotReady(barTime, "RSI"));
 
-   double sellLevel = InpRsiLevel;
-   double buyLevel  = 100.0 - InpRsiLevel;
+   double sellLevel = gRsiLevel;
+   double buyLevel  = 100.0 - gRsiLevel;
    bool sellSignal = (rsi[1] >= sellLevel && rsi[0] < sellLevel);
    bool buySignal  = (rsi[1] <= buyLevel  && rsi[0] > buyLevel);
    if(!sellSignal && !buySignal)
       return(true);
 
    // Filtro EMA sul timeframe dell'RSI: si opera solo a favore di trend.
-   if(InpRsiEmaFilter)
+   if(gRsiEmaFilter)
      {
       double emaFast[], emaSlow[];
       if(BarsCalculated(emaFastHandle) < EMA_SLOW_PERIOD + 2 ||
@@ -791,14 +865,14 @@ bool CheckRsi(const datetime barTime)
          return(true);
      }
 
-   if(InpRsiH1Filter)
+   if(gRsiH1Filter)
      {
       bool ready = true;
       if(!H1TrendOk(buySignal, ready))
          return(ready ? true : NotReady(barTime, "EMA H1"));
      }
 
-   OpenTrade(buySignal, InpRsiSlPips, InpRsiTpPips, InpRsiMagic, "RSI");
+   OpenTrade(buySignal, gRsiSlPips, gRsiTpPips, InpRsiMagic, "RSI");
    return(true);
   }
 
@@ -2169,7 +2243,7 @@ void PanelUpdate()
    bool   newsNow = InpNewsFilter && NewsBlocked(now);
 
    //--- intestazione e stato
-   PanelLine(i++, "GoldTitan Quattro 2.20   " + _Symbol, PNL_HEAD);
+   PanelLine(i++, "GoldTitan Quattro 2.30   " + _Symbol, PNL_HEAD);
    string onList = "";
    for(int k = 0; k < NSTRAT; k++)
       onList += StringFormat("%s %s  ", StratName(k), StratOn(k) ? "ON" : "off");
@@ -2254,22 +2328,22 @@ void PanelUpdate()
    TimeToStruct(now, t);
    datetime dayStart = iTime(_Symbol, PERIOD_D1, 0);
    string asia;
-   if(!InpUseAsia)
+   if(!gUseAsia)
       asia = "Asia: strategia spenta";
-   else if(t.hour < InpAsiaEndHour)
-      asia = StringFormat("Asia: range in formazione (%02d-%02d)", InpAsiaStartHour, InpAsiaEndHour);
+   else if(t.hour < gAsiaEndHour)
+      asia = StringFormat("Asia: range in formazione (%02d-%02d)", gAsiaStartHour, gAsiaEndHour);
    else
      {
       double hi[], lo[];
-      datetime from = dayStart + (datetime)(InpAsiaStartHour * 3600);
-      datetime to   = dayStart + (datetime)(InpAsiaEndHour * 3600 - 1);
+      datetime from = dayStart + (datetime)(gAsiaStartHour * 3600);
+      datetime to   = dayStart + (datetime)(gAsiaEndHour * 3600 - 1);
       string range = "";
       if(CopyHigh(_Symbol, ASIA_TF, from, to, hi) > 1 && CopyLow(_Symbol, ASIA_TF, from, to, lo) > 1)
          range = StringFormat(" %.2f-%.2f", lo[ArrayMinimum(lo)], hi[ArrayMaximum(hi)]);
       if(asiaDay == dayStart)
          asia = "Asia:" + range + "  segnale di oggi gia' dato";
-      else if(t.hour < InpAsiaLastHour)
-         asia = "Asia:" + range + StringFormat("  attesa rottura fino alle %02d", InpAsiaLastHour);
+      else if(t.hour < gAsiaLastHour)
+         asia = "Asia:" + range + StringFormat("  attesa rottura fino alle %02d", gAsiaLastHour);
       else
          asia = "Asia:" + range + "  finestra chiusa";
      }

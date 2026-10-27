@@ -156,3 +156,26 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 - Si attiva con `InpUseKairos`, spento di default. Magic number 54001.
 - Usa il lotto comune `InpLots`. Non conta per la pausa del Trio e ignora le notizie, a meno che non metti `InpKrNews = true`.
 - `GoldTitan_Quattro_RSI_vs_Kairos.set`: ottimizzazione con 4 passaggi (RSI GoldTitan da solo, Kairos da solo, tutti e due insieme, nessuno). Rottura, Asia e Fibonacci sono spenti. Serve un conto hedging.
+
+**Versione 2.30: profili pronti per RSI e Asia**
+
+- Con `InpRsiPreset` e `InpAsiaPreset` scegli un profilo:
+  - 0 = usa gli Inputs (default, come prima);
+  - 1 = spenta;
+  - 2 = base;
+  - 3 = proficua;
+  - 4 = prudente.
+- I profili:
+
+| Strategia | Profilo | Impostazioni |
+|---|---|---|
+| RSI | base | SL 180, TP 160 |
+| RSI | proficua | SL 180, TP 220 |
+| RSI | prudente | SL 150, TP 220 |
+| Asia | base | SL 400, TP 300, range 1-9, ingressi fino alle 13 |
+| Asia | proficua | SL 350, TP 250, range 1-9, ingressi fino alle 14 |
+| Asia | prudente | SL 300, TP 350, range 1-8, ingressi fino alle 12, filtro H1 |
+
+- `GoldTitan_Quattro_64combinazioni.set` prova tutte le combinazioni:
+  - 4 profili RSI × 4 profili Asia × Rottura accesa/spenta × Fibonacci acceso/spento = 64 passaggi;
+  - dentro ci sono anche le 16 combinazioni di prima (profili base).

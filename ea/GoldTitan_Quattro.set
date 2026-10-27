@@ -1,4 +1,4 @@
-; GoldTitan Quattro 2.20 - DEFAULT (dal vivo): RSI+EMA, Rottura, Range asiatico e Fibonacci tutti attivi (= pass 15)
+; GoldTitan Quattro 2.30 - DEFAULT (dal vivo): RSI+EMA, Rottura, Range asiatico e Fibonacci tutti attivi (= pass 15)
 ; Fibonacci con i valori di Kairos_Fibonacci_M1_XAU.set (versione C, senza 0.382), entrate 10-12 ora del server FPG su MT5
 ; Lotto 0.01 fisso per tutte le strategie. Serve un conto HEDGING.
 ; Strategie attive
@@ -7,6 +7,8 @@ InpUseBrk=true||false||0||true||N
 InpUseAsia=true||false||0||true||N
 InpUseFib=true||false||0||true||N
 InpUseKairos=false||false||0||true||N
+InpRsiPreset=0||0||1||0||N
+InpAsiaPreset=0||0||1||0||N
 ; Lotto
 InpLots=0.01||0.01||1||0.01||N
 InpBalancePerLot=0.0||0.0||1||0.0||N
