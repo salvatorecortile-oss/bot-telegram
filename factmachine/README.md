@@ -40,10 +40,14 @@ passo 3.
 python factmachine/bot.py
 ```
 
-Su FactMachine votare = prendere posizione = fare trade: tutto in un'unica
-chiamata (`optionId` = voto, `maxPriceD6String` = percentuale/prezzo max,
-`usdcInD6String` = importo). Le opzioni cambiano ad ogni round: si vota con
-`1` o `2` (o col nome).
+Il flusso sono DUE chiamate in sequenza (verificato dalla ricognizione):
+1. VOTO:     POST /api/v1/vote/market/cast
+             {marketId, optionId, consensusGuess}   <- la rotellina = consensusGuess (la %)
+2. ACQUISTO: POST /api/v1/order/transactions/buy
+             {marketId, optionId, usdcInD6String, maxPriceD6String, maxSlippageBps}
+
+Quindi: la PERCENTUALE che scrivi e' il voto (consensusGuess); l'IMPORTO e'
+l'acquisto. Le opzioni cambiano ad ogni round: si vota con `1` o `2` (o col nome).
 
 Flusso per un round:
 1. `load <url|id>`  carica il mercato, mostra le opzioni e i prezzi

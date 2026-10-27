@@ -36,6 +36,7 @@ from playwright.sync_api import sync_playwright
 # ---- I TUOI DEFAULT (cambiali qui) ----
 IMPORTI = [25, 50, 100, 300, 500]   # importi (USDC) -> una riga di bottoni ciascuno
 DEFAULT_SLIPPAGE_BPS = 10000        # 100%
+BUY_MAX_PRICE_PCT = 100.0           # prezzo max per l'acquisto (100 = come fa il sito)
 PREZZO_REFRESH_SEC = 2.0            # ogni quanto aggiornare i prezzi mostrati
 AUTO_OPEN_DEFAULT = False           # auto-apri il nuovo mercato dalla pagina
 # ----------------------------------------
@@ -44,7 +45,8 @@ BASE_DIR = Path(__file__).resolve().parent
 USER_DATA_DIR = BASE_DIR / "browser_profile"
 
 ORIGIN = "https://alpha.factmachine.com"
-BUY_PATH = "/api/v1/order/transactions/buy"
+VOTE_PATH = "/api/v1/vote/market/cast"      # 1) il VOTO (rotellina = consensusGuess)
+BUY_PATH = "/api/v1/order/transactions/buy"  # 2) l'ACQUISTO
 MARKET_PATH = "/api/v1/market/"
 
 
@@ -83,14 +85,14 @@ class Worker(threading.Thread):
         except Exception:
             return res["status"], res["text"]
 
-    def fire_buy(self, body):
+    def api_post(self, path, body):
         return self.page.evaluate(
-            """async (b) => { const t0=performance.now();
-               const r = await fetch('%s',{method:'POST',
+            """async ([path, b]) => { const t0=performance.now();
+               const r = await fetch(path,{method:'POST',
                  headers:{'content-type':'application/json'},
                  body: JSON.stringify(b), credentials:'include'});
                return {status:r.status, text: await r.text(),
-                       ms: Math.round(performance.now()-t0)}; }""" % BUY_PATH, body)
+                       ms: Math.round(performance.now()-t0)}; }""", [path, body])
 
     def _market_view(self, mkt):
         o1, o2 = mkt.get("optionOne", {}), mkt.get("optionTwo", {})
@@ -120,6 +122,7 @@ class Worker(threading.Thread):
             self.emit("market", market=self._market_view(mkt))
 
     def do_buy(self, option_index, usdc, pct):
+        """Fa i DUE passaggi in sequenza: 1) VOTO (con la percentuale), 2) ACQUISTO."""
         # se non c'e' mercato, prova a rilevarlo dalla pagina corrente
         if not self.market:
             mid = None
@@ -132,25 +135,44 @@ class Worker(threading.Thread):
         if not self.market:
             self.emit("log", text="Nessun mercato: apri il mercato nel browser.")
             return
+
         opt = self.market["optionOne"] if option_index == 1 else self.market["optionTwo"]
-        body = {
-            "marketId": self.market["id"],
-            "optionId": opt["id"],
+        market_id, option_id, oname = self.market["id"], opt["id"], opt.get("name")
+
+        # --- 1) VOTO (rotellina = consensusGuess) ---
+        vote_body = {"marketId": market_id, "optionId": option_id,
+                     "consensusGuess": int(round(pct))}
+        self.emit("log", text=f">>> VOTO: opz{option_index} '{oname}'  consenso {int(round(pct))}%")
+        vres = self.api_post(VOTE_PATH, vote_body)
+        try:
+            vj = json.loads(vres["text"])
+            voted_ok = bool(vj.get("hasVoted")) if isinstance(vj, dict) else False
+        except Exception:
+            voted_ok = False
+        if vres["status"] == 200 and voted_ok:
+            self.emit("log", text=f"    VOTO ok ({vres['ms']} ms)")
+        else:
+            self.emit("log", text=f"    VOTO status {vres['status']} ({vres['ms']} ms): {vres['text'][:200]}")
+
+        # --- 2) ACQUISTO ---
+        buy_body = {
+            "marketId": market_id,
+            "optionId": option_id,
             "usdcInD6String": str(int(round(usdc * 1_000_000))),
-            "maxPriceD6String": str(int(round(pct_to_fraction(pct) * 1_000_000))),
+            "maxPriceD6String": str(int(round(pct_to_fraction(BUY_MAX_PRICE_PCT) * 1_000_000))),
             "maxSlippageBps": int(DEFAULT_SLIPPAGE_BPS),
         }
-        self.emit("log", text=f">>> SPARO: opz{option_index} '{opt.get('name')}'  {usdc}$  max {pct}%")
-        res = self.fire_buy(body)
+        self.emit("log", text=f">>> ACQUISTO: {usdc}$ su '{oname}'")
+        bres = self.api_post(BUY_PATH, buy_body)
         try:
-            j = json.loads(res["text"])
-            sig = j.get("signature") if isinstance(j, dict) else None
+            bj = json.loads(bres["text"])
+            sig = bj.get("signature") if isinstance(bj, dict) else None
         except Exception:
             sig = None
-        if res["status"] == 200 and sig:
-            self.emit("log", text=f"    OK ({res['ms']} ms)  signature: {sig}")
+        if bres["status"] == 200 and sig:
+            self.emit("log", text=f"    ACQUISTO ok ({bres['ms']} ms)  signature: {sig}")
         else:
-            self.emit("log", text=f"    status {res['status']} ({res['ms']} ms): {res['text'][:300]}")
+            self.emit("log", text=f"    ACQUISTO status {bres['status']} ({bres['ms']} ms): {bres['text'][:300]}")
         self.refresh_price()
 
     def try_auto_open(self):

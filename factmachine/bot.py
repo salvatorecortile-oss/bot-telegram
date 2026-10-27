@@ -31,15 +31,17 @@ from playwright.async_api import async_playwright
 
 # ---- I TUOI DEFAULT (cambiali qui, oppure a runtime con i comandi) ----
 DEFAULT_USDC = 100.0        # importo fisso per operazione, in USDC
-DEFAULT_PCT = 77.0          # percentuale/prezzo max per quota (es. 77 = 77%)
+DEFAULT_PCT = 77.0          # percentuale del VOTO (rotellina = consensusGuess)
 DEFAULT_SLIPPAGE_BPS = 10000  # tolleranza slippage in bps (10000 = 100%)
+BUY_MAX_PRICE_PCT = 100.0   # prezzo max dell'acquisto (100 = come fa il sito)
 # -----------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent
 USER_DATA_DIR = BASE_DIR / "browser_profile"
 
 ORIGIN = "https://alpha.factmachine.com"
-BUY_PATH = "/api/v1/order/transactions/buy"
+VOTE_PATH = "/api/v1/vote/market/cast"       # 1) il VOTO (rotellina = consensusGuess)
+BUY_PATH = "/api/v1/order/transactions/buy"  # 2) l'ACQUISTO
 MARKET_PATH = "/api/v1/market/"
 
 
@@ -75,12 +77,12 @@ async def api_get(page, path: str):
         return res["status"], res["text"]
 
 
-async def fire_buy(page, body: dict):
-    """POST buy DENTRO il browser loggato. Ritorna status, testo e latenza ms."""
+async def api_post(page, path: str, body: dict):
+    """POST generico DENTRO il browser loggato. Ritorna status, testo, latenza ms."""
     js = """
-    async (body) => {
+    async ([path, body]) => {
       const t0 = performance.now();
-      const r = await fetch('%s', {
+      const r = await fetch(path, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -88,16 +90,20 @@ async def fire_buy(page, body: dict):
       });
       const text = await r.text();
       return { status: r.status, text, ms: Math.round(performance.now() - t0) };
-    }""" % BUY_PATH
-    return await page.evaluate(js, body)
+    }"""
+    return await page.evaluate(js, [path, body])
 
 
-def build_body(market_id, option_id, usdc, pct, slippage_bps) -> dict:
+def vote_body(market_id, option_id, pct) -> dict:
+    return {"marketId": market_id, "optionId": option_id, "consensusGuess": int(round(pct))}
+
+
+def buy_body(market_id, option_id, usdc, slippage_bps) -> dict:
     return {
         "marketId": market_id,
         "optionId": option_id,
         "usdcInD6String": str(int(round(usdc * 1_000_000))),
-        "maxPriceD6String": str(int(round(pct_to_fraction(pct) * 1_000_000))),
+        "maxPriceD6String": str(int(round(pct_to_fraction(BUY_MAX_PRICE_PCT) * 1_000_000))),
         "maxSlippageBps": int(slippage_bps),
     }
 
@@ -144,15 +150,16 @@ Comandi (tutto modificabile al volo):
   load <url|id>          carica il mercato e mostra opzioni + prezzi
   price                  aggiorna i prezzi del mercato caricato
 
-  buy <1|2> [usdc] [pct] SPARA SUBITO voto+operazione (il piu' veloce).
-                         es:  buy 1          -> opzione 1, {DEFAULT_USDC}$ al {DEFAULT_PCT}%
-                              buy 2 100 77    -> opzione 2, 100$, max 77%
+  buy <1|2> [usdc] [pct] SPARA SUBITO voto+acquisto (il piu' veloce).
+                         pct = la percentuale del VOTO (rotellina).
+                         es:  buy 1          -> opzione 1, {DEFAULT_USDC}$ voto {DEFAULT_PCT}%
+                              buy 2 100 77    -> opzione 2, 100$, voto 77%
 
   arm <1|2> [usdc] [pct] pre-arma l'ordine (poi INVIO o 'go' per sparare)
   go  (o INVIO vuoto)    spara l'ordine pre-armato
 
   usdc <importo>         cambia l'importo di default (es. usdc 100)
-  pct <percentuale>      cambia la percentuale/prezzo max (es. pct 77)
+  pct <percentuale>      cambia la percentuale del voto (es. pct 77)
   slippage <bps>         cambia lo slippage (default {DEFAULT_SLIPPAGE_BPS})
   show                   mostra impostazioni e ordine armato
   help / quit
@@ -160,18 +167,32 @@ Comandi (tutto modificabile al volo):
 
 
 async def do_fire(page, st, option_id, option_name, usdc, pct, slippage):
-    body = build_body(st.market["id"], option_id, usdc, pct, slippage)
-    print(f">>> SPARO: {option_name}  {usdc}$  max {pct}%  (slippage {slippage}bps)")
-    res = await fire_buy(page, body)
-    print(f"    status {res['status']} in {res['ms']} ms")
+    """Due passaggi: 1) VOTO (con la percentuale), 2) ACQUISTO."""
+    market_id = st.market["id"]
+
+    # 1) VOTO (rotellina = consensusGuess)
+    print(f">>> VOTO: {option_name}  consenso {int(round(pct))}%")
+    vres = await api_post(page, VOTE_PATH, vote_body(market_id, option_id, pct))
     try:
-        j = json.loads(res["text"])
-        if isinstance(j, dict) and j.get("signature"):
-            print(f"    OK  signature: {j['signature']}")
-        else:
-            print(f"    risposta: {j}")
+        vj = json.loads(vres["text"])
+        ok = isinstance(vj, dict) and vj.get("hasVoted")
     except Exception:
-        print(f"    risposta: {res['text'][:500]}")
+        ok = False
+    print(f"    VOTO {'ok' if ok else 'status '+str(vres['status'])} ({vres['ms']} ms)"
+          + ("" if ok else f": {vres['text'][:200]}"))
+
+    # 2) ACQUISTO
+    print(f">>> ACQUISTO: {usdc}$ su {option_name}")
+    bres = await api_post(page, BUY_PATH, buy_body(market_id, option_id, usdc, slippage))
+    try:
+        bj = json.loads(bres["text"])
+        sig = bj.get("signature") if isinstance(bj, dict) else None
+    except Exception:
+        sig = None
+    if bres["status"] == 200 and sig:
+        print(f"    ACQUISTO ok ({bres['ms']} ms)  signature: {sig}")
+    else:
+        print(f"    ACQUISTO status {bres['status']} ({bres['ms']} ms): {bres['text'][:300]}")
 
 
 async def main():
@@ -278,7 +299,7 @@ async def main():
                 else:
                     # arma e aspetta INVIO
                     st.option_id, st.option_name, st.usdc, st.pct = oid, oname, usdc, pct
-                    print(f"ARMATO: {oname}  {usdc}$  max {pct}%. Premi INVIO (o 'go').")
+                    print(f"ARMATO: {oname}  voto {pct}%  acquisto {usdc}$. Premi INVIO (o 'go').")
 
             elif cmd == "usdc":
                 try:
@@ -301,8 +322,9 @@ async def main():
             elif cmd == "show":
                 print(f"Default: importo {st.usdc}$ | pct {st.pct}% | slippage {st.slippage_bps}bps")
                 if st.armed():
-                    print(f"ARMATO: {st.option_name}  {st.usdc}$  max {st.pct}%")
-                    print(f"body: {build_body(st.market['id'], st.option_id, st.usdc, st.pct, st.slippage_bps)}")
+                    print(f"ARMATO: {st.option_name}  voto {st.pct}%  acquisto {st.usdc}$")
+                    print(f"  vote: {vote_body(st.market['id'], st.option_id, st.pct)}")
+                    print(f"  buy : {buy_body(st.market['id'], st.option_id, st.usdc, st.slippage_bps)}")
                 else:
                     print("niente armato")
 
