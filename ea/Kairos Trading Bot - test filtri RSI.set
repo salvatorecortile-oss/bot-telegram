@@ -1,7 +1,20 @@
-; KAIROS TRADING BOT - TEST FILTRI RUMORE RSI (solo RSI, Fibonacci spento), XAUUSD M1, 0.01, deposito 1000
-; Riferimento: il passaggio con 0 punti, 1 candela, pausa 0, SL 2.5 e' il Kairos RSI di oggi.
-; Provati: rientro oltre 30/70 di 0/2/4 punti x 1/2/3 candele di conferma x pausa dopo SL 0/30/60/90/120 min x SL 2.5/3.0/3.5 ATR
-; = 3 x 3 x 5 x 3 = 135 combinazioni. "Algoritmo completo lento", "Custom max", tick reali, forward 1/3, dal 2026.01.01 a oggi.
+; KAIROS TRADING BOT - TEST COMPLETO RSI (pronto, non serve modificare nulla)
+; Solo RSI (Fibonacci spento). Il valore di partenza di ogni riga e' l'RSI di oggi (riferimento).
+; Provati tutti insieme:
+;  - Stop loss            InpRsSLATR        : 2.0 / 2.5 / 3.0 / 3.5 x ATR
+;  - Rientro piu' deciso  InpRsConfirmPts   : 0 (spento) / 2 / 4 punti oltre 30-70
+;  - Candele di conferma  InpRsConfirmBars  : 1 (spento) / 2 / 3
+;  - Pausa dopo uno SL    InpRsSLPauseMin   : 0 (spento) / 30 / 60 / 90 / 120 minuti
+;  - Livello ipervenduto  InpRsLow          : 25 / 30
+;  - Livello ipercomprato InpRsHigh         : 70 / 75
+;  - Uscita BUY           InpRsExit         : RSI 55 / 60 / 65 / 70
+;  - Uscita SELL          InpRsExitSell     : RSI 40 / 45 / 50
+;  - Break-even a RSI 50  InpRsBreakEven    : no / si
+;  - Filtro volatilita'   InpRsUseATRFilter : no / si
+;  - Una alla volta       InpRsOneAtTime    : no / si
+; = 69.120 combinazioni: usa "Algoritmo genetico veloce" (non il completo lento), criterio "Custom max",
+; "Ogni tick basato su tick reali", forward 1/3, XAUUSD M1, dal 2026.01.01 a oggi, deposito 1000.
+; Consiglio: lancialo 2 volte; se in cima escono impostazioni simili, sono affidabili.
 ; RSI (pomeriggio): RSI 28, TP BUY RSI 65 / SELL RSI 50, SL 2.5 x ATR, entrate 13:00-20:00 MT5 (12-19 italiane), filtro ATR, weekend, magic 54001
 ; FIBONACCI (mattina)
 InpFbOn=false||false||0||true||N
@@ -30,19 +43,18 @@ InpRsOn=true||false||0||true||N
 InpRsLots=0.01||0.01||0.1||0.01||N
 InpRsMagic=54001||54001||1||54001||N
 InpRsPeriod=28||28||1||28||N
-InpRsLow=30||30||1||30||N
-InpRsHigh=70||70||1||70||N
-InpRsExit=65||65||1||65||N
-InpRsExitSell=50||50||1||50||N
+InpRsLow=30||25||5||30||Y
+InpRsHigh=70||70||5||75||Y
+InpRsExit=65||55||5||70||Y
+InpRsExitSell=50||40||5||50||Y
 InpRsEntryTouch=false||false||0||true||N
 InpRsATRTF=1||1||1||1||N
 InpRsATRPeriod=14||14||1||14||N
-InpRsSLATR=2.5||2.5||0.5||3.5||Y
-InpRsBreakEven=false||false||0||true||N
+InpRsSLATR=2.5||2.0||0.5||3.5||Y
+InpRsBreakEven=false||false||0||true||Y
 InpRsBERSI=50||50||1||50||N
 InpRsBELockPts=0||0||1||0||N
-InpRsOneAtTime=true||false||0||true||N
-; Filtri rumore
+InpRsOneAtTime=true||false||0||true||Y
 InpRsConfirmPts=0||0||2||4||Y
 InpRsConfirmBars=1||1||1||3||Y
 InpRsSLPauseMin=0||0||30||120||Y
@@ -52,7 +64,7 @@ InpRsFriClose=2245||2245||1||2245||N
 InpRsUseHours=true||false||0||true||N
 InpRsHourStart=1300||1300||1||1300||N
 InpRsHourEnd=2000||2000||1||2000||N
-InpRsUseATRFilter=true||false||0||true||N
+InpRsUseATRFilter=true||false||0||true||Y
 InpRsMinATRPct=0.05||0.05||0.1||0.05||N
 InpRsMaxATRPct=0.13||0.13||0.1||0.13||N
 ; Dashboard
