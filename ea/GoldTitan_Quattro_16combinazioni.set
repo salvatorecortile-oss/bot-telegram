@@ -25,9 +25,9 @@ InpMaxSpreadPts=70||70||1||70||N
 ; Pausa dopo gli stop (RSI, Rottura, Asia)
 InpPauseLosses=4||4||1||4||N
 InpPauseHours=24||24||1||24||N
-; FIBONACCI: valori del set Kairos_Fibonacci_M1_XAU (versione C), entrate 11-13 ora MT5 di FPG = 9-11 italiane
-InpFbHourStart=1100||1100||1||1100||N
-InpFbHourEnd=1300||1300||1||1300||N
+; FIBONACCI: valori del set Kairos_Fibonacci_M1_XAU (versione C), entrate 10-12 ora del server FPG su MT5
+InpFbHourStart=1000||1000||1||1000||N
+InpFbHourEnd=1200||1200||1||1200||N
 InpFbEntryMode=2||2||1||2||N
 InpFbLvl382=false||false||0||true||N
 InpFbLvl500=true||false||0||true||N
