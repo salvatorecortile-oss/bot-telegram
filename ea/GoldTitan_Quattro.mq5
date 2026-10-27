@@ -14,11 +14,14 @@
 //|  (versione C) con i suoi filtri: non conta e non subisce la      |
 //|  pausa del Trio e, se non attivato, non usa il filtro notizie.   |
 //|  La parte Kairos RSI del bot Fibonacci (spenta nel set) non c'e'.|
+//|  2.10: periodo e livello RSI, filtri EMA dell'RSI, orari del     |
+//|  range asiatico, filtro trend H1 e larghezza del range Asia      |
+//|  diventano Inputs (default = 2.00) per poterli ottimizzare.      |
 //|  In ottimizzazione scrive in Common\Files il file                |
-//|  GoldTitan_Quattro_combinazioni.csv con il risultato di ogni     |
+//|  GoldTitan_Quattro_ottimizzazione.csv con il risultato di ogni   |
 //|  strategia per ogni combinazione provata.                        |
 //+------------------------------------------------------------------+
-#property version   "2.00"
+#property version   "2.10"
 #property description "GoldTitan Quattro - RSI+EMA (M5), rottura del canale (M15), range asiatico (M5) e Fibonacci (M1) su XAUUSD."
 
 #include <Trade\Trade.mqh>
@@ -68,6 +71,20 @@ input int    InpBrkSlPips     = 200;       // ROTTURA: stop loss (pips)
 input int    InpBrkTpPips     = 300;       // ROTTURA: take profit (pips)
 input int    InpAsiaSlPips    = 400;       // RANGE ASIATICO: stop loss (pips)
 input int    InpAsiaTpPips    = 300;       // RANGE ASIATICO: take profit (pips)
+
+//--- RSI + EMA: segnale e filtri (default = versione testata)
+input int    InpRsiPeriod     = 14;        // RSI: periodo (M5)
+input double InpRsiLevel      = 70.0;      // RSI: livello SELL (il BUY e' 100 - livello, 70 -> 30)
+input bool   InpRsiEmaFilter  = true;      // RSI: filtro EMA 50/200 su M5
+input bool   InpRsiH1Filter   = true;      // RSI: filtro trend H1 (EMA 50/200)
+
+//--- Range asiatico: orari e filtri (ore del server, default = versione testata)
+input int    InpAsiaStartHour = 1;         // RANGE ASIATICO: inizio del range (ora)
+input int    InpAsiaEndHour   = 9;         // RANGE ASIATICO: fine del range, da qui cerca la rottura (ora)
+input int    InpAsiaLastHour  = 13;        // RANGE ASIATICO: dopo quest'ora non entra piu' (ora)
+input bool   InpAsiaH1Filter  = false;     // RANGE ASIATICO: entra solo a favore del trend H1 (EMA 50/200)
+input double InpAsiaMinRange  = 0.0;       // RANGE ASIATICO: salta il giorno se il range e' piu' stretto di X $ (0 = off)
+input double InpAsiaMaxRange  = 0.0;       // RANGE ASIATICO: salta il giorno se il range e' piu' largo di X $ (0 = off)
 
 //--- Filtri (RSI, Rottura, Range asiatico)
 input double InpBrkAdxMin     = 30.0;      // ROTTURA: opera solo se ADX e' sopra questo valore (0 = filtro spento)
@@ -120,15 +137,10 @@ input bool   InpShowPanel     = true;      // PANNELLO: mostra il pannello sul g
 
 //--- Valori fissi, scelti con i test (non piu' modificabili dagli Inputs)
 #define RSI_TF            PERIOD_M5    // timeframe di RSI ed EMA
-#define RSI_PERIOD        14
-#define RSI_SELL_LEVEL    70.0         // il livello BUY e' 100 - SELL = 30
 #define BRK_TF            PERIOD_M15   // timeframe della rottura
 #define CHANNEL_BARS      24           // candele del canale
 #define ADX_PERIOD        14
 #define ASIA_TF           PERIOD_M5    // timeframe del range asiatico
-#define ASIA_START_HOUR   1            // inizio del range (ora del server)
-#define ASIA_END_HOUR     9            // fine del range: da qui si cerca la rottura
-#define ASIA_LAST_HOUR    13           // dopo quest'ora non entra piu'
 #define ATR_PERIOD        14           // giorni
 #define EMA_FAST_PERIOD   50
 #define EMA_SLOW_PERIOD   200
@@ -136,7 +148,7 @@ input bool   InpShowPanel     = true;      // PANNELLO: mostra il pannello sul g
 #define NO_SLIPPAGE_LIMIT 100000       // points: in pratica nessun limite allo slippage
 #define FB_DEVIATION      50           // points: slippage massimo del Fibonacci (come il bot originale)
 #define NSTRAT            4            // 0 = RSI, 1 = Rottura, 2 = Asia, 3 = Fibonacci
-#define OPT_FILE          "GoldTitan_Quattro_combinazioni.csv"
+#define OPT_FILE          "GoldTitan_Quattro_ottimizzazione.csv"
 
 CTrade   trade;
 int      rsiHandle     = INVALID_HANDLE;
@@ -171,6 +183,7 @@ int      newsCloses    = 0;                 // posizioni chiuse per notizia
 //--- ottimizzazione: file del confronto tra le combinazioni
 int      optFile = INVALID_HANDLE;
 int      optRows = 0;
+string   optNames[];                        // parametri che variano nell'ottimizzazione (colonne del CSV)
 
 //--- pannello
 bool     panelOn        = false;
@@ -260,7 +273,16 @@ int OnInit()
       return(INIT_PARAMETERS_INCORRECT);
      }
 
-   rsiHandle     = iRSI(_Symbol, RSI_TF, RSI_PERIOD, PRICE_CLOSE);
+   if(InpRsiPeriod < 2 || InpRsiLevel <= 50.0 || InpRsiLevel >= 100.0 ||
+      InpAsiaStartHour < 0 || InpAsiaStartHour >= InpAsiaEndHour || InpAsiaEndHour >= InpAsiaLastHour ||
+      InpAsiaLastHour > 24 || InpAsiaMinRange < 0.0 || InpAsiaMaxRange < 0.0 ||
+      (InpAsiaMaxRange > 0.0 && InpAsiaMaxRange <= InpAsiaMinRange))
+     {
+      Print("Parametri di RSI o del range asiatico non validi");
+      return(INIT_PARAMETERS_INCORRECT);
+     }
+
+   rsiHandle     = iRSI(_Symbol, RSI_TF, InpRsiPeriod, PRICE_CLOSE);
    emaFastHandle = iMA(_Symbol, RSI_TF, EMA_FAST_PERIOD, 0, MODE_EMA, PRICE_CLOSE);
    emaSlowHandle = iMA(_Symbol, RSI_TF, EMA_SLOW_PERIOD, 0, MODE_EMA, PRICE_CLOSE);
    h1FastHandle  = iMA(_Symbol, PERIOD_H1, EMA_FAST_PERIOD, 0, MODE_EMA, PRICE_CLOSE);
@@ -306,7 +328,7 @@ int OnInit()
         }
      }
 
-   PrintFormat("GoldTitan Quattro 2.00 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
+   PrintFormat("GoldTitan Quattro 2.10 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
                _Symbol, InpUseRsi ? "ON" : "OFF", InpUseBrk ? "ON" : "OFF", InpUseAsia ? "ON" : "OFF",
                InpUseFib ? "ON" : "OFF", InpFbHourStart, InpFbHourEnd, InpLots, InpBalancePerLot);
    PanelInit();
@@ -412,7 +434,32 @@ void OnTesterInit()
       Print("Impossibile creare ", OPT_FILE, ", errore ", GetLastError());
       return;
      }
+   // annota quali parametri variano: diventano colonne del CSV (interi e bool con la versione long, i double con quella double)
+   string cand[] = {"InpRsiSlPips", "InpRsiTpPips", "InpRsiPeriod", "InpRsiLevel", "InpRsiEmaFilter", "InpRsiH1Filter",
+                    "InpBrkSlPips", "InpBrkTpPips", "InpBrkAdxMin",
+                    "InpAsiaSlPips", "InpAsiaTpPips", "InpAsiaStartHour", "InpAsiaEndHour", "InpAsiaLastHour",
+                    "InpAsiaH1Filter", "InpAsiaMinRange", "InpAsiaMaxRange",
+                    "InpMinAtrUsd", "InpMaxSpreadPts", "InpPauseLosses", "InpPauseHours", "InpNewsAfterMin"};
+   ArrayResize(optNames, 0);
+   for(int i = 0; i < ArraySize(cand); i++)
+     {
+      bool   enable = false;
+      long   lv, lstart, lstep, lstop;
+      double dv, dstart, dstep, dstop;
+      bool   found = ParameterGetRange(cand[i], enable, lv, lstart, lstep, lstop);
+      if(!found)
+         found = ParameterGetRange(cand[i], enable, dv, dstart, dstep, dstop);
+      if(found && enable)
+        {
+         int n = ArraySize(optNames);
+         ArrayResize(optNames, n + 1);
+         optNames[n] = cand[i];
+        }
+     }
+
    string head = "Passaggio;RSI;ROTTURA;ASIA;FIBO;Strategie attive";
+   for(int i = 0; i < ArraySize(optNames); i++)
+      head += ";" + optNames[i];
    for(int k = 0; k < NSTRAT; k++)
       head += ";" + StratName(k) + " trade;" + StratName(k) + " vinti;" + StratName(k) + " % vinti;" + StratName(k) + " netto";
    head += ";Trade totali;Netto totale;Profit factor;DD equity $;DD equity %;Netto / DD";
@@ -448,14 +495,24 @@ void OnTesterPass()
       string params[];
       uint   pcount = 0;
       string on[NSTRAT] = {"?", "?", "?", "?"};
+      string pv[];
+      ArrayResize(pv, ArraySize(optNames));
       if(FrameInputs(pass, params, pcount))
          for(uint j = 0; j < pcount; j++)
+           {
             for(int k = 0; k < NSTRAT; k++)
                if(StringFind(params[j], keys[k] + "=") == 0)
                  {
                   string v = StringSubstr(params[j], StringLen(keys[k]) + 1);
                   on[k] = (v == "true" || v == "1") ? "SI" : "no";
                  }
+            for(int i = 0; i < ArraySize(optNames); i++)
+               if(StringFind(params[j], optNames[i] + "=") == 0)
+                 {
+                  pv[i] = StringSubstr(params[j], StringLen(optNames[i]) + 1);
+                  StringReplace(pv[i], ".", ",");
+                 }
+           }
 
       string list = "";
       for(int k = 0; k < NSTRAT; k++)
@@ -465,6 +522,8 @@ void OnTesterPass()
          list = "nessuna";
 
       string line = IntegerToString((long)pass) + ";" + on[0] + ";" + on[1] + ";" + on[2] + ";" + on[3] + ";" + list;
+      for(int i = 0; i < ArraySize(optNames); i++)
+         line += ";" + pv[i];
       for(int k = 0; k < NSTRAT; k++)
         {
          double nk = data[k * 3 + 0], wk = data[k * 3 + 1];
@@ -610,12 +669,12 @@ bool CheckAsia(const datetime barTime)
 
    MqlDateTime t;
    TimeToStruct(barTime, t);
-   if(t.hour < ASIA_END_HOUR || t.hour >= ASIA_LAST_HOUR)
+   if(t.hour < InpAsiaEndHour || t.hour >= InpAsiaLastHour)
       return(true);
 
    double hi[], lo[], cl[];
-   datetime from = dayStart + (datetime)(ASIA_START_HOUR * 3600);
-   datetime to   = dayStart + (datetime)(ASIA_END_HOUR * 3600 - 1);
+   datetime from = dayStart + (datetime)(InpAsiaStartHour * 3600);
+   datetime to   = dayStart + (datetime)(InpAsiaEndHour * 3600 - 1);
    int nh = CopyHigh(_Symbol, ASIA_TF, from, to, hi);
    int nl = CopyLow(_Symbol, ASIA_TF, from, to, lo);
    if(nh < 2 || nl < 2 || CopyClose(_Symbol, ASIA_TF, 1, 1, cl) != 1)
@@ -623,10 +682,27 @@ bool CheckAsia(const datetime barTime)
 
    double upper = hi[ArrayMaximum(hi)];
    double lower = lo[ArrayMinimum(lo)];
+
+   // Range troppo stretto o troppo largo: niente segnale per tutto il giorno.
+   double width = upper - lower;
+   if((InpAsiaMinRange > 0.0 && width < InpAsiaMinRange) || (InpAsiaMaxRange > 0.0 && width > InpAsiaMaxRange))
+     {
+      asiaDay = dayStart;
+      return(true);
+     }
+
    bool buySignal  = (cl[0] > upper);
    bool sellSignal = (cl[0] < lower);
    if(!buySignal && !sellSignal)
       return(true);
+
+   // Filtro trend H1: una rottura contro il trend non conta, si aspetta quella a favore.
+   if(InpAsiaH1Filter)
+     {
+      bool ready = true;
+      if(!H1TrendOk(buySignal, ready))
+         return(ready ? true : NotReady(barTime, "EMA H1"));
+     }
 
    asiaDay = dayStart;   // un solo segnale al giorno, anche se i filtri lo scartano
    OpenTrade(buySignal, InpAsiaSlPips, InpAsiaTpPips, InpAsiaMagic, "ASIA");
@@ -643,34 +719,40 @@ bool CheckRsi(const datetime barTime)
    double rsi[];
    ArraySetAsSeries(rsi, true);
    // rsi[0] = ultima candela chiusa, rsi[1] = quella precedente
-   if(BarsCalculated(rsiHandle) < RSI_PERIOD + 3 ||
+   if(BarsCalculated(rsiHandle) < InpRsiPeriod + 3 ||
       CopyBuffer(rsiHandle, 0, 1, 2, rsi) != 2 ||
       rsi[0] == EMPTY_VALUE || rsi[1] == EMPTY_VALUE)
       return(NotReady(barTime, "RSI"));
 
-   double sellLevel = RSI_SELL_LEVEL;
-   double buyLevel  = 100.0 - RSI_SELL_LEVEL;
+   double sellLevel = InpRsiLevel;
+   double buyLevel  = 100.0 - InpRsiLevel;
    bool sellSignal = (rsi[1] >= sellLevel && rsi[0] < sellLevel);
    bool buySignal  = (rsi[1] <= buyLevel  && rsi[0] > buyLevel);
    if(!sellSignal && !buySignal)
       return(true);
 
    // Filtro EMA sul timeframe dell'RSI: si opera solo a favore di trend.
-   double emaFast[], emaSlow[];
-   if(BarsCalculated(emaFastHandle) < EMA_SLOW_PERIOD + 2 ||
-      BarsCalculated(emaSlowHandle) < EMA_SLOW_PERIOD + 2 ||
-      CopyBuffer(emaFastHandle, 0, 1, 1, emaFast) != 1 ||
-      CopyBuffer(emaSlowHandle, 0, 1, 1, emaSlow) != 1 ||
-      emaFast[0] == EMPTY_VALUE || emaSlow[0] == EMPTY_VALUE)
-      return(NotReady(barTime, "EMA"));
+   if(InpRsiEmaFilter)
+     {
+      double emaFast[], emaSlow[];
+      if(BarsCalculated(emaFastHandle) < EMA_SLOW_PERIOD + 2 ||
+         BarsCalculated(emaSlowHandle) < EMA_SLOW_PERIOD + 2 ||
+         CopyBuffer(emaFastHandle, 0, 1, 1, emaFast) != 1 ||
+         CopyBuffer(emaSlowHandle, 0, 1, 1, emaSlow) != 1 ||
+         emaFast[0] == EMPTY_VALUE || emaSlow[0] == EMPTY_VALUE)
+         return(NotReady(barTime, "EMA"));
 
-   bool emaOk = buySignal ? (emaFast[0] > emaSlow[0]) : (emaFast[0] < emaSlow[0]);
-   if(!emaOk)
-      return(true);
+      bool emaOk = buySignal ? (emaFast[0] > emaSlow[0]) : (emaFast[0] < emaSlow[0]);
+      if(!emaOk)
+         return(true);
+     }
 
-   bool ready = true;
-   if(!H1TrendOk(buySignal, ready))
-      return(ready ? true : NotReady(barTime, "EMA H1"));
+   if(InpRsiH1Filter)
+     {
+      bool ready = true;
+      if(!H1TrendOk(buySignal, ready))
+         return(ready ? true : NotReady(barTime, "EMA H1"));
+     }
 
    OpenTrade(buySignal, InpRsiSlPips, InpRsiTpPips, InpRsiMagic, "RSI");
    return(true);
@@ -1833,7 +1915,7 @@ void PanelUpdate()
    bool   newsNow = InpNewsFilter && NewsBlocked(now);
 
    //--- intestazione e stato
-   PanelLine(i++, "GoldTitan Quattro 2.00   " + _Symbol, PNL_HEAD);
+   PanelLine(i++, "GoldTitan Quattro 2.10   " + _Symbol, PNL_HEAD);
    string onList = "";
    for(int k = 0; k < NSTRAT; k++)
       onList += StringFormat("%s %s  ", StratName(k), StratOn(k) ? "ON" : "off");
@@ -1920,20 +2002,20 @@ void PanelUpdate()
    string asia;
    if(!InpUseAsia)
       asia = "Asia: strategia spenta";
-   else if(t.hour < ASIA_END_HOUR)
-      asia = StringFormat("Asia: range in formazione (%02d-%02d)", ASIA_START_HOUR, ASIA_END_HOUR);
+   else if(t.hour < InpAsiaEndHour)
+      asia = StringFormat("Asia: range in formazione (%02d-%02d)", InpAsiaStartHour, InpAsiaEndHour);
    else
      {
       double hi[], lo[];
-      datetime from = dayStart + (datetime)(ASIA_START_HOUR * 3600);
-      datetime to   = dayStart + (datetime)(ASIA_END_HOUR * 3600 - 1);
+      datetime from = dayStart + (datetime)(InpAsiaStartHour * 3600);
+      datetime to   = dayStart + (datetime)(InpAsiaEndHour * 3600 - 1);
       string range = "";
       if(CopyHigh(_Symbol, ASIA_TF, from, to, hi) > 1 && CopyLow(_Symbol, ASIA_TF, from, to, lo) > 1)
          range = StringFormat(" %.2f-%.2f", lo[ArrayMinimum(lo)], hi[ArrayMaximum(hi)]);
       if(asiaDay == dayStart)
          asia = "Asia:" + range + "  segnale di oggi gia' dato";
-      else if(t.hour < ASIA_LAST_HOUR)
-         asia = "Asia:" + range + StringFormat("  attesa rottura fino alle %02d", ASIA_LAST_HOUR);
+      else if(t.hour < InpAsiaLastHour)
+         asia = "Asia:" + range + StringFormat("  attesa rottura fino alle %02d", InpAsiaLastHour);
       else
          asia = "Asia:" + range + "  finestra chiusa";
      }

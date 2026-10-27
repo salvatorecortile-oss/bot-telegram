@@ -124,4 +124,23 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 **File set**
 
 - `GoldTitan_Quattro.set`: configurazione di default con le 4 strategie attive.
-- `GoldTitan_Quattro_16combinazioni.set`: ottimizzazione con criterio "Custom max" su tutte le combinazioni accese/spente delle 4 strategie, cioè 2 × 2 × 2 × 2 = 16. Alla fine scrive `Common\Files\GoldTitan_Quattro_combinazioni.csv`. Per ogni combinazione il file riporta trade, vinti e netto di ogni strategia, poi netto totale, profit factor e drawdown.
+- `GoldTitan_Quattro_16combinazioni.set`: ottimizzazione con criterio "Custom max" su tutte le combinazioni accese/spente delle 4 strategie, cioè 2 × 2 × 2 × 2 = 16. Alla fine scrive `Common\Files\GoldTitan_Quattro_ottimizzazione.csv`. Per ogni combinazione il file riporta trade, vinti e netto di ogni strategia, poi netto totale, profit factor e drawdown.
+
+**Versione 2.10: parametri di RSI e Asia ottimizzabili**
+
+- Diventano Inputs, con i valori di default uguali a prima:
+  - **RSI:** periodo RSI, livello (70 = SELL 70 / BUY 30), filtro EMA su M5, filtro trend H1;
+  - **Asia:** ore del range (inizio, fine, ultimo ingresso), filtro trend H1 facoltativo, range minimo e massimo in $.
+- `GoldTitan_Quattro_ottimizza_RSI.set`: ottimizza solo l'RSI, con le altre strategie spente. 450 combinazioni:
+  - SL 120-240;
+  - TP 100-220;
+  - periodo 7, 14 o 21;
+  - livello 65, 70 o 75;
+  - filtro H1 sì o no.
+- `GoldTitan_Quattro_ottimizza_ASIA.set`: ottimizza solo il range asiatico, con le altre strategie spente. 450 combinazioni:
+  - SL 250-450;
+  - TP 200-400;
+  - fine del range alle 8, 9 o 10;
+  - ultimo ingresso alle 12, 13 o 14;
+  - filtro H1 sì o no.
+- Il CSV `Common\Files\GoldTitan_Quattro_ottimizzazione.csv` riporta anche i parametri di ogni passaggio.

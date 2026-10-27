@@ -1,4 +1,4 @@
-; GoldTitan Quattro 2.00 - DEFAULT (dal vivo): RSI+EMA, Rottura, Range asiatico e Fibonacci tutti attivi
+; GoldTitan Quattro 2.10 - DEFAULT (dal vivo): RSI+EMA, Rottura, Range asiatico e Fibonacci tutti attivi (= pass 15)
 ; Fibonacci con i valori di Kairos_Fibonacci_M1_XAU.set (versione C, senza 0.382), entrate 10-12 ora del server FPG su MT5
 ; Lotto 0.01 fisso per tutte le strategie. Serve un conto HEDGING.
 ; Strategie attive
@@ -6,24 +6,36 @@ InpUseRsi=true||false||0||true||N
 InpUseBrk=true||false||0||true||N
 InpUseAsia=true||false||0||true||N
 InpUseFib=true||false||0||true||N
-; Lotto: 0.01 fisso per tutte le strategie
+; Lotto
 InpLots=0.01||0.01||1||0.01||N
 InpBalancePerLot=0.0||0.0||1||0.0||N
-; RSI, Rottura, Asia: stop loss e take profit (pips)
+; Stop loss e take profit (1 pip = 0.10 di prezzo = 10 points)
 InpRsiSlPips=180||180||1||180||N
 InpRsiTpPips=160||160||1||160||N
 InpBrkSlPips=200||200||1||200||N
 InpBrkTpPips=300||300||1||300||N
 InpAsiaSlPips=400||400||1||400||N
 InpAsiaTpPips=300||300||1||300||N
-; Filtri (RSI, Rottura, Asia)
+; RSI + EMA: segnale e filtri (default = versione testata)
+InpRsiPeriod=14||14||1||14||N
+InpRsiLevel=70.0||70.0||1||70.0||N
+InpRsiEmaFilter=true||false||0||true||N
+InpRsiH1Filter=true||false||0||true||N
+; Range asiatico: orari e filtri (ore del server, default = versione testata)
+InpAsiaStartHour=1||1||1||1||N
+InpAsiaEndHour=9||9||1||9||N
+InpAsiaLastHour=13||13||1||13||N
+InpAsiaH1Filter=false||false||0||true||N
+InpAsiaMinRange=0.0||0.0||1||0.0||N
+InpAsiaMaxRange=0.0||0.0||1||0.0||N
+; Filtri (RSI, Rottura, Range asiatico)
 InpBrkAdxMin=30.0||30.0||1||30.0||N
 InpMinAtrUsd=60.0||60.0||1||60.0||N
 InpMaxSpreadPts=70||70||1||70||N
-; Pausa dopo gli stop (RSI, Rottura, Asia)
+; Protezioni per i periodi di volatilita' estrema (RSI, Rottura, Range asiatico)
 InpPauseLosses=4||4||1||4||N
 InpPauseHours=24||24||1||24||N
-; FIBONACCI: valori del set Kairos_Fibonacci_M1_XAU (versione C), entrate 10-12 ora del server FPG su MT5
+; Fibonacci (valori del set Kairos_Fibonacci_M1_XAU, versione C)
 InpFbHourStart=1000||1000||1||1000||N
 InpFbHourEnd=1200||1200||1||1200||N
 InpFbEntryMode=2||2||1||2||N
@@ -45,17 +57,17 @@ InpFbEMAPeriod=50||50||1||50||N
 InpFbWeekend=true||false||0||true||N
 InpFbFriClose=2245||2245||1||2245||N
 InpFbNews=false||false||0||true||N
-; Tester e magic number
+; Tester e identificativi
 InpSimSlipPerLot=10.0||10.0||1||10.0||N
 InpRsiMagic=20261006||20261006||1||20261006||N
 InpBrkMagic=20261007||20261007||1||20261007||N
 InpAsiaMagic=20261008||20261008||1||20261008||N
 InpFbMagic=61800||61800||1||61800||N
-; Notizie USD
+; Filtro notizie (USD)
 InpNewsFilter=true||false||0||true||N
 InpNewsBeforeMin=0||0||1||0||N
 InpNewsAfterMin=90||90||1||90||N
 InpNewsMedium=false||false||0||true||N
 InpNewsClose=false||false||0||true||N
-; Pannello
+; Pannello sul grafico (solo informativo, non cambia il trading)
 InpShowPanel=true||false||0||true||N
