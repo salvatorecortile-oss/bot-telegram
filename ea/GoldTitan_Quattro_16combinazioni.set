@@ -1,0 +1,63 @@
+; GoldTitan Quattro 2.00 - OTTIMIZZAZIONE: incrocio delle 4 strategie (2 x 2 x 2 x 2 = 16 combinazioni)
+; Variano solo InpUseRsi, InpUseBrk, InpUseAsia e InpUseFib (true/false). Tutto il resto e' fisso, lotto 0.01.
+; Tester: XAUUSD, "Ogni tick basato su tick reali", conto HEDGING, "Algoritmo completo lento", criterio "Custom max".
+; La combinazione con tutte spente gira senza operazioni (riga a zero, serve solo da riferimento).
+; Il confronto per strategia di ogni combinazione e' in Common\Files\GoldTitan_Quattro_combinazioni.csv
+; Strategie attive
+InpUseRsi=true||false||0||true||Y
+InpUseBrk=true||false||0||true||Y
+InpUseAsia=true||false||0||true||Y
+InpUseFib=true||false||0||true||Y
+; Lotto: 0.01 fisso per tutte le strategie
+InpLots=0.01||0.01||1||0.01||N
+InpBalancePerLot=0.0||0.0||1||0.0||N
+; RSI, Rottura, Asia: stop loss e take profit (pips)
+InpRsiSlPips=180||180||1||180||N
+InpRsiTpPips=160||160||1||160||N
+InpBrkSlPips=200||200||1||200||N
+InpBrkTpPips=300||300||1||300||N
+InpAsiaSlPips=400||400||1||400||N
+InpAsiaTpPips=300||300||1||300||N
+; Filtri (RSI, Rottura, Asia)
+InpBrkAdxMin=30.0||30.0||1||30.0||N
+InpMinAtrUsd=60.0||60.0||1||60.0||N
+InpMaxSpreadPts=70||70||1||70||N
+; Pausa dopo gli stop (RSI, Rottura, Asia)
+InpPauseLosses=4||4||1||4||N
+InpPauseHours=24||24||1||24||N
+; FIBONACCI: valori del set Kairos_Fibonacci_M1_XAU (versione C)
+InpFbHourStart=1000||1000||1||1000||N
+InpFbHourEnd=1200||1200||1||1200||N
+InpFbEntryMode=2||2||1||2||N
+InpFbLvl382=false||false||0||true||N
+InpFbLvl500=true||false||0||true||N
+InpFbLvl618=true||false||0||true||N
+InpFbTouchTol=0.06||0.06||1||0.06||N
+InpFbPinWick=0.6||0.6||1||0.6||N
+InpFbSLFib=1.1||1.1||1||1.1||N
+InpFbTPMode=3||3||1||3||N
+InpFbTPATRMult=2.0||2.0||1||2.0||N
+InpFbSwingDepth=3||3||1||3||N
+InpFbLookback=300||300||1||300||N
+InpFbMinLegATR=4.0||4.0||1||4.0||N
+InpFbMinLegPts=0||0||1||0||N
+InpFbMaxLegBars=60||60||1||60||N
+InpFbTrend=1||1||1||1||N
+InpFbEMAPeriod=50||50||1||50||N
+InpFbWeekend=true||false||0||true||N
+InpFbFriClose=2245||2245||1||2245||N
+InpFbNews=false||false||0||true||N
+; Tester e magic number
+InpSimSlipPerLot=10.0||10.0||1||10.0||N
+InpRsiMagic=20261006||20261006||1||20261006||N
+InpBrkMagic=20261007||20261007||1||20261007||N
+InpAsiaMagic=20261008||20261008||1||20261008||N
+InpFbMagic=61800||61800||1||61800||N
+; Notizie USD
+InpNewsFilter=true||false||0||true||N
+InpNewsBeforeMin=0||0||1||0||N
+InpNewsAfterMin=90||90||1||90||N
+InpNewsMedium=false||false||0||true||N
+InpNewsClose=false||false||0||true||N
+; Pannello
+InpShowPanel=true||false||0||true||N

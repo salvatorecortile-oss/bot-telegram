@@ -93,3 +93,35 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
   - `InpOptTarget` sceglie cosa massimizzare: totale, solo originale, solo invertita, oppure invertita meno originale.
   - A fine ottimizzazione il confronto di tutte le combinazioni è in `Common\Files\GoldTitan_BreakoutDuo_opt.csv`. Il file è separato da `;` con la virgola come decimale, quindi si apre direttamente con Excel in italiano.
   - Per ogni combinazione mostra trade, vinti, netto, profit factor e drawdown di entrambe le versioni, poi la differenza e quale versione è migliore.
+
+---
+
+# GoldTitan Quattro: Trio + Fibonacci
+
+`GoldTitan_Quattro.mq5` mette nello stesso EA le tre strategie di GoldTitan Trio 1.12 e la strategia Fibonacci di `Kairos_Fibonacci_M1_XAU.mq5`.
+
+**Le quattro strategie**
+
+| Strategia | Timeframe | Magic number |
+|---|---|---|
+| RSI+EMA | M5 | 20261006 |
+| Rottura | M15 | 20261007 |
+| Range asiatico | M5 | 20261008 |
+| Fibonacci | M1 | 61800 |
+
+- Ognuna si accende o si spegne con il suo input: `InpUseRsi`, `InpUseBrk`, `InpUseAsia`, `InpUseFib`.
+- Tutte aprono con lo stesso lotto, `InpLots`, che è 0.01 nei set.
+
+**Logica**
+
+- RSI, Rottura e Asia funzionano esattamente come nel Trio: filtri H1, ADX, ATR giornaliero, spread, notizie USD e pausa dopo 4 stop.
+- Il Fibonacci funziona esattamente come nel bot Kairos, versione C. I valori di default sono quelli di `Kairos_Fibonacci_M1_XAU.set`.
+- Il Fibonacci non conta per la pausa del Trio e non la subisce.
+- Il Fibonacci ignora il filtro notizie, a meno che non metti `InpFbNews = true`.
+- La parte Kairos RSI del bot Fibonacci, già spenta nel set, non è stata portata.
+- Serve un conto **hedging**.
+
+**File set**
+
+- `GoldTitan_Quattro.set`: configurazione di default con le 4 strategie attive.
+- `GoldTitan_Quattro_16combinazioni.set`: ottimizzazione con criterio "Custom max" su tutte le combinazioni accese/spente delle 4 strategie, cioè 2 × 2 × 2 × 2 = 16. Alla fine scrive `Common\Files\GoldTitan_Quattro_combinazioni.csv`. Per ogni combinazione il file riporta trade, vinti e netto di ogni strategia, poi netto totale, profit factor e drawdown.
