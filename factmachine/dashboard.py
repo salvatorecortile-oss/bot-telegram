@@ -74,10 +74,53 @@ class Worker(threading.Thread):
         self.last_market_id = None
         self.auto_open = AUTO_OPEN_DEFAULT
         self.last_scan = 0.0
+        self.seen = {}          # id mercato visto nel traffico -> timestamp
+        self.api_urls = []      # url /api/v1 GET viste (debug)
         self._stop = False
 
     def emit(self, kind, **data):
         self.evt_q.put({"kind": kind, **data})
+
+    def _on_response(self, response):
+        """Ascolta il traffico: cattura gli id dei mercati che il browser carica."""
+        try:
+            url = response.url
+            method = response.request.method
+        except Exception:
+            return
+        if "/api/v1/" not in url or method != "GET":
+            return
+        base = url.split("?")[0]
+        if base not in self.api_urls:
+            self.api_urls.append(base)
+            if len(self.api_urls) > 300:
+                self.api_urls.pop(0)
+        # estrai id mercato da /market/<id> oppure da ?marketId=<id>
+        for mid in re.findall(r"/market/([a-z0-9]{10,})", url):
+            self.seen[mid] = time.time()
+        m = re.search(r"marketId=([a-z0-9]{10,})", url)
+        if m:
+            self.seen[m.group(1)] = time.time()
+
+    def pick_best(self, ids):
+        """Tra gli id dati, scegli il mercato attivo, non scaduto, NON votato,
+        piu' recente. Ritorna l'id o None."""
+        best = None  # (when, mid)
+        for mid in ids:
+            status, mkt = self.api_get(MARKET_PATH + mid)
+            if status != 200 or not isinstance(mkt, dict):
+                continue
+            if mkt.get("isComplete"):
+                continue
+            if not self._in_future(mkt.get("endTime")):
+                continue
+            if bool((mkt.get("userVoteState") or {}).get("hasVoted")):
+                continue
+            when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
+            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:30]} | aperto {str(when)[:16]}")
+            if best is None or when > best[0]:
+                best = (when, mid)
+        return best[1] if best else None
 
     def api_get(self, path):
         res = self.page.evaluate(
@@ -137,15 +180,24 @@ class Worker(threading.Thread):
         return None, None
 
     def ensure_market(self):
-        """Assicura che ci sia un mercato pronto: 1) una scheda aperta su un
-        mercato, 2) altrimenti cerca l'ultimo non votato (scan)."""
+        """Trova il mercato da usare, in ordine di affidabilita':
+        1) una scheda aperta su un mercato;
+        2) gli id catturati dal traffico del browser (il piu' recente non votato);
+        3) scan dell'HTML della home."""
         pg, mid = self.current_market_page()
         if mid:
-            self.page = pg  # opera dalla scheda del mercato
+            self.page = pg
             if mid != self.last_market_id or not self.market:
                 self.load_market(mid)
             return bool(self.market)
-        # nessuna scheda su un mercato -> cerca l'ultimo non votato
+        # id visti nel traffico, dal piu' recente
+        seen_ids = sorted(self.seen, key=lambda k: self.seen[k], reverse=True)
+        best = self.pick_best(seen_ids) if seen_ids else None
+        if best:
+            if best != self.last_market_id or not self.market:
+                self.load_market(best)
+            return bool(self.market)
+        # ultima spiaggia: scan dell'HTML
         self.scan_active_market()
         return bool(self.market)
 
@@ -271,6 +323,7 @@ class Worker(threading.Thread):
                 str(USER_DATA_DIR), headless=False,
                 args=["--disable-blink-features=AutomationControlled"])
             self.ctx = ctx
+            ctx.on("response", self._on_response)  # ascolta il traffico
             self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
             self.page.goto(ORIGIN + "/")
 
@@ -299,8 +352,15 @@ class Worker(threading.Thread):
                         self.emit("log", text=f"AUTO-apri: {'ON' if self.auto_open else 'OFF'}")
                     elif cmd[0] == "scan":
                         self.emit("log", text="Cerco il mercato attivo...")
-                        self.scan_active_market()
+                        if not self.ensure_market():
+                            self.emit("log", text="Nessun mercato trovato.")
                         self.last_scan = time.time()
+                    elif cmd[0] == "apis":
+                        mk = [u for u in self.api_urls if "market" in u.lower() or "feed" in u.lower()]
+                        self.emit("log", text=f"--- {len(mk)} endpoint con 'market' (su {len(self.api_urls)} API viste) ---")
+                        for u in mk[-40:]:
+                            self.emit("log", text="  " + u.replace(ORIGIN, ""))
+                        self.emit("log", text=f"--- id mercati catturati: {list(self.seen.keys())} ---")
                     elif cmd[0] == "quit":
                         break
                     continue
@@ -360,6 +420,8 @@ class App:
                   command=lambda: self.cmd_q.put(("refresh",))).pack(side="right")
         tk.Button(bar, text="Trova mercato attivo",
                   command=lambda: self.cmd_q.put(("scan",))).pack(side="right", padx=6)
+        tk.Button(bar, text="debug API",
+                  command=lambda: self.cmd_q.put(("apis",))).pack(side="right")
 
         # Due colonne: opzione 1 e opzione 2
         cols = tk.Frame(root)
