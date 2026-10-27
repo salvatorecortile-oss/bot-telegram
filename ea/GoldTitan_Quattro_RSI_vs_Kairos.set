@@ -1,0 +1,101 @@
+; GoldTitan Quattro 2.20 - CONFRONTO RSI: RSI+EMA di GoldTitan da solo, Kairos RSI da solo, e tutti e due insieme
+; Variano solo InpUseRsi e InpUseKairos (true/false): 4 passaggi, quello con tutti e due spenti fa zero operazioni.
+; Rottura, Asia e Fibonacci spenti. Lotto 0.01. Serve un conto HEDGING (le due strategie possono stare in direzioni opposte).
+; Tester: XAUUSD, "Ogni tick basato su tick reali", "Algoritmo completo lento", criterio "Custom max".
+; Dettaglio per strategia in Common\Files\GoldTitan_Quattro_ottimizzazione.csv
+; Strategie attive
+InpUseRsi=true||false||0||true||Y
+InpUseBrk=false||false||0||true||N
+InpUseAsia=false||false||0||true||N
+InpUseFib=false||false||0||true||N
+InpUseKairos=true||false||0||true||Y
+; Lotto
+InpLots=0.01||0.01||1||0.01||N
+InpBalancePerLot=0.0||0.0||1||0.0||N
+; Stop loss e take profit (1 pip = 0.10 di prezzo = 10 points)
+InpRsiSlPips=180||180||1||180||N
+InpRsiTpPips=160||160||1||160||N
+InpBrkSlPips=200||200||1||200||N
+InpBrkTpPips=300||300||1||300||N
+InpAsiaSlPips=400||400||1||400||N
+InpAsiaTpPips=300||300||1||300||N
+; RSI + EMA: segnale e filtri (default = versione testata)
+InpRsiPeriod=14||14||1||14||N
+InpRsiLevel=70.0||70.0||1||70.0||N
+InpRsiEmaFilter=true||false||0||true||N
+InpRsiH1Filter=true||false||0||true||N
+; Range asiatico: orari e filtri (ore del server, default = versione testata)
+InpAsiaStartHour=1||1||1||1||N
+InpAsiaEndHour=9||9||1||9||N
+InpAsiaLastHour=13||13||1||13||N
+InpAsiaH1Filter=false||false||0||true||N
+InpAsiaMinRange=0.0||0.0||1||0.0||N
+InpAsiaMaxRange=0.0||0.0||1||0.0||N
+; Filtri (RSI, Rottura, Range asiatico)
+InpBrkAdxMin=30.0||30.0||1||30.0||N
+InpMinAtrUsd=60.0||60.0||1||60.0||N
+InpMaxSpreadPts=70||70||1||70||N
+; Protezioni per i periodi di volatilita' estrema (RSI, Rottura, Range asiatico)
+InpPauseLosses=4||4||1||4||N
+InpPauseHours=24||24||1||24||N
+; Fibonacci (valori del set Kairos_Fibonacci_M1_XAU, versione C)
+InpFbHourStart=1000||1000||1||1000||N
+InpFbHourEnd=1200||1200||1||1200||N
+InpFbEntryMode=2||2||1||2||N
+InpFbLvl382=false||false||0||true||N
+InpFbLvl500=true||false||0||true||N
+InpFbLvl618=true||false||0||true||N
+InpFbTouchTol=0.06||0.06||1||0.06||N
+InpFbPinWick=0.6||0.6||1||0.6||N
+InpFbSLFib=1.1||1.1||1||1.1||N
+InpFbTPMode=3||3||1||3||N
+InpFbTPATRMult=2.0||2.0||1||2.0||N
+InpFbSwingDepth=3||3||1||3||N
+InpFbLookback=300||300||1||300||N
+InpFbMinLegATR=4.0||4.0||1||4.0||N
+InpFbMinLegPts=0||0||1||0||N
+InpFbMaxLegBars=60||60||1||60||N
+InpFbTrend=1||1||1||1||N
+InpFbEMAPeriod=50||50||1||50||N
+InpFbWeekend=true||false||0||true||N
+InpFbFriClose=2245||2245||1||2245||N
+InpFbNews=false||false||0||true||N
+; Kairos RSI (valori del set Kairos_Fibonacci_M1_XAU, parte RSI)
+InpKrPeriod=28||28||1||28||N
+InpKrLow=30||30||1||30||N
+InpKrHigh=70||70||1||70||N
+InpKrExit=65||65||1||65||N
+InpKrExitSell=50||50||1||50||N
+InpKrEntryTouch=false||false||0||true||N
+InpKrATRTF=1||1||1||1||N
+InpKrATRPeriod=14||14||1||14||N
+InpKrSLATR=2.5||2.5||1||2.5||N
+InpKrBreakEven=false||false||0||true||N
+InpKrBERSI=50||50||1||50||N
+InpKrBELockPts=0||0||1||0||N
+InpKrOneAtTime=true||false||0||true||N
+InpKrWeekend=true||false||0||true||N
+InpKrFriNoNew=2100||2100||1||2100||N
+InpKrFriClose=2245||2245||1||2245||N
+InpKrUseHours=true||false||0||true||N
+InpKrHourStart=1300||1300||1||1300||N
+InpKrHourEnd=2000||2000||1||2000||N
+InpKrUseATRFilter=true||false||0||true||N
+InpKrMinATRPct=0.05||0.05||1||0.05||N
+InpKrMaxATRPct=0.13||0.13||1||0.13||N
+InpKrNews=false||false||0||true||N
+; Tester e identificativi
+InpSimSlipPerLot=10.0||10.0||1||10.0||N
+InpRsiMagic=20261006||20261006||1||20261006||N
+InpBrkMagic=20261007||20261007||1||20261007||N
+InpAsiaMagic=20261008||20261008||1||20261008||N
+InpFbMagic=61800||61800||1||61800||N
+InpKrMagic=54001||54001||1||54001||N
+; Filtro notizie (USD)
+InpNewsFilter=true||false||0||true||N
+InpNewsBeforeMin=0||0||1||0||N
+InpNewsAfterMin=90||90||1||90||N
+InpNewsMedium=false||false||0||true||N
+InpNewsClose=false||false||0||true||N
+; Pannello sul grafico (solo informativo, non cambia il trading)
+InpShowPanel=true||false||0||true||N

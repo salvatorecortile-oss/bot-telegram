@@ -144,3 +144,15 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
   - ultimo ingresso alle 12, 13 o 14;
   - filtro H1 sì o no.
 - Il CSV `Common\Files\GoldTitan_Quattro_ottimizzazione.csv` riporta anche i parametri di ogni passaggio.
+
+**Versione 2.20: quinta strategia Kairos RSI**
+
+- La parte RSI del bot Kairos è stata portata nel Quattro con la logica invariata:
+  - RSI 28 su M1, ingresso al rientro da 30/70, senza filtro trend;
+  - uscita quando l'RSI arriva a 65 (BUY) o a 50 (SELL);
+  - SL a 2,5 × ATR M1;
+  - ingressi dalle 13:00 alle 20:00 ora del server;
+  - filtro ATR in % del prezzo.
+- Si attiva con `InpUseKairos`, spento di default. Magic number 54001.
+- Usa il lotto comune `InpLots`. Non conta per la pausa del Trio e ignora le notizie, a meno che non metti `InpKrNews = true`.
+- `GoldTitan_Quattro_RSI_vs_Kairos.set`: ottimizzazione con 4 passaggi (RSI GoldTitan da solo, Kairos da solo, tutti e due insieme, nessuno). Rottura, Asia e Fibonacci sono spenti. Serve un conto hedging.
