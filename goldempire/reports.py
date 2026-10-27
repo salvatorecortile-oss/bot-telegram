@@ -57,6 +57,8 @@ def _stats(rows):
         "losses": losses,
         "win_rate": (wins / operations * 100.0) if operations else 0.0,
         "pips": sum(r["pips"] for r in rows),
+        # Operazioni ancora aperte al momento del report.
+        "open_operations": len(db.get_open_signals()),
     }
 
 

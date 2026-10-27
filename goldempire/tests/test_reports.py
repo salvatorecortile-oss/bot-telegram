@@ -53,6 +53,12 @@ add_closed(5, "CLOSED_TP", 100.0, at(2026, 9, 30, 12))       # mese precedente
 
 daily = reports.daily_report_text(date(2026, 10, 16))
 assert "16/10/2026" in daily and "Operazioni chiuse: 3" in daily, daily
+assert "Operazioni ancora aperte: 0" in daily, daily
+db.insert_signal(99, {"direction": "BUY", "entry": 1, "sl": 0.5, "tp": 2})
+db.mark_opened(99, None, 1, 0.01, 0.5, 2)
+assert "Operazioni ancora aperte: 1" in reports.daily_report_text(date(2026, 10, 16))
+assert "Operazioni ancora aperte: 1" in reports.weekly_report_text(date(2026, 10, 17))
+assert "Operazioni ancora aperte: 1" in reports.monthly_report_text(date(2026, 10, 31))
 assert "✅ Vincenti: 1" in daily and "❌ Perse: 1" in daily and "TOT +69 PIPS" in daily, daily
 
 weekly = reports.weekly_report_text(date(2026, 10, 17))
