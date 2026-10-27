@@ -1,0 +1,37 @@
+; GoldTitan Breakout Duo 1.00 - OTTIMIZZAZIONE: originale e invertita nello stesso test
+; Tester: XAUUSD, "Ogni tick basato su tick reali", conto HEDGING, deposito 1000 USD.
+; Ottimizzazione: "Algoritmo completo lento" (300 combinazioni), criterio "Custom max".
+; InpMirror=true: l'invertita usa sempre SL e TP scambiati (SL inv = TP orig, TP inv = SL orig).
+; A fine ottimizzazione il confronto completo e' in Common\Files\GoldTitan_BreakoutDuo_opt.csv
+; Lotto
+InpLots=0.01
+InpBalancePerLot=0.0
+; Versioni
+InpUseOrig=true
+InpSlPips=200||150||50||350||Y
+InpTpPips=300||150||50||350||Y
+InpUseInv=true
+InpMirror=true
+InpInvSlPips=300
+InpInvTpPips=200
+; Filtri
+InpAdxMin=30.0||20.0||5.0||35.0||Y
+InpH1Filter=true
+InpMinAtrUsd=60.0||40.0||20.0||80.0||Y
+InpMaxSpreadPts=70
+; Protezioni
+InpPauseLosses=4
+InpPauseHours=24
+; Tester
+InpOptTarget=0
+InpSimSlipPerLot=10.0
+InpOrigMagic=20261010
+InpInvMagic=20261011
+; Notizie
+InpNewsFilter=true
+InpNewsBeforeMin=0
+InpNewsAfterMin=90
+InpNewsMedium=false
+InpNewsClose=false
+; Pannello
+InpShowPanel=true

@@ -77,3 +77,19 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 - **`InpTestExtraSpread`** (solo nello Strategy Tester): simula punti di spread in più sui tick reali. Ad esempio con 30 i tick Demo2 a 18 diventano un conto a 48. Il bot si comporta come con lo spread largo: entrata, break-even e filtri. Il costo in più però non compare nel report standard: lo trovi nel risultato **Custom** e nella riga `RISULTATO` del journal.
 - **Risultato Custom** (ottimizzazione con "Custom max"): profitto meno lo spread simulato, più il rebate stimato (`InpRebatePerLot` × lotti). Un passaggio che tocca il minimo di capitale viene scartato.
 - Set: `StraddleM1_XAU_spread48.set` (dal vivo) e `StraddleM1_XAU_spread48_ottimizza.set` (ottimizzazione).
+
+---
+
+# GoldTitan — rottura originale e invertita
+
+- `GoldTitan_Trio.mq5`: versione attuale (1.12) con tre strategie: RSI+EMA, Rottura e Range asiatico.
+- `GoldTitan_BreakoutReverse.mq5`: contiene solo la Rottura invertita, con SL 300 e TP 200.
+- `GoldTitan_BreakoutDuo.mq5`: fa girare **insieme** la Rottura originale e quella invertita, ognuna con il suo magic number (20261010 e 20261011).
+  - Il segnale e i filtri sono gli stessi per le due versioni.
+  - Pausa e risultati sono separati.
+  - Serve un conto **hedging**.
+  - Con `InpMirror = true` l'invertita usa SL e TP scambiati rispetto all'originale.
+- `GoldTitan_BreakoutDuo_ottimizza.set`: ottimizzazione su SL, TP, ADX minimo e ATR minimo (300 combinazioni) con criterio "Custom max".
+  - `InpOptTarget` sceglie cosa massimizzare: totale, solo originale, solo invertita, oppure invertita meno originale.
+  - A fine ottimizzazione il confronto di tutte le combinazioni è in `Common\Files\GoldTitan_BreakoutDuo_opt.csv`. Il file è separato da `;` con la virgola come decimale, quindi si apre direttamente con Excel in italiano.
+  - Per ogni combinazione mostra trade, vinti, netto, profit factor e drawdown di entrambe le versioni, poi la differenza e quale versione è migliore.
