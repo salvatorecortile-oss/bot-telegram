@@ -188,10 +188,16 @@ class Worker(threading.Thread):
         except Exception:
             return True
 
-    def scan_active_market(self):
-        """Cerca nei link in pagina il mercato ATTIVO migliore (non scaduto,
-        non ancora votato, piu' recente) e ci entra."""
+    def scan_active_market(self, reload=True):
+        """Ricarica la home, trova il mercato ATTIVO piu' RECENTE (ultimo aperto)
+        e ci entra. 'reload' ricarica la home per vedere i mercati appena aperti."""
         try:
+            if reload:
+                self.page.goto(ORIGIN + "/")
+                try:
+                    self.page.wait_for_selector("a[href*='/market/']", timeout=6000)
+                except Exception:
+                    pass
             hrefs = self.page.eval_on_selector_all(
                 "a[href*='/market/']",
                 "els => els.map(e => e.getAttribute('href'))")
@@ -202,9 +208,10 @@ class Worker(threading.Thread):
             mid = market_id_from_url(h)
             if mid and mid not in ids:
                 ids.append(mid)
-            if len(ids) >= 12:
+            if len(ids) >= 20:
                 break
-        best = None  # (voted_flag, when, mid)
+
+        best = None  # (when, mid)
         for mid in ids:
             status, mkt = self.api_get(MARKET_PATH + mid)
             if status != 200 or not isinstance(mkt, dict):
@@ -213,20 +220,24 @@ class Worker(threading.Thread):
                 continue
             if not self._in_future(mkt.get("endTime")):
                 continue
-            voted = bool((mkt.get("userVoteState") or {}).get("hasVoted"))
             when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
-            vflag = 0 if not voted else 1  # preferisci NON votati
-            if (best is None or vflag < best[0]
-                    or (vflag == best[0] and when > best[1])):
-                best = (vflag, when, mid)
-        if best and best[2] != self.last_market_id:
-            mid = best[2]
-            self.emit("log", text=f"AUTO: mercato attivo {mid}, entro...")
+            voted = bool((mkt.get("userVoteState") or {}).get("hasVoted"))
+            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:34]} | aperto {str(when)[:19]} | votato={voted}")
+            if best is None or when > best[0]:   # il piu' recente per orario di apertura
+                best = (when, mid)
+
+        if not best:
+            self.emit("log", text=f"Nessun mercato attivo tra {len(ids)} link. Sei sulla home?")
+            return
+        if best[1] != self.last_market_id:
+            self.emit("log", text=f"AUTO: entro nell'ultimo aperto -> {best[1]}")
             try:
-                self.page.goto(ORIGIN + "/market/" + mid)
+                self.page.goto(ORIGIN + "/market/" + best[1])
             except Exception:
                 pass
-            self.load_market(mid)
+            self.load_market(best[1])
+        else:
+            self.emit("log", text="Gia' sul mercato piu' recente.")
 
     def run(self):
         with sync_playwright() as p:
@@ -270,8 +281,8 @@ class Worker(threading.Thread):
                         break
                     continue
 
-                # auto-apri nuovo mercato (se attivo), ogni ~3s
-                if self.auto_open and (time.time() - self.last_scan) >= 3.0:
+                # auto-apri nuovo mercato (se attivo): ricarica la home ogni ~6s
+                if self.auto_open and (time.time() - self.last_scan) >= 6.0:
                     self.scan_active_market()
                     self.last_scan = time.time()
 
