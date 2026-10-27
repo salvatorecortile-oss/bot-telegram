@@ -190,28 +190,33 @@ class Worker(threading.Thread):
 
     def scan_active_market(self, reload=True):
         """Ricarica la home, trova il mercato ATTIVO piu' RECENTE (ultimo aperto)
-        e ci entra. 'reload' ricarica la home per vedere i mercati appena aperti."""
+        NON ancora votato/tradato, e ci entra. Cerca gli id in TUTTO l'HTML
+        (non solo nei link <a>), cosi' becca anche il banner grande in alto."""
         try:
             if reload:
                 self.page.goto(ORIGIN + "/")
                 try:
-                    self.page.wait_for_selector("a[href*='/market/']", timeout=6000)
+                    self.page.wait_for_load_state("networkidle", timeout=6000)
                 except Exception:
                     pass
-            hrefs = self.page.eval_on_selector_all(
-                "a[href*='/market/']",
-                "els => els.map(e => e.getAttribute('href'))")
+                try:
+                    self.page.wait_for_timeout(1200)  # lascia caricare il contenuto
+                except Exception:
+                    pass
+            html = self.page.content()
         except Exception:
             return
+
+        # tutti gli id /market/<id> presenti nella pagina (anche non-link)
         ids = []
-        for h in hrefs or []:
-            mid = market_id_from_url(h)
-            if mid and mid not in ids:
+        for mid in re.findall(r"/market/([a-z0-9]{10,})", html or ""):
+            if mid not in ids:
                 ids.append(mid)
-            if len(ids) >= 20:
+            if len(ids) >= 30:
                 break
 
-        best = None  # (when, mid)
+        best = None       # (when, mid)  tra i NON votati
+        voted_found = 0
         for mid in ids:
             status, mkt = self.api_get(MARKET_PATH + mid)
             if status != 200 or not isinstance(mkt, dict):
@@ -223,21 +228,24 @@ class Worker(threading.Thread):
             when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
             voted = bool((mkt.get("userVoteState") or {}).get("hasVoted"))
             self.emit("log", text=f"   - {(mkt.get('subject') or '')[:34]} | aperto {str(when)[:19]} | votato={voted}")
-            if best is None or when > best[0]:   # il piu' recente per orario di apertura
+            if voted:                      # REGOLA: salta i gia' votati/tradati
+                voted_found += 1
+                continue
+            if best is None or when > best[0]:   # il piu' recente tra i non votati
                 best = (when, mid)
 
         if not best:
-            self.emit("log", text=f"Nessun mercato attivo tra {len(ids)} link. Sei sulla home?")
+            self.emit("log", text=f"Nessun mercato NUOVO da votare (trovati {len(ids)} mercati, {voted_found} gia' votati).")
             return
         if best[1] != self.last_market_id:
-            self.emit("log", text=f"AUTO: entro nell'ultimo aperto -> {best[1]}")
+            self.emit("log", text=f"AUTO: entro nell'ultimo NON votato -> {best[1]}")
             try:
                 self.page.goto(ORIGIN + "/market/" + best[1])
             except Exception:
                 pass
             self.load_market(best[1])
         else:
-            self.emit("log", text="Gia' sul mercato piu' recente.")
+            self.emit("log", text="Gia' sul mercato giusto.")
 
     def run(self):
         with sync_playwright() as p:
