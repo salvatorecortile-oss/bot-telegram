@@ -1,4 +1,4 @@
-; GoldTitan Quattro 2.30 - OTTIMIZZAZIONE della sola strategia RANGE ASIATICO (le altre 3 spente)
+; GoldTitan Quattro 2.40 - OTTIMIZZAZIONE della sola strategia RANGE ASIATICO (le altre 3 spente)
 ; Varia: SL 250-450 (passo 50), TP 200-400 (passo 50), fine range 8/9/10, ultimo ingresso 12/13/14, filtro trend H1 si/no
 ; 5 x 5 x 3 x 3 x 2 = 450 combinazioni. Versione attuale = SL 400, TP 300, range 1-9, ingressi fino alle 13, H1 no.
 ; Tester: XAUUSD, "Ogni tick basato su tick reali", "Algoritmo completo lento" (o genetico per fare prima), criterio "Custom max".
@@ -15,21 +15,21 @@ InpAsiaPreset=0||0||1||0||N
 InpLots=0.01||0.01||1||0.01||N
 InpBalancePerLot=0.0||0.0||1||0.0||N
 ; Stop loss e take profit (1 pip = 0.10 di prezzo = 10 points)
-InpRsiSlPips=180||180||1||180||N
-InpRsiTpPips=160||160||1||160||N
+InpRsiSlPips=150||150||1||150||N
+InpRsiTpPips=220||220||1||220||N
 InpBrkSlPips=200||200||1||200||N
 InpBrkTpPips=300||300||1||300||N
-InpAsiaSlPips=400||250||50||450||Y
-InpAsiaTpPips=300||200||50||400||Y
-; RSI + EMA: segnale e filtri (default = versione testata)
+InpAsiaSlPips=350||250||50||450||Y
+InpAsiaTpPips=250||200||50||400||Y
+; RSI + EMA: segnale e filtri
 InpRsiPeriod=14||14||1||14||N
 InpRsiLevel=70.0||70.0||1||70.0||N
 InpRsiEmaFilter=true||false||0||true||N
 InpRsiH1Filter=true||false||0||true||N
-; Range asiatico: orari e filtri (ore del server, default = versione testata)
+; Range asiatico: orari e filtri (ore del server)
 InpAsiaStartHour=1||1||1||1||N
 InpAsiaEndHour=9||8||1||10||Y
-InpAsiaLastHour=13||12||1||14||Y
+InpAsiaLastHour=14||12||1||14||Y
 InpAsiaH1Filter=false||false||0||true||Y
 InpAsiaMinRange=0.0||0.0||1||0.0||N
 InpAsiaMaxRange=0.0||0.0||1||0.0||N

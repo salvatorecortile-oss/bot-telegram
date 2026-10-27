@@ -1,4 +1,4 @@
-; GoldTitan Quattro 2.30 - OTTIMIZZAZIONE: incrocio delle 4 strategie (2 x 2 x 2 x 2 = 16 combinazioni)
+; GoldTitan Quattro 2.40 - OTTIMIZZAZIONE: incrocio delle 4 strategie (2 x 2 x 2 x 2 = 16 combinazioni)
 ; Variano solo InpUseRsi, InpUseBrk, InpUseAsia e InpUseFib (true/false). Tutto il resto e' fisso, lotto 0.01.
 ; Tester: XAUUSD, "Ogni tick basato su tick reali", conto HEDGING, "Algoritmo completo lento", criterio "Custom max".
 ; La combinazione con tutte spente gira senza operazioni (riga a zero, serve solo da riferimento).
@@ -21,12 +21,12 @@ InpBrkSlPips=200||200||1||200||N
 InpBrkTpPips=300||300||1||300||N
 InpAsiaSlPips=400||400||1||400||N
 InpAsiaTpPips=300||300||1||300||N
-; RSI + EMA: segnale e filtri (default = versione testata)
+; RSI + EMA: segnale e filtri
 InpRsiPeriod=14||14||1||14||N
 InpRsiLevel=70.0||70.0||1||70.0||N
 InpRsiEmaFilter=true||false||0||true||N
 InpRsiH1Filter=true||false||0||true||N
-; Range asiatico: orari e filtri (ore del server, default = versione testata)
+; Range asiatico: orari e filtri (ore del server)
 InpAsiaStartHour=1||1||1||1||N
 InpAsiaEndHour=9||9||1||9||N
 InpAsiaLastHour=13||13||1||13||N

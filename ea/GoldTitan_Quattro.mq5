@@ -23,11 +23,14 @@
 //|  2.30: profili pronti per RSI e Asia (InpRsiPreset,              |
 //|  InpAsiaPreset): spenta / base / proficua / prudente, per        |
 //|  provare tutte le combinazioni in un'unica ottimizzazione.       |
+//|  2.40: default = pass 47 delle 64 combinazioni: RSI prudente     |
+//|  (SL 150 TP 220) e Asia proficua (SL 350 TP 250, range 1-9,      |
+//|  ingressi fino alle 14), Rottura e Fibonacci invariati.          |
 //|  In ottimizzazione scrive in Common\Files il file                |
 //|  GoldTitan_Quattro_ottimizzazione.csv con il risultato di ogni   |
 //|  strategia per ogni combinazione provata.                        |
 //+------------------------------------------------------------------+
-#property version   "2.30"
+#property version   "2.40"
 #property description "GoldTitan Quattro - RSI+EMA (M5), rottura del canale (M15), range asiatico (M5) e Fibonacci (M1) su XAUUSD."
 
 #include <Trade\Trade.mqh>
@@ -83,23 +86,23 @@ input double InpLots          = 0.01;      // Lotto (uguale per tutte le strateg
 input double InpBalancePerLot = 0.0;       // Lotto progressivo: un lotto ogni X $ di saldo (0 = lotto fisso)
 
 //--- Stop loss e take profit (1 pip = 0.10 di prezzo = 10 points)
-input int    InpRsiSlPips     = 180;       // RSI: stop loss (pips)
-input int    InpRsiTpPips     = 160;       // RSI: take profit (pips)
+input int    InpRsiSlPips     = 150;       // RSI: stop loss (pips) - pass 47, profilo prudente (base 180)
+input int    InpRsiTpPips     = 220;       // RSI: take profit (pips) - pass 47, profilo prudente (base 160)
 input int    InpBrkSlPips     = 200;       // ROTTURA: stop loss (pips)
 input int    InpBrkTpPips     = 300;       // ROTTURA: take profit (pips)
-input int    InpAsiaSlPips    = 400;       // RANGE ASIATICO: stop loss (pips)
-input int    InpAsiaTpPips    = 300;       // RANGE ASIATICO: take profit (pips)
+input int    InpAsiaSlPips    = 350;       // RANGE ASIATICO: stop loss (pips) - pass 47, profilo proficuo (base 400)
+input int    InpAsiaTpPips    = 250;       // RANGE ASIATICO: take profit (pips) - pass 47, profilo proficuo (base 300)
 
-//--- RSI + EMA: segnale e filtri (default = versione testata)
+//--- RSI + EMA: segnale e filtri
 input int    InpRsiPeriod     = 14;        // RSI: periodo (M5)
 input double InpRsiLevel      = 70.0;      // RSI: livello SELL (il BUY e' 100 - livello, 70 -> 30)
 input bool   InpRsiEmaFilter  = true;      // RSI: filtro EMA 50/200 su M5
 input bool   InpRsiH1Filter   = true;      // RSI: filtro trend H1 (EMA 50/200)
 
-//--- Range asiatico: orari e filtri (ore del server, default = versione testata)
+//--- Range asiatico: orari e filtri (ore del server)
 input int    InpAsiaStartHour = 1;         // RANGE ASIATICO: inizio del range (ora)
 input int    InpAsiaEndHour   = 9;         // RANGE ASIATICO: fine del range, da qui cerca la rottura (ora)
-input int    InpAsiaLastHour  = 13;        // RANGE ASIATICO: dopo quest'ora non entra piu' (ora)
+input int    InpAsiaLastHour  = 14;        // RANGE ASIATICO: dopo quest'ora non entra piu' (ora) - pass 47 (base 13)
 input bool   InpAsiaH1Filter  = false;     // RANGE ASIATICO: entra solo a favore del trend H1 (EMA 50/200)
 input double InpAsiaMinRange  = 0.0;       // RANGE ASIATICO: salta il giorno se il range e' piu' stretto di X $ (0 = off)
 input double InpAsiaMaxRange  = 0.0;       // RANGE ASIATICO: salta il giorno se il range e' piu' largo di X $ (0 = off)
@@ -433,7 +436,7 @@ int OnInit()
         }
      }
 
-   PrintFormat("GoldTitan Quattro 2.30 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
+   PrintFormat("GoldTitan Quattro 2.40 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
                _Symbol, gUseRsi ? "ON" : "OFF", InpUseBrk ? "ON" : "OFF", gUseAsia ? "ON" : "OFF",
                InpUseFib ? "ON" : "OFF", InpFbHourStart, InpFbHourEnd, InpLots, InpBalancePerLot);
    PrintFormat("Profili: RSI %s (SL %d TP %d) | Asia %s (SL %d TP %d, range %d-%d, fino alle %d, H1 %s)",
@@ -2243,7 +2246,7 @@ void PanelUpdate()
    bool   newsNow = InpNewsFilter && NewsBlocked(now);
 
    //--- intestazione e stato
-   PanelLine(i++, "GoldTitan Quattro 2.30   " + _Symbol, PNL_HEAD);
+   PanelLine(i++, "GoldTitan Quattro 2.40   " + _Symbol, PNL_HEAD);
    string onList = "";
    for(int k = 0; k < NSTRAT; k++)
       onList += StringFormat("%s %s  ", StratName(k), StratOn(k) ? "ON" : "off");

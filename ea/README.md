@@ -179,3 +179,12 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 - `GoldTitan_Quattro_64combinazioni.set` prova tutte le combinazioni:
   - 4 profili RSI × 4 profili Asia × Rottura accesa/spenta × Fibonacci acceso/spento = 64 passaggi;
   - dentro ci sono anche le 16 combinazioni di prima (profili base).
+
+**Versione 2.40: default = pass 47**
+
+- I valori di default dell'EA e di `GoldTitan_Quattro.set` sono quelli del pass 47 delle 64 combinazioni:
+  - RSI prudente: SL 150, TP 220;
+  - Asia proficua: SL 350, TP 250, range 1-9, ingressi fino alle 14;
+  - Rottura e Fibonacci invariati.
+- Risultato nel backtest gen–ott 2026: +3.395 $, DD circa 251 $, PF 1,61, recovery 13,8.
+- `GoldTitan_Quattro_16combinazioni.set` resta con i valori base di prima.
