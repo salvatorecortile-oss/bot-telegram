@@ -1,24 +1,26 @@
 """
-FactMachine - Passo 3: il bot che vota e apre l'operazione all'istante.
+FactMachine - il bot che vota e apre l'operazione all'istante.
 
-Come funziona (basato sulla ricognizione):
-- Su FactMachine votare = prendere posizione = fare trade. Un'unica chiamata:
+Come funziona (verificato dalla ricognizione):
+- Su FactMachine votare una risposta = prendere posizione = fare trade.
+  E' TUTTO in UN'UNICA chiamata:
       POST /api/v1/order/transactions/buy
       body: {marketId, optionId, usdcInD6String, maxPriceD6String, maxSlippageBps}
-  Il server esegue l'operazione e risponde con una "signature" Solana.
-- L'autenticazione viaggia nei cookie della sessione (Clerk), quindi spariamo
-  la chiamata DENTRO il browser gia' loggato (page.evaluate + fetch): i cookie
-  vanno in automatico, niente token da gestire. E' anche la via piu' veloce.
+  dove:
+      optionId          = il VOTO (quale risposta scegli)
+      maxPriceD6String  = la PERCENTUALE/prezzo max per quota (77% -> "770000")
+      usdcInD6String    = l'IMPORTO in USDC (100$ -> "100000000")
+  Il server esegue e risponde con una "signature" Solana.
+- L'autenticazione sta nei cookie della sessione (Clerk): spariamo la chiamata
+  DENTRO il browser gia' loggato, cosi' i cookie vanno da soli. E' anche la via
+  piu' veloce.
 
-Idea d'uso (per entrare PRIMA che il prezzo salga):
-1. 'load <url o id mercato>'  -> carica il mercato e mostra opzioni + prezzi
-2. 'arm yes 10'               -> ti PRE-ARMI: opzione "Yes", 10 USDC
-3. INVIO (o 'go')             -> SPARA subito voto+operazione
+Le opzioni CAMBIANO ad ogni round (non sempre Yes/No): il bot le legge in
+automatico dal mercato e tu voti con 1 o 2 (o col nome).
 
-Uso:
-    python factmachine/bot.py
-
-Requisiti: aver gia' fatto login.py (sessione salvata in browser_profile/).
+======================================================================
+ CONFIG - MODIFICABILE DA TE (valori di partenza)
+======================================================================
 """
 import asyncio
 import json
@@ -27,6 +29,12 @@ from pathlib import Path
 
 from playwright.async_api import async_playwright
 
+# ---- I TUOI DEFAULT (cambiali qui, oppure a runtime con i comandi) ----
+DEFAULT_USDC = 100.0        # importo fisso per operazione, in USDC
+DEFAULT_PCT = 77.0          # percentuale/prezzo max per quota (es. 77 = 77%)
+DEFAULT_SLIPPAGE_BPS = 10000  # tolleranza slippage in bps (10000 = 100%)
+# -----------------------------------------------------------------------
+
 BASE_DIR = Path(__file__).resolve().parent
 USER_DATA_DIR = BASE_DIR / "browser_profile"
 
@@ -34,13 +42,14 @@ ORIGIN = "https://alpha.factmachine.com"
 BUY_PATH = "/api/v1/order/transactions/buy"
 MARKET_PATH = "/api/v1/market/"
 
-# Default dell'ordine
-DEFAULT_SLIPPAGE_BPS = 10000   # 100% (come nella ricognizione)
-DEFAULT_MAX_PRICE = 1.0        # prezzo massimo per quota (1.0 = nessun limite)
+
+def pct_to_fraction(value: float) -> float:
+    """77 -> 0.77 ; 0.77 -> 0.77. (valori > 1 trattati come percentuale)."""
+    return value / 100.0 if value > 1 else value
 
 
 def market_id_from(text: str) -> str:
-    """Accetta un id oppure un URL tipo https://alpha.factmachine.com/market/<id>."""
+    """Accetta un id o un URL tipo .../market/<id>."""
     text = text.strip()
     m = re.search(r"/market/([a-z0-9]+)", text)
     return m.group(1) if m else text
@@ -53,7 +62,6 @@ async def ainput(prompt: str = "") -> str:
 
 
 async def api_get(page, path: str):
-    """GET verso l'API usando la sessione del browser (cookie automatici)."""
     js = """
     async (path) => {
       const r = await fetch(path, { credentials: 'include' });
@@ -84,42 +92,18 @@ async def fire_buy(page, body: dict):
     return await page.evaluate(js, body)
 
 
-class Armed:
-    """Ordine pre-armato, pronto a partire."""
-    def __init__(self):
-        self.market = None       # dict del mercato
-        self.option_id = None
-        self.option_name = None
-        self.usdc = None         # importo in USDC (float)
-        self.max_price = DEFAULT_MAX_PRICE
-        self.slippage_bps = DEFAULT_SLIPPAGE_BPS
-
-    def ready(self) -> bool:
-        return self.market and self.option_id and self.usdc
-
-    def body(self) -> dict:
-        return {
-            "marketId": self.market["id"],
-            "optionId": self.option_id,
-            "usdcInD6String": str(int(round(self.usdc * 1_000_000))),
-            "maxPriceD6String": str(int(round(self.max_price * 1_000_000))),
-            "maxSlippageBps": self.slippage_bps,
-        }
-
-
-def show_market(mkt: dict):
-    o1, o2 = mkt.get("optionOne", {}), mkt.get("optionTwo", {})
-    lp = mkt.get("latestPrice") or {}
-    p1 = lp.get("optionOnePrice")
-    p2 = lp.get("optionTwoPrice")
-    print(f"\n  MERCATO: {mkt.get('subject')}")
-    print(f"  id: {mkt.get('id')}  fase: {mkt.get('phase')}  completo: {mkt.get('isComplete')}")
-    print(f"    [1/{o1.get('name')}]  prezzo: {p1}")
-    print(f"    [2/{o2.get('name')}]  prezzo: {p2}")
+def build_body(market_id, option_id, usdc, pct, slippage_bps) -> dict:
+    return {
+        "marketId": market_id,
+        "optionId": option_id,
+        "usdcInD6String": str(int(round(usdc * 1_000_000))),
+        "maxPriceD6String": str(int(round(pct_to_fraction(pct) * 1_000_000))),
+        "maxSlippageBps": int(slippage_bps),
+    }
 
 
 def resolve_option(mkt: dict, token: str):
-    """Da 'yes'/'no'/'1'/'2' all'(optionId, nome)."""
+    """Da '1'/'2'/nome all'(optionId, nome). Funziona con qualsiasi risposta."""
     o1, o2 = mkt.get("optionOne", {}), mkt.get("optionTwo", {})
     t = token.strip().lower()
     if t in ("1", "one", (o1.get("name") or "").lower()):
@@ -129,18 +113,65 @@ def resolve_option(mkt: dict, token: str):
     return None, None
 
 
-HELP = """
-Comandi:
-  load <url|id>        carica un mercato e mostra opzioni + prezzi
-  price                aggiorna e rimostra i prezzi del mercato caricato
-  arm <opz> <usdc>     pre-arma l'ordine. opz = yes/no o 1/2. es: arm yes 10
-  maxprice <0..1>      (opz.) prezzo massimo per quota, protegge dallo spike
-  slippage <bps>       (opz.) slippage in bps (default 10000 = 100%)
-  show                 mostra l'ordine pre-armato
-  go  (o INVIO vuoto)  SPARA l'ordine pre-armato ADESSO
-  help                 questa guida
-  quit                 esci
+def show_market(mkt: dict):
+    o1, o2 = mkt.get("optionOne", {}), mkt.get("optionTwo", {})
+    lp = mkt.get("latestPrice") or {}
+    p1, p2 = lp.get("optionOnePrice"), lp.get("optionTwoPrice")
+    pct1 = f"{p1*100:.1f}%" if isinstance(p1, (int, float)) else "?"
+    pct2 = f"{p2*100:.1f}%" if isinstance(p2, (int, float)) else "?"
+    print(f"\n  MERCATO: {mkt.get('subject')}")
+    print(f"  id: {mkt.get('id')}  fase: {mkt.get('phase')}  gia' votato: {bool(mkt.get('userVoteState'))}")
+    print(f"    [1/{o1.get('name')}]  prezzo attuale: {pct1}")
+    print(f"    [2/{o2.get('name')}]  prezzo attuale: {pct2}")
+
+
+class State:
+    def __init__(self):
+        self.market = None
+        # ordine pre-armato
+        self.option_id = None
+        self.option_name = None
+        self.usdc = DEFAULT_USDC
+        self.pct = DEFAULT_PCT
+        self.slippage_bps = DEFAULT_SLIPPAGE_BPS
+
+    def armed(self) -> bool:
+        return bool(self.market and self.option_id)
+
+
+HELP = f"""
+Comandi (tutto modificabile al volo):
+  load <url|id>          carica il mercato e mostra opzioni + prezzi
+  price                  aggiorna i prezzi del mercato caricato
+
+  buy <1|2> [usdc] [pct] SPARA SUBITO voto+operazione (il piu' veloce).
+                         es:  buy 1          -> opzione 1, {DEFAULT_USDC}$ al {DEFAULT_PCT}%
+                              buy 2 100 77    -> opzione 2, 100$, max 77%
+
+  arm <1|2> [usdc] [pct] pre-arma l'ordine (poi INVIO o 'go' per sparare)
+  go  (o INVIO vuoto)    spara l'ordine pre-armato
+
+  usdc <importo>         cambia l'importo di default (es. usdc 100)
+  pct <percentuale>      cambia la percentuale/prezzo max (es. pct 77)
+  slippage <bps>         cambia lo slippage (default {DEFAULT_SLIPPAGE_BPS})
+  show                   mostra impostazioni e ordine armato
+  help / quit
 """
+
+
+async def do_fire(page, st, option_id, option_name, usdc, pct, slippage):
+    body = build_body(st.market["id"], option_id, usdc, pct, slippage)
+    print(f">>> SPARO: {option_name}  {usdc}$  max {pct}%  (slippage {slippage}bps)")
+    res = await fire_buy(page, body)
+    print(f"    status {res['status']} in {res['ms']} ms")
+    try:
+        j = json.loads(res["text"])
+        if isinstance(j, dict) and j.get("signature"):
+            print(f"    OK  signature: {j['signature']}")
+        else:
+            print(f"    risposta: {j}")
+    except Exception:
+        print(f"    risposta: {res['text'][:500]}")
 
 
 async def main():
@@ -148,7 +179,7 @@ async def main():
         print("Profilo non trovato. Esegui prima: python login.py")
         return
 
-    armed = Armed()
+    st = State()
 
     async with async_playwright() as p:
         context = await p.chromium.launch_persistent_context(
@@ -159,7 +190,6 @@ async def main():
         page = context.pages[0] if context.pages else await context.new_page()
         await page.goto(ORIGIN + "/")
 
-        # Verifica sessione
         status, me = await api_get(page, "/api/v1/user/current")
         if status != 200:
             print(f"ATTENZIONE: sessione non valida (status {status}). Rifai login.py")
@@ -168,27 +198,18 @@ async def main():
             print(f"Sessione OK (userId: {uid})")
 
         print(HELP)
+        print(f"Default attuali: importo {st.usdc}$  |  percentuale {st.pct}%  |  slippage {st.slippage_bps}bps")
 
         while True:
             raw = (await ainput("\nfm> ")).strip()
 
-            # INVIO vuoto = spara (se armato)
+            # INVIO vuoto o 'go' = spara l'armato
             if raw == "" or raw.lower() == "go":
-                if not armed.ready():
-                    print("Niente da sparare. Prima: load ... e arm ...")
+                if not st.armed():
+                    print("Niente di armato. Usa 'arm 1' oppure 'buy 1'.")
                     continue
-                body = armed.body()
-                print(f"SPARO: {armed.option_name} {armed.usdc} USDC ...")
-                res = await fire_buy(page, body)
-                print(f"  status {res['status']} in {res['ms']} ms")
-                try:
-                    j = json.loads(res["text"])
-                    if "signature" in j:
-                        print(f"  OK signature: {j['signature']}")
-                    else:
-                        print(f"  risposta: {j}")
-                except Exception:
-                    print(f"  risposta: {res['text'][:500]}")
+                await do_fire(page, st, st.option_id, st.option_name,
+                              st.usdc, st.pct, st.slippage_bps)
                 continue
 
             parts = raw.split()
@@ -207,67 +228,83 @@ async def main():
                 mid = market_id_from(parts[1])
                 status, mkt = await api_get(page, MARKET_PATH + mid)
                 if status != 200 or not isinstance(mkt, dict):
-                    print(f"errore caricamento mercato (status {status}): {mkt}")
+                    print(f"errore caricamento (status {status}): {mkt}")
                     continue
-                armed.market = mkt
-                armed.option_id = None
-                # Tieni la pagina del mercato aperta (prezzi vivi, meno latenza)
+                st.market = mkt
+                st.option_id = None
                 await page.goto(f"{ORIGIN}/market/{mid}")
                 show_market(mkt)
 
             elif cmd == "price":
-                if not armed.market:
+                if not st.market:
                     print("prima: load <url|id>")
                     continue
-                status, mkt = await api_get(page, MARKET_PATH + armed.market["id"])
+                status, mkt = await api_get(page, MARKET_PATH + st.market["id"])
                 if status == 200 and isinstance(mkt, dict):
-                    armed.market = mkt
+                    st.market = mkt
                     show_market(mkt)
                 else:
                     print(f"errore (status {status})")
 
-            elif cmd == "arm":
-                if not armed.market:
+            elif cmd in ("buy", "arm"):
+                if not st.market:
                     print("prima: load <url|id>")
                     continue
-                if len(parts) < 3:
-                    print("uso: arm <yes|no|1|2> <usdc>")
+                if len(parts) < 2:
+                    print(f"uso: {cmd} <1|2> [usdc] [pct]")
                     continue
-                oid, oname = resolve_option(armed.market, parts[1])
+                oid, oname = resolve_option(st.market, parts[1])
                 if not oid:
-                    print("opzione non riconosciuta (usa yes/no o 1/2)")
+                    print("opzione non riconosciuta (usa 1 o 2, o il nome)")
                     continue
-                try:
-                    usdc = float(parts[2])
-                except ValueError:
-                    print("importo non valido")
-                    continue
-                armed.option_id, armed.option_name, armed.usdc = oid, oname, usdc
-                print(f"ARMATO: {oname} ({oid}) per {usdc} USDC "
-                      f"| maxprice {armed.max_price} | slippage {armed.slippage_bps}bps")
-                print("Premi INVIO (o 'go') per sparare.")
+                usdc = st.usdc
+                pct = st.pct
+                if len(parts) >= 3:
+                    try:
+                        usdc = float(parts[2])
+                    except ValueError:
+                        print("importo non valido")
+                        continue
+                if len(parts) >= 4:
+                    try:
+                        pct = float(parts[3])
+                    except ValueError:
+                        print("percentuale non valida")
+                        continue
 
-            elif cmd == "maxprice":
+                if cmd == "buy":
+                    # spara subito
+                    await do_fire(page, st, oid, oname, usdc, pct, st.slippage_bps)
+                else:
+                    # arma e aspetta INVIO
+                    st.option_id, st.option_name, st.usdc, st.pct = oid, oname, usdc, pct
+                    print(f"ARMATO: {oname}  {usdc}$  max {pct}%. Premi INVIO (o 'go').")
+
+            elif cmd == "usdc":
                 try:
-                    armed.max_price = float(parts[1])
-                    print(f"max price per quota = {armed.max_price}")
+                    st.usdc = float(parts[1]); print(f"importo default = {st.usdc}$")
                 except (IndexError, ValueError):
-                    print("uso: maxprice <0..1>")
+                    print("uso: usdc <importo>")
+
+            elif cmd == "pct":
+                try:
+                    st.pct = float(parts[1]); print(f"percentuale default = {st.pct}%")
+                except (IndexError, ValueError):
+                    print("uso: pct <percentuale>")
 
             elif cmd == "slippage":
                 try:
-                    armed.slippage_bps = int(parts[1])
-                    print(f"slippage = {armed.slippage_bps} bps")
+                    st.slippage_bps = int(parts[1]); print(f"slippage = {st.slippage_bps} bps")
                 except (IndexError, ValueError):
                     print("uso: slippage <bps>")
 
             elif cmd == "show":
-                if armed.ready():
-                    print(f"ARMATO: {armed.option_name} {armed.usdc} USDC "
-                          f"| maxprice {armed.max_price} | slippage {armed.slippage_bps}bps")
-                    print(f"body: {armed.body()}")
+                print(f"Default: importo {st.usdc}$ | pct {st.pct}% | slippage {st.slippage_bps}bps")
+                if st.armed():
+                    print(f"ARMATO: {st.option_name}  {st.usdc}$  max {st.pct}%")
+                    print(f"body: {build_body(st.market['id'], st.option_id, st.usdc, st.pct, st.slippage_bps)}")
                 else:
-                    print("non ancora armato")
+                    print("niente armato")
 
             else:
                 print("comando sconosciuto. 'help' per la guida.")

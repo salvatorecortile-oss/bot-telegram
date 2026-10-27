@@ -34,9 +34,24 @@ Nella finestra fai UN voto + UNA operazione a mano. Lo script registra tutte le
 chiamate di rete in `recon_capture.json`. Manda quel file per costruire il
 passo 3.
 
-## Passo 3 - il bot (da costruire con i dati del passo 2)
+## Passo 3 - il bot
 
-`bot.py` si "arma" con la tua scelta e spara voto + operazione all'istante.
+```bash
+python factmachine/bot.py
+```
+
+Su FactMachine votare = prendere posizione = fare trade: tutto in un'unica
+chiamata (`optionId` = voto, `maxPriceD6String` = percentuale/prezzo max,
+`usdcInD6String` = importo). Le opzioni cambiano ad ogni round: si vota con
+`1` o `2` (o col nome).
+
+Flusso per un round:
+1. `load <url|id>`  carica il mercato, mostra le opzioni e i prezzi
+2. quando il gruppo dice la risposta:  `buy 1`  (spara subito: 100$ al 77%)
+   - oppure pre-arma con `arm 1` e poi premi INVIO al momento giusto
+
+Default modificabili in cima a `bot.py` (`DEFAULT_USDC`, `DEFAULT_PCT`,
+`DEFAULT_SLIPPAGE_BPS`) o a runtime (`usdc 100`, `pct 77`, `slippage 10000`).
 
 ## Nota
 
