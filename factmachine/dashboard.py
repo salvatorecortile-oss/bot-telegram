@@ -68,6 +68,7 @@ class Worker(threading.Thread):
         super().__init__(daemon=True)
         self.cmd_q = cmd_q
         self.evt_q = evt_q
+        self.ctx = None
         self.page = None
         self.market = None
         self.last_market_id = None
@@ -123,19 +124,35 @@ class Worker(threading.Thread):
             self.market = mkt
             self.emit("market", market=self._market_view(mkt))
 
-    def do_buy(self, option_index, usdc, pct):
-        """Fa i DUE passaggi in sequenza: 1) VOTO (con la percentuale), 2) ACQUISTO."""
-        # se non c'e' mercato, prova a rilevarlo dalla pagina corrente
-        if not self.market:
-            mid = None
+    def current_market_page(self):
+        """Cerca tra TUTTE le schede aperte una che sia su un mercato."""
+        pages = self.ctx.pages if self.ctx else [self.page]
+        for pg in pages:
             try:
-                mid = market_id_from_url(self.page.url)
+                mid = market_id_from_url(pg.url)
             except Exception:
-                pass
+                mid = None
             if mid:
+                return pg, mid
+        return None, None
+
+    def ensure_market(self):
+        """Assicura che ci sia un mercato pronto: 1) una scheda aperta su un
+        mercato, 2) altrimenti cerca l'ultimo non votato (scan)."""
+        pg, mid = self.current_market_page()
+        if mid:
+            self.page = pg  # opera dalla scheda del mercato
+            if mid != self.last_market_id or not self.market:
                 self.load_market(mid)
-        if not self.market:
-            self.emit("log", text="Nessun mercato: apri il mercato nel browser.")
+            return bool(self.market)
+        # nessuna scheda su un mercato -> cerca l'ultimo non votato
+        self.scan_active_market()
+        return bool(self.market)
+
+    def do_buy(self, option_index, usdc, pct):
+        """Un click fa tutto: trova il mercato -> VOTO -> ACQUISTO."""
+        if not self.ensure_market():
+            self.emit("log", text="Nessun mercato trovato. Apri il mercato nel browser o usa 'Trova mercato attivo'.")
             return
 
         opt = self.market["optionOne"] if option_index == 1 else self.market["optionTwo"]
@@ -253,6 +270,7 @@ class Worker(threading.Thread):
             ctx = p.chromium.launch_persistent_context(
                 str(USER_DATA_DIR), headless=False,
                 args=["--disable-blink-features=AutomationControlled"])
+            self.ctx = ctx
             self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
             self.page.goto(ORIGIN + "/")
 
@@ -292,12 +310,10 @@ class Worker(threading.Thread):
                     self.scan_active_market()
                     self.last_scan = time.time()
 
-                # rileva mercato dalla URL del browser
-                try:
-                    mid = market_id_from_url(self.page.url)
-                except Exception:
-                    mid = None
+                # rileva mercato da QUALSIASI scheda aperta sul mercato
+                pg, mid = self.current_market_page()
                 if mid and mid != self.last_market_id:
+                    self.page = pg
                     self.load_market(mid)
 
                 # refresh periodico prezzi
