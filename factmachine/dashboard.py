@@ -29,6 +29,7 @@ import re
 import threading
 import time
 import tkinter as tk
+from datetime import datetime, timezone
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -71,6 +72,7 @@ class Worker(threading.Thread):
         self.market = None
         self.last_market_id = None
         self.auto_open = AUTO_OPEN_DEFAULT
+        self.last_scan = 0.0
         self._stop = False
 
     def emit(self, kind, **data):
@@ -175,29 +177,56 @@ class Worker(threading.Thread):
             self.emit("log", text=f"    ACQUISTO status {bres['status']} ({bres['ms']} ms): {bres['text'][:300]}")
         self.refresh_price()
 
-    def try_auto_open(self):
-        """Se la pagina NON e' un mercato, cerca un link a un mercato e ci entra."""
+    @staticmethod
+    def _in_future(iso):
+        """True se la data ISO e' nel futuro (o se non e' leggibile)."""
+        if not iso:
+            return True
         try:
-            url = self.page.url
+            t = datetime.fromisoformat(str(iso).replace("Z", "+00:00"))
+            return t > datetime.now(timezone.utc)
         except Exception:
-            return
-        if market_id_from_url(url):
-            return  # gia' su un mercato: ci pensa l'auto-detect
+            return True
+
+    def scan_active_market(self):
+        """Cerca nei link in pagina il mercato ATTIVO migliore (non scaduto,
+        non ancora votato, piu' recente) e ci entra."""
         try:
             hrefs = self.page.eval_on_selector_all(
                 "a[href*='/market/']",
                 "els => els.map(e => e.getAttribute('href'))")
         except Exception:
             return
+        ids = []
         for h in hrefs or []:
             mid = market_id_from_url(h)
-            if mid and mid != self.last_market_id:
-                self.emit("log", text=f"AUTO: trovato nuovo mercato {mid}, entro...")
-                try:
-                    self.page.goto(ORIGIN + (h if h.startswith("/") else "/" + h))
-                except Exception:
-                    pass
-                return
+            if mid and mid not in ids:
+                ids.append(mid)
+            if len(ids) >= 12:
+                break
+        best = None  # (voted_flag, when, mid)
+        for mid in ids:
+            status, mkt = self.api_get(MARKET_PATH + mid)
+            if status != 200 or not isinstance(mkt, dict):
+                continue
+            if mkt.get("isComplete"):
+                continue
+            if not self._in_future(mkt.get("endTime")):
+                continue
+            voted = bool((mkt.get("userVoteState") or {}).get("hasVoted"))
+            when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
+            vflag = 0 if not voted else 1  # preferisci NON votati
+            if (best is None or vflag < best[0]
+                    or (vflag == best[0] and when > best[1])):
+                best = (vflag, when, mid)
+        if best and best[2] != self.last_market_id:
+            mid = best[2]
+            self.emit("log", text=f"AUTO: mercato attivo {mid}, entro...")
+            try:
+                self.page.goto(ORIGIN + "/market/" + mid)
+            except Exception:
+                pass
+            self.load_market(mid)
 
     def run(self):
         with sync_playwright() as p:
@@ -233,13 +262,18 @@ class Worker(threading.Thread):
                     elif cmd[0] == "auto":
                         self.auto_open = bool(cmd[1])
                         self.emit("log", text=f"AUTO-apri: {'ON' if self.auto_open else 'OFF'}")
+                    elif cmd[0] == "scan":
+                        self.emit("log", text="Cerco il mercato attivo...")
+                        self.scan_active_market()
+                        self.last_scan = time.time()
                     elif cmd[0] == "quit":
                         break
                     continue
 
-                # auto-apri nuovo mercato (se attivo)
-                if self.auto_open:
-                    self.try_auto_open()
+                # auto-apri nuovo mercato (se attivo), ogni ~3s
+                if self.auto_open and (time.time() - self.last_scan) >= 3.0:
+                    self.scan_active_market()
+                    self.last_scan = time.time()
 
                 # rileva mercato dalla URL del browser
                 try:
@@ -291,6 +325,8 @@ class App:
                        variable=self.auto_var, command=self._toggle_auto).pack(side="left")
         tk.Button(bar, text="Aggiorna prezzi",
                   command=lambda: self.cmd_q.put(("refresh",))).pack(side="right")
+        tk.Button(bar, text="Trova mercato attivo",
+                  command=lambda: self.cmd_q.put(("scan",))).pack(side="right", padx=6)
 
         # Due colonne: opzione 1 e opzione 2
         cols = tk.Frame(root)
