@@ -1,0 +1,28 @@
+; GoldTitan Breakout Reverse 1.00 - DAL VIVO
+; Rottura del canale M15 + ADX INVERTITA: rottura in alto -> SELL, rottura in basso -> BUY
+; SL e TP scambiati rispetto alla Rottura del Trio (SL 300, TP 200). Conto hedging se gira insieme al Trio.
+; Lotto
+InpLots=0.01
+InpBalancePerLot=0.0
+; Inversione e stop
+InpReverse=true
+InpSlPips=300
+InpTpPips=200
+; Filtri
+InpAdxMin=30.0
+InpMinAtrUsd=60.0
+InpMaxSpreadPts=70
+; Protezioni
+InpPauseLosses=4
+InpPauseHours=24
+; Tester e identificativi
+InpSimSlipPerLot=10.0
+InpMagic=20261009
+; Notizie
+InpNewsFilter=true
+InpNewsBeforeMin=0
+InpNewsAfterMin=90
+InpNewsMedium=false
+InpNewsClose=false
+; Pannello
+InpShowPanel=true

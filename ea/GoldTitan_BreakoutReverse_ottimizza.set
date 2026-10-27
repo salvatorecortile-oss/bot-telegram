@@ -1,0 +1,28 @@
+; GoldTitan Breakout Reverse 1.00 - OTTIMIZZAZIONE (solo versione invertita)
+; Tester: XAUUSD, "Ogni tick basato su tick reali", ottimizzazione "Algoritmo completo lento", criterio "Custom max".
+; 5 SL x 5 TP x 4 ADX x 3 ATR = 300 combinazioni. Il risultato Custom e' il netto meno lo slippage simulato.
+; Lotto
+InpLots=0.01
+InpBalancePerLot=0.0
+; Inversione e stop
+InpReverse=true
+InpSlPips=300||150||50||350||Y
+InpTpPips=200||150||50||350||Y
+; Filtri
+InpAdxMin=30.0||20.0||5.0||35.0||Y
+InpMinAtrUsd=60.0||40.0||20.0||80.0||Y
+InpMaxSpreadPts=70
+; Protezioni
+InpPauseLosses=4
+InpPauseHours=24
+; Tester e identificativi
+InpSimSlipPerLot=10.0
+InpMagic=20261009
+; Notizie
+InpNewsFilter=true
+InpNewsBeforeMin=0
+InpNewsAfterMin=90
+InpNewsMedium=false
+InpNewsClose=false
+; Pannello
+InpShowPanel=true
