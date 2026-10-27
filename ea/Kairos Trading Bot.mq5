@@ -95,7 +95,7 @@ input bool        InpRsWeekend    = true;          // Venerdi': niente trade nuo
 input int         InpRsFriNoNew   = 2100;          // Venerdi': niente trade nuovi dalle (HHMM)
 input int         InpRsFriClose   = 2245;          // Venerdi': chiude tutto alle (HHMM)
 input bool        InpRsUseHours   = true;          // Entra solo nella fascia oraria
-input int         InpRsHourStart  = 1300;          // Dalle (HHMM, ora MT5 = italiana + 1)
+input int         InpRsHourStart  = 1300;          // Dalle (HHMM, ora FPG fissa)
 input int         InpRsHourEnd    = 2000;          // Alle (HHMM)
 input bool        InpRsUseATRFilter = true;        // Entra solo se l'ATR e' tra il minimo e il massimo
 input double      InpRsMinATRPct  = 0.05;          // ATR minimo (% del prezzo)
