@@ -212,30 +212,28 @@ class Worker(threading.Thread):
         for mid in re.findall(r"/market/([a-z0-9]{10,})", html or ""):
             if mid not in ids:
                 ids.append(mid)
-            if len(ids) >= 30:
+            if len(ids) >= 20:
                 break
+        self.emit("log", text=f"Trovati {len(ids)} id nella pagina, controllo...")
 
         best = None       # (when, mid)  tra i NON votati
-        voted_found = 0
         for mid in ids:
             status, mkt = self.api_get(MARKET_PATH + mid)
             if status != 200 or not isinstance(mkt, dict):
+                self.emit("log", text=f"   - {mid[:10]} status {status}")
                 continue
-            if mkt.get("isComplete"):
-                continue
-            if not self._in_future(mkt.get("endTime")):
-                continue
-            when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
+            comp = bool(mkt.get("isComplete"))
+            fut = self._in_future(mkt.get("endTime"))
             voted = bool((mkt.get("userVoteState") or {}).get("hasVoted"))
-            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:34]} | aperto {str(when)[:19]} | votato={voted}")
-            if voted:                      # REGOLA: salta i gia' votati/tradati
-                voted_found += 1
+            when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
+            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:30]} | aperto {str(when)[:16]} | completo={comp} futuro={fut} votato={voted}")
+            if comp or not fut or voted:   # salta chiusi/scaduti/gia' votati
                 continue
-            if best is None or when > best[0]:   # il piu' recente tra i non votati
+            if best is None or when > best[0]:   # il piu' recente tra i validi
                 best = (when, mid)
 
         if not best:
-            self.emit("log", text=f"Nessun mercato NUOVO da votare (trovati {len(ids)} mercati, {voted_found} gia' votati).")
+            self.emit("log", text="Nessun mercato nuovo da votare. Se 'Female President' non e' nella lista sopra, apri il mercato a mano nel browser.")
             return
         if best[1] != self.last_market_id:
             self.emit("log", text=f"AUTO: entro nell'ultimo NON votato -> {best[1]}")
