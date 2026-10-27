@@ -103,7 +103,7 @@ input double      InpRsMaxATRPct  = 0.13;          // ATR massimo (% del prezzo)
 
 input group "=== Dashboard ==="
 input bool        InpPanel        = true;          // Mostra la dashboard sul grafico
-input int         InpItaOffset    = 1;             // Ore di differenza: ora MT5 - ora italiana
+input int         InpItaOffset    = -1;            // Ore di differenza ora FPG - ora italiana (-1 = automatico, segue l'ora legale)
 input int         InpPanelX       = 12;            // Posizione dashboard: distanza dal bordo sinistro
 input int         InpPanelY       = 28;            // Posizione dashboard: distanza dall'alto
 
@@ -1126,6 +1126,8 @@ color    CLR_RED    = C'229,118,118';
 color    CLR_BLUE   = C'110,170,240';
 
 ulong    g_pnlLastMs   = 0;
+int      g_pnlH        = 0;      // altezza attuale della dashboard (lo sfondo non si accorcia mai a meta' aggiornamento)
+int      g_itaOff      = 1;      // ore di differenza ora FPG - ora italiana
 ulong    g_statsLastMs = 0;
 double   g_dayPL = 0;
 int      g_dayN = 0, g_dayWin = 0, g_dayLoss = 0;
@@ -1193,9 +1195,41 @@ void PSection(string id, int &y, string title, string right)
   }
 
 // HHMM ora MT5 -> "HH:MM" ora italiana
+// ultima domenica del mese (marzo o ottobre), alle 00:00
+datetime LastSunday(int year, int month)
+  {
+   MqlDateTime d;
+   ZeroMemory(d);
+   d.year = year;
+   d.mon  = month + 1;
+   d.day  = 1;
+   datetime last = StructToTime(d) - 86400;   // ultimo giorno del mese
+   MqlDateTime l;
+   TimeToStruct(last, l);
+   return last - l.day_of_week * 86400;
+  }
+
+// ora legale italiana: dall'ultima domenica di marzo all'ultima di ottobre, alle 01:00 UTC
+bool ItalyDST(datetime gmt)
+  {
+   MqlDateTime d;
+   TimeToStruct(gmt, d);
+   return gmt >= LastSunday(d.year, 3) + 3600 && gmt < LastSunday(d.year, 10) + 3600;
+  }
+
+// ore di differenza ora FPG - ora italiana: dal set, oppure calcolate (ora del server meno ora italiana)
+int ItaOffsetHours()
+  {
+   if(InpItaOffset >= 0 || (bool)MQLInfoInteger(MQL_TESTER))
+      return InpItaOffset >= 0 ? InpItaOffset : 1;
+   datetime gmt = TimeGMT();
+   datetime ita = gmt + (ItalyDST(gmt) ? 7200 : 3600);
+   return (int)MathRound((double)(TimeTradeServer() - ita) / 3600.0);
+  }
+
 string ItaTime(int hhmm)
   {
-   int m = (hhmm / 100) * 60 + hhmm % 100 - InpItaOffset * 60;
+   int m = (hhmm / 100) * 60 + hhmm % 100 - g_itaOff * 60;
    m = (m % 1440 + 1440) % 1440;
    return StringFormat("%02d:%02d", m / 60, m % 60);
   }
@@ -1269,8 +1303,9 @@ void ShowPanel(bool force)
       CalcToday();
      }
 
+   g_itaOff = ItaOffsetHours();
    int x = InpPanelX, y = InpPanelY;
-   PRect("bg", x, y, PNL_W, 100, CLR_BG, CLR_BORDER);   // altezza aggiornata in fondo
+   PRect("bg", x, y, PNL_W, g_pnlH > 0 ? g_pnlH : 100, CLR_BG, CLR_BORDER);   // altezza giusta calcolata in fondo
 
    // --- intestazione
    y += 10;
@@ -1370,12 +1405,16 @@ void ShowPanel(bool force)
    PRect("sep2", x + 14, y, PNL_W - 28, 1, CLR_LINE, CLR_LINE);
    y += 7;
    MqlDateTime t;
-   TimeToStruct(TimeCurrent(), t);
-   PText("foot", x + 14, y, StringFormat("Ora MT5 %02d:%02d   " + U(0x00B7) + "   ora italiana %s", t.hour, t.min, ItaTime(t.hour * 100 + t.min)),
+   TimeToStruct(TimeTradeServer(), t);
+   PText("foot", x + 14, y, StringFormat("Ora FPG %02d:%02d   " + U(0x00B7) + "   ora italiana %s", t.hour, t.min, ItaTime(t.hour * 100 + t.min)),
          CLR_MUTED, 8);
    y += 20;
 
-   ObjectSetInteger(0, PNL + "bg", OBJPROP_YSIZE, y - InpPanelY);
+   if(y - InpPanelY != g_pnlH)
+     {
+      g_pnlH = y - InpPanelY;
+      ObjectSetInteger(0, PNL + "bg", OBJPROP_YSIZE, g_pnlH);
+     }
    ChartRedraw();
   }
 
