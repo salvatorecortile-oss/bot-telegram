@@ -79,8 +79,8 @@ input int    InpPauseLosses   = 4;         // Pausa dopo N stop loss consecutivi
 input int    InpPauseHours    = 24;        // Durata della pausa (ore)
 
 //--- Fibonacci (valori del set Kairos_Fibonacci_M1_XAU, versione C)
-input int         InpFbHourStart  = 1000;          // FIBONACCI: entra dalle (HHMM, ora MT5 = italiana + 1)
-input int         InpFbHourEnd    = 1200;          // FIBONACCI: entra fino alle (HHMM)
+input int         InpFbHourStart  = 1100;          // FIBONACCI: entra dalle (HHMM, ora MT5 di FPG: 11-13 = 9-11 italiane)
+input int         InpFbHourEnd    = 1300;          // FIBONACCI: entra fino alle (HHMM, ora MT5)
 input EntryMode   InpFbEntryMode  = ENTRY_PINBAR;  // FIBONACCI: tipo di ingresso
 input bool        InpFbLvl382     = false;         // FIBONACCI: entra a 0.382
 input bool        InpFbLvl500     = true;          // FIBONACCI: entra a 0.5

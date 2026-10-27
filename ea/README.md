@@ -115,7 +115,7 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 **Logica**
 
 - RSI, Rottura e Asia funzionano esattamente come nel Trio: filtri H1, ADX, ATR giornaliero, spread, notizie USD e pausa dopo 4 stop.
-- Il Fibonacci funziona esattamente come nel bot Kairos, versione C. I valori di default sono quelli di `Kairos_Fibonacci_M1_XAU.set`.
+- Il Fibonacci funziona esattamente come nel bot Kairos, versione C. I valori di default sono quelli di `Kairos_Fibonacci_M1_XAU.set`, tranne la fascia oraria: entra dalle 11:00 alle 13:00 ora MT5 del broker FPG, cioè dalle 9 alle 11 italiane.
 - Il Fibonacci non conta per la pausa del Trio e non la subisce.
 - Il Fibonacci ignora il filtro notizie, a meno che non metti `InpFbNews = true`.
 - La parte Kairos RSI del bot Fibonacci, già spenta nel set, non è stata portata.
