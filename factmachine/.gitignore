@@ -1,0 +1,4 @@
+# Dati di sessione sensibili: NON committare mai
+browser_profile/
+storage_state.json
+recon_capture.json
