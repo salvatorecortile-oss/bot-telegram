@@ -1,4 +1,4 @@
-; GoldTitan Quattro 2.40 - CONFRONTO RSI: RSI+EMA di GoldTitan da solo, Kairos RSI da solo, e tutti e due insieme
+; GoldTitan Quattro 2.40 - CONFRONTO RSI: RSI+EMA NUOVO (prudente, SL 150 TP 220) da solo, Kairos RSI da solo, e tutti e due insieme
 ; Variano solo InpUseRsi e InpUseKairos (true/false): 4 passaggi, quello con tutti e due spenti fa zero operazioni.
 ; Rottura, Asia e Fibonacci spenti. Lotto 0.01. Serve un conto HEDGING (le due strategie possono stare in direzioni opposte).
 ; Tester: XAUUSD, "Ogni tick basato su tick reali", "Algoritmo completo lento", criterio "Custom max".
