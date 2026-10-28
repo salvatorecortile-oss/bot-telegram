@@ -190,8 +190,10 @@ class Worker(threading.Thread):
             if mid != self.last_market_id or not self.market:
                 self.load_market(mid)
             return bool(self.market)
-        # id visti nel traffico, dal piu' recente
-        seen_ids = sorted(self.seen, key=lambda k: self.seen[k], reverse=True)
+        # id visti nel traffico, dal piu' recente (max 12)
+        seen_ids = sorted(self.seen, key=lambda k: self.seen[k], reverse=True)[:12]
+        if seen_ids:
+            self.emit("log", text=f"Controllo {len(seen_ids)} mercati visti nel traffico...")
         best = self.pick_best(seen_ids) if seen_ids else None
         if best:
             if best != self.last_market_id or not self.market:
@@ -356,18 +358,18 @@ class Worker(threading.Thread):
                             self.emit("log", text="Nessun mercato trovato.")
                         self.last_scan = time.time()
                     elif cmd[0] == "apis":
-                        mk = [u for u in self.api_urls if "market" in u.lower() or "feed" in u.lower()]
-                        self.emit("log", text=f"--- {len(mk)} endpoint con 'market' (su {len(self.api_urls)} API viste) ---")
-                        for u in mk[-40:]:
+                        self.emit("log", text=f"--- {len(self.api_urls)} endpoint API visti ---")
+                        for u in self.api_urls[-50:]:
                             self.emit("log", text="  " + u.replace(ORIGIN, ""))
                         self.emit("log", text=f"--- id mercati catturati: {list(self.seen.keys())} ---")
                     elif cmd[0] == "quit":
                         break
                     continue
 
-                # auto-apri nuovo mercato (se attivo): ricarica la home ogni ~6s
+                # auto-trova il mercato attivo (se attivo) ogni ~6s, usando
+                # prima gli id catturati dal traffico
                 if self.auto_open and (time.time() - self.last_scan) >= 6.0:
-                    self.scan_active_market()
+                    self.ensure_market()
                     self.last_scan = time.time()
 
                 # rileva mercato da QUALSIASI scheda aperta sul mercato
