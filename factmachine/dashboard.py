@@ -203,29 +203,42 @@ class Worker(threading.Thread):
         self.scan_active_market()
         return bool(self.market)
 
-    def do_buy(self, option_index, usdc, pct):
-        """Un click fa tutto: trova il mercato -> VOTO -> ACQUISTO."""
+    def do_buy(self, option_index, usdc, pct_raw):
+        """Un click fa tutto: trova il mercato -> (VOTO se non votato) -> ACQUISTO.
+        pct_raw e' la percentuale digitata (stringa, puo' essere vuota)."""
         if not self.ensure_market():
-            self.emit("log", text="Nessun mercato trovato. Apri il mercato nel browser o usa 'Trova mercato attivo'.")
+            self.emit("log", text="Nessun mercato trovato. Incolla l'URL del mercato e premi Carica.")
             return
 
         opt = self.market["optionOne"] if option_index == 1 else self.market["optionTwo"]
         market_id, option_id, oname = self.market["id"], opt["id"], opt.get("name")
+        already_voted = bool((self.market.get("userVoteState") or {}).get("hasVoted"))
 
-        # --- 1) VOTO (rotellina = consensusGuess) ---
-        vote_body = {"marketId": market_id, "optionId": option_id,
-                     "consensusGuess": int(round(pct))}
-        self.emit("log", text=f">>> VOTO: opz{option_index} '{oname}'  consenso {int(round(pct))}%")
-        vres = self.api_post(VOTE_PATH, vote_body)
-        try:
-            vj = json.loads(vres["text"])
-            voted_ok = bool(vj.get("hasVoted")) if isinstance(vj, dict) else False
-        except Exception:
-            voted_ok = False
-        if vres["status"] == 200 and voted_ok:
-            self.emit("log", text=f"    VOTO ok ({vres['ms']} ms)")
+        # --- 1) VOTO (solo se NON hai gia' votato) ---
+        if already_voted:
+            self.emit("log", text=f"Mercato gia' votato -> salto il voto, solo acquisto.")
         else:
-            self.emit("log", text=f"    VOTO status {vres['status']} ({vres['ms']} ms): {vres['text'][:200]}")
+            praw = (pct_raw or "").strip().replace(",", ".")
+            if praw == "":
+                self.emit("log", text="Mercato NON votato: inserisci la percentuale per votare, poi riclicca Buy.")
+                return
+            try:
+                pct = float(praw)
+            except ValueError:
+                self.emit("log", text="Percentuale non valida (es. 77).")
+                return
+            vb = {"marketId": market_id, "optionId": option_id, "consensusGuess": int(round(pct))}
+            self.emit("log", text=f">>> VOTO: opz{option_index} '{oname}'  consenso {int(round(pct))}%")
+            vres = self.api_post(VOTE_PATH, vb)
+            try:
+                vj = json.loads(vres["text"])
+                voted_ok = bool(vj.get("hasVoted")) if isinstance(vj, dict) else False
+            except Exception:
+                voted_ok = False
+            if vres["status"] == 200 and voted_ok:
+                self.emit("log", text=f"    VOTO ok ({vres['ms']} ms)")
+            else:
+                self.emit("log", text=f"    VOTO status {vres['status']} ({vres['ms']} ms): {vres['text'][:200]}")
 
         # --- 2) ACQUISTO ---
         buy_body = {
@@ -400,7 +413,9 @@ class App:
         self.cmd_q = queue.Queue()
         self.evt_q = queue.Queue()
         self.worker = Worker(self.cmd_q, self.evt_q)
-        self.pct_vars = {}  # (option_index, amount) -> StringVar della percentuale
+        self.pct_vars = {}   # (option_index, amount) -> StringVar della percentuale
+        self.custom_amt = {}  # option_index -> StringVar importo libero
+        self.custom_pct = {}  # option_index -> StringVar % per importo libero
 
         root.title("FactMachine - Dashboard")
         root.geometry("860x600")
@@ -475,18 +490,38 @@ class App:
                       activebackground=color,
                       command=lambda oi=option_index, a=amt: self._click_buy(oi, a)
                       ).grid(row=i, column=2, padx=4, pady=3)
+        # riga importo LIBERO
+        r = len(IMPORTI) + 1
+        amt_var = tk.StringVar(value="")
+        self.custom_amt[option_index] = amt_var
+        tk.Entry(parent, textvariable=amt_var, width=8, justify="center",
+                 font=("Segoe UI", 11)).grid(row=r, column=0, pady=(10, 3))
+        pvar = tk.StringVar(value="")
+        self.custom_pct[option_index] = pvar
+        tk.Entry(parent, textvariable=pvar, width=6, justify="center",
+                 font=("Segoe UI", 12)).grid(row=r, column=1, padx=4)
+        tk.Button(parent, text=f"Buy {option_index}", width=8, height=1,
+                  font=("Segoe UI", 10, "bold"), fg="white", bg=color,
+                  activebackground=color,
+                  command=lambda oi=option_index: self._click_buy_custom(oi)
+                  ).grid(row=r, column=2, padx=4, pady=(10, 3))
+        tk.Label(parent, text="^ importo libero (scrivi tu)",
+                 fg="#777").grid(row=r + 1, column=0, columnspan=3)
 
     def _click_buy(self, option_index, amount):
-        raw = self.pct_vars[(option_index, amount)].get().strip().replace(",", ".")
-        if raw == "":
-            self._log(f"ERRORE: inserisci la percentuale per {amount}$ (opz {option_index}).")
-            return
+        # la % puo' restare vuota: se il mercato e' gia' votato, non serve
+        raw = self.pct_vars[(option_index, amount)].get().strip()
+        self.cmd_q.put(("buy", option_index, float(amount), raw))
+
+    def _click_buy_custom(self, option_index):
+        araw = self.custom_amt[option_index].get().strip().replace(",", ".")
         try:
-            pct = float(raw)
+            usdc = float(araw)
         except ValueError:
-            self._log("ERRORE: percentuale non valida (es. 77).")
+            self._log("ERRORE: importo libero non valido (scrivi un numero, es. 150).")
             return
-        self.cmd_q.put(("buy", option_index, float(amount), pct))
+        praw = self.custom_pct[option_index].get().strip()
+        self.cmd_q.put(("buy", option_index, usdc, praw))
 
     def _toggle_auto(self):
         self.cmd_q.put(("auto", self.auto_var.get()))
