@@ -193,4 +193,6 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
 
 # GoldTitan Final 3.00
 
-`GoldTitan_Final.mq5` è la versione definitiva. Ha le 4 strategie con i valori migliori dei test (pass 47 delle 64 combinazioni) già impostati come **default nel codice**, quindi non serve nessun file set. Non contiene Kairos RSI né i profili per l'ottimizzazione. Il magic number di ogni strategia è lo stesso del Quattro.
+`GoldTitan_Final.mq5` è la versione definitiva. Ha le 4 strategie con i valori migliori dei test (pass 47 delle 64 combinazioni) già impostati come **default nel codice**, quindi non serve nessun file set. Non contiene i profili per l'ottimizzazione. Il magic number di ogni strategia è lo stesso del Quattro.
+
+Dalla 3.10 c'è anche **Kairos RSI** come quinta strategia (magic 54001), **spenta di default**: si accende con `InpUseKairos = true`.

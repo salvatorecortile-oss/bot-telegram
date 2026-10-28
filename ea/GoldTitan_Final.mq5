@@ -1,9 +1,9 @@
 //+------------------------------------------------------------------+
 //|                                              GoldTitan_Final.mq5 |
-//|  GoldTitan Final 3.00: versione definitiva su XAUUSD, 4          |
+//|  GoldTitan Final 3.10: versione definitiva su XAUUSD, 4          |
 //|  strategie con i valori migliori dei test (pass 47 delle 64      |
-//|  combinazioni, gen-ott 2026) gia' impostati come default.        |
-//|  Non serve nessun file set.                                      |
+//|  combinazioni, gen-ott 2026) gia' impostati come default, piu'   |
+//|  Kairos RSI da accendere a scelta. Non serve nessun file set.    |
 //|   1) RSI + EMA (M5)  : ritracciamento nel trend, SL 150 TP 220   |
 //|   2) Rottura (M15)   : rottura del canale 24 candele, ADX >= 30, |
 //|                        SL 200 TP 300                             |
@@ -11,14 +11,19 @@
 //|      (M5)              14, SL 350 TP 250                          |
 //|   4) Fibonacci (M1)  : ritracciamento 0.5 / 0.618 con pin bar,   |
 //|                        10:00-12:00 (server), SL 1.1, TP 1:3      |
+//|   5) Kairos RSI (M1) : RSI 28 contro gli eccessi 30/70, uscita a |
+//|                        RSI 65/50, SL 2.5 x ATR, 13:00-20:00      |
+//|                        (server). SPENTA di default: si accende   |
+//|                        con InpUseKairos = true.                  |
 //|  Ogni strategia ha il suo magic number. Lotto 0.01 per tutte.    |
 //|  RSI, Rottura e Asia: filtro trend H1, ATR giornaliero >= 60 $,  |
 //|  spread < 70 points, notizie USD (+90 min), pausa 24 ore dopo    |
-//|  4 stop di fila. Fibonacci: logica di Kairos Fibonacci (vers. C).|
+//|  4 stop di fila. Fibonacci e Kairos: logica del bot Kairos       |
+//|  originale, non contano e non subiscono la pausa.                |
 //|  Serve un conto HEDGING.                                         |
 //+------------------------------------------------------------------+
-#property version   "3.00"
-#property description "GoldTitan Final 3.00 - RSI+EMA (M5), Rottura (M15), Range asiatico (M5) e Fibonacci (M1) su XAUUSD, valori migliori gia' impostati."
+#property version   "3.10"
+#property description "GoldTitan Final 3.10 - RSI+EMA, Rottura, Range asiatico, Fibonacci e Kairos RSI (spenta di default) su XAUUSD, valori migliori gia' impostati."
 
 #include <Trade\Trade.mqh>
 
@@ -55,6 +60,7 @@ input bool   InpUseRsi        = true;      // RSI + EMA: attiva la strategia
 input bool   InpUseBrk        = true;      // ROTTURA: attiva la strategia
 input bool   InpUseAsia       = true;      // RANGE ASIATICO: attiva la strategia
 input bool   InpUseFib        = true;      // FIBONACCI: attiva la strategia
+input bool   InpUseKairos     = false;     // KAIROS RSI: attiva la strategia (spenta di default)
 
 //--- Lotto
 input double InpLots          = 0.01;      // Lotto (uguale per tutte le strategie)
@@ -114,6 +120,30 @@ input bool        InpFbWeekend    = true;          // FIBONACCI: venerdi' sera c
 input int         InpFbFriClose   = 2245;          // FIBONACCI: venerdi', chiude alle (HHMM)
 input bool        InpFbNews       = false;         // FIBONACCI: rispetta anche il filtro notizie (false = come il bot originale)
 
+//--- Kairos RSI (valori del set Kairos_Fibonacci_M1_XAU, parte RSI)
+input int             InpKrPeriod     = 28;        // KAIROS: periodo RSI (M1)
+input double          InpKrLow        = 30;        // KAIROS: BUY quando l'RSI rientra sopra questo livello
+input double          InpKrHigh       = 70;        // KAIROS: SELL quando l'RSI rientra sotto questo livello
+input double          InpKrExit       = 65;        // KAIROS: TP BUY, chiude quando l'RSI sale a questo livello
+input double          InpKrExitSell   = 50;        // KAIROS: TP SELL, chiude quando l'RSI scende a questo livello
+input bool            InpKrEntryTouch = false;     // KAIROS: entrata al tocco di 30/70 (false = al rientro)
+input ENUM_TIMEFRAMES InpKrATRTF      = PERIOD_M1; // KAIROS: time frame ATR
+input int             InpKrATRPeriod  = 14;        // KAIROS: periodo ATR
+input double          InpKrSLATR      = 2.5;       // KAIROS: SL = ATR x questo
+input bool            InpKrBreakEven  = false;     // KAIROS: break-even quando l'RSI tocca il livello sotto
+input double          InpKrBERSI      = 50;        // KAIROS: livello RSI del break-even
+input int             InpKrBELockPts  = 0;         // KAIROS: punti bloccati oltre l'entrata
+input bool            InpKrOneAtTime  = true;      // KAIROS: una operazione alla volta
+input bool            InpKrWeekend    = true;      // KAIROS: venerdi' sera niente trade nuovi e chiusura prima del weekend
+input int             InpKrFriNoNew   = 2100;      // KAIROS: venerdi', niente trade nuovi dalle (HHMM)
+input int             InpKrFriClose   = 2245;      // KAIROS: venerdi', chiude tutto alle (HHMM)
+input bool            InpKrUseHours   = true;      // KAIROS: entra solo nella fascia oraria
+input int             InpKrHourStart  = 1300;      // KAIROS: dalle (HHMM, ora del server)
+input int             InpKrHourEnd    = 2000;      // KAIROS: alle (HHMM, ora del server)
+input bool            InpKrUseATRFilter = true;    // KAIROS: entra solo se l'ATR e' tra il minimo e il massimo
+input double          InpKrMinATRPct  = 0.05;      // KAIROS: ATR minimo (% del prezzo)
+input double          InpKrMaxATRPct  = 0.13;      // KAIROS: ATR massimo (% del prezzo)
+input bool            InpKrNews       = false;     // KAIROS: rispetta anche il filtro notizie (false = come il bot originale)
 
 //--- Tester e identificativi
 input double InpSimSlipPerLot = 10.0;      // Slippage simulato nel tester ($ per lotto, 0 = off)
@@ -121,6 +151,7 @@ input ulong  InpRsiMagic      = 20261006;  // RSI: magic number
 input ulong  InpBrkMagic      = 20261007;  // ROTTURA: magic number
 input ulong  InpAsiaMagic     = 20261008;  // RANGE ASIATICO: magic number
 input ulong  InpFbMagic       = 61800;     // FIBONACCI: magic number
+input ulong  InpKrMagic       = 54001;     // KAIROS RSI: magic number
 
 //--- Filtro notizie (USD)
 input bool   InpNewsFilter    = true;      // NOTIZIE: niente nuove operazioni vicino alle notizie USD
@@ -144,7 +175,7 @@ input bool   InpShowPanel     = true;      // PANNELLO: mostra il pannello sul g
 #define PIP_SIZE          0.10         // valore di 1 pip in prezzo
 #define NO_SLIPPAGE_LIMIT 100000       // points: in pratica nessun limite allo slippage
 #define FB_DEVIATION      50           // points: slippage massimo del Fibonacci (come il bot originale)
-#define NSTRAT            4            // 0 = RSI, 1 = Rottura, 2 = Asia, 3 = Fibonacci
+#define NSTRAT            5            // 0 = RSI, 1 = Rottura, 2 = Asia, 3 = Fibonacci, 4 = Kairos RSI
 #define OPT_FILE          "GoldTitan_Final_ottimizzazione.csv"
 
 CTrade   trade;
@@ -163,7 +194,7 @@ datetime brkLastBar    = 0;
 datetime asiaLastBar   = 0;
 datetime asiaDay       = 0;                // giorno in cui il range asiatico ha gia' dato il segnale
 datetime lastWarnBar   = 0;
-double   slip[NSTRAT]  = {0.0, 0.0, 0.0, 0.0};   // slippage simulato accumulato, per strategia ($)
+double   slip[NSTRAT]  = {0.0, 0.0, 0.0, 0.0, 0.0};   // slippage simulato accumulato, per strategia ($)
 int      consLosses    = 0;                // stop consecutivi di RSI, Rottura e Asia insieme
 datetime pauseUntil    = 0;                // fine della pausa in corso
 int      pauseCount    = 0;                // numero di pause scattate (per il Journal)
@@ -235,17 +266,18 @@ int StratIdx(const ulong m)
    if(m == InpBrkMagic)  return(1);
    if(m == InpAsiaMagic) return(2);
    if(m == InpFbMagic)   return(3);
+   if(m == InpKrMagic)   return(4);
    return(-1);
   }
 
 string StratName(const int k)
   {
-   return(k == 0 ? "RSI" : (k == 1 ? "ROTTURA" : (k == 2 ? "ASIA" : "FIBO")));
+   return(k == 0 ? "RSI" : (k == 1 ? "ROTTURA" : (k == 2 ? "ASIA" : (k == 3 ? "FIBO" : "KAIROS"))));
   }
 
 bool StratOn(const int k)
   {
-   return(k == 0 ? gUseRsi : (k == 1 ? InpUseBrk : (k == 2 ? gUseAsia : InpUseFib)));
+   return(k == 0 ? gUseRsi : (k == 1 ? InpUseBrk : (k == 2 ? gUseAsia : (k == 3 ? InpUseFib : InpUseKairos))));
   }
 
 //+------------------------------------------------------------------+
@@ -256,7 +288,8 @@ int OnInit()
       Print("ATTENZIONE: l'EA e' pensato per XAUUSD, simbolo attuale: ", _Symbol);
 
    if(InpRsiMagic == InpBrkMagic || InpAsiaMagic == InpRsiMagic || InpAsiaMagic == InpBrkMagic ||
-      InpFbMagic == InpRsiMagic || InpFbMagic == InpBrkMagic || InpFbMagic == InpAsiaMagic)
+      InpFbMagic == InpRsiMagic || InpFbMagic == InpBrkMagic || InpFbMagic == InpAsiaMagic ||
+      InpKrMagic == InpRsiMagic || InpKrMagic == InpBrkMagic || InpKrMagic == InpAsiaMagic || InpKrMagic == InpFbMagic)
      {
       Print("I magic number devono essere diversi tra loro");
       return(INIT_PARAMETERS_INCORRECT);
@@ -329,6 +362,8 @@ int OnInit()
       if(r != INIT_SUCCEEDED)
          return(r);
      }
+   if(InpUseKairos && KrInit() != INIT_SUCCEEDED)
+      return(INIT_FAILED);
 
    if(InpNewsFilter)
      {
@@ -348,12 +383,14 @@ int OnInit()
         }
      }
 
-   PrintFormat("GoldTitan Final 3.00 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
+   PrintFormat("GoldTitan Final 3.10 avviato su %s | RSI %s | Rottura %s | Asia %s | Fibonacci %s (%04d-%04d) | lotto %.2f, progressivo %.0f $",
                _Symbol, gUseRsi ? "ON" : "OFF", InpUseBrk ? "ON" : "OFF", gUseAsia ? "ON" : "OFF",
                InpUseFib ? "ON" : "OFF", InpFbHourStart, InpFbHourEnd, InpLots, InpBalancePerLot);
    PrintFormat("RSI SL %d TP %d | Rottura SL %d TP %d ADX %.0f | Asia SL %d TP %d, range %d-%d, fino alle %d | ATR min %.0f $",
                gRsiSlPips, gRsiTpPips, InpBrkSlPips, InpBrkTpPips, InpBrkAdxMin,
                gAsiaSlPips, gAsiaTpPips, gAsiaStartHour, gAsiaEndHour, gAsiaLastHour, InpMinAtrUsd);
+   PrintFormat("Kairos RSI %s (%s)", InpUseKairos ? "ON" : "OFF",
+               InpKrUseHours ? StringFormat("%04d-%04d", InpKrHourStart, InpKrHourEnd) : "sempre");
    PanelInit();
    return(INIT_SUCCEEDED);
   }
@@ -369,6 +406,7 @@ void OnDeinit(const int reason)
    if(adxHandle     != INVALID_HANDLE) IndicatorRelease(adxHandle);
    if(atrHandle     != INVALID_HANDLE) IndicatorRelease(atrHandle);
    FbDeinit();
+   KrDeinit();
    PanelDeinit();
   }
 
@@ -387,9 +425,9 @@ void OnTimer()
 //+------------------------------------------------------------------+
 double OnTester()
   {
-   double prof[NSTRAT] = {0.0, 0.0, 0.0, 0.0};
-   int    n[NSTRAT]    = {0, 0, 0, 0};
-   int    win[NSTRAT]  = {0, 0, 0, 0};
+   double prof[NSTRAT] = {0.0, 0.0, 0.0, 0.0, 0.0};
+   int    n[NSTRAT]    = {0, 0, 0, 0, 0};
+   int    win[NSTRAT]  = {0, 0, 0, 0, 0};
 
    if(HistorySelect(0, TimeCurrent()))
      {
@@ -463,7 +501,9 @@ void OnTesterInit()
                     "InpBrkSlPips", "InpBrkTpPips", "InpBrkAdxMin",
                     "InpAsiaSlPips", "InpAsiaTpPips", "InpAsiaStartHour", "InpAsiaEndHour", "InpAsiaLastHour",
                     "InpAsiaH1Filter", "InpAsiaMinRange", "InpAsiaMaxRange",
-                    "InpMinAtrUsd", "InpMaxSpreadPts", "InpPauseLosses", "InpPauseHours", "InpNewsAfterMin"};
+                    "InpMinAtrUsd", "InpMaxSpreadPts", "InpPauseLosses", "InpPauseHours", "InpNewsAfterMin",
+                    "InpKrPeriod", "InpKrLow", "InpKrHigh", "InpKrExit", "InpKrExitSell", "InpKrSLATR",
+                    "InpKrHourStart", "InpKrHourEnd", "InpKrMinATRPct", "InpKrMaxATRPct"};
    ArrayResize(optNames, 0);
    for(int i = 0; i < ArraySize(cand); i++)
      {
@@ -481,7 +521,7 @@ void OnTesterInit()
         }
      }
 
-   string head = "Passaggio;RSI;ROTTURA;ASIA;FIBO;Strategie attive";
+   string head = "Passaggio;RSI;ROTTURA;ASIA;FIBO;KAIROS;Strategie attive";
    for(int i = 0; i < ArraySize(optNames); i++)
       head += ";" + optNames[i];
    for(int k = 0; k < NSTRAT; k++)
@@ -517,7 +557,7 @@ void OnTesterPass()
 
       string params[];
       uint   pcount = 0;
-      string on[NSTRAT] = {"?", "?", "?", "?"};
+      string on[NSTRAT] = {"?", "?", "?", "?", "?"};
       string pv[];
       ArrayResize(pv, ArraySize(optNames));
       if(FrameInputs(pass, params, pcount))
@@ -596,11 +636,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       return;
    long entry = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
 
-   // Chiusura: conta gli stop consecutivi (il Fibonacci non conta) e, se serve, fa partire la pausa.
+   // Chiusura: conta gli stop consecutivi (Fibonacci e Kairos non contano) e, se serve, fa partire la pausa.
    if(entry == DEAL_ENTRY_OUT)
      {
-      if(k == 3)
-         return;   // il Fibonacci non conta per la pausa
+      if(k >= 3)
+         return;   // Fibonacci e Kairos non contano per la pausa
       double p = HistoryDealGetDouble(trans.deal, DEAL_PROFIT) +
                  HistoryDealGetDouble(trans.deal, DEAL_SWAP) +
                  HistoryDealGetDouble(trans.deal, DEAL_COMMISSION);
@@ -674,6 +714,8 @@ void OnTick()
 
    if(InpUseFib)
       FbOnTick();
+   if(InpUseKairos)
+      KrOnTick();
   }
 
 //+------------------------------------------------------------------+
@@ -1101,7 +1143,7 @@ bool NewsBlocked(const datetime now)
 
 //+------------------------------------------------------------------+
 //| Chiude le posizioni nella finestra delle notizie: RSI, Rottura,  |
-//| Asia e, solo se InpFbNews, anche il Fibonacci.                   |
+//| Asia e, solo se InpFbNews / InpKrNews, anche Fibonacci e Kairos. |
 //+------------------------------------------------------------------+
 void CloseAllForNews()
   {
@@ -1113,7 +1155,7 @@ void CloseAllForNews()
       if(PositionGetString(POSITION_SYMBOL) != _Symbol)
          continue;
       int k = StratIdx((ulong)PositionGetInteger(POSITION_MAGIC));
-      if(k < 0 || (k == 3 && !InpFbNews))
+      if(k < 0 || (k == 3 && !InpFbNews) || (k == 4 && !InpKrNews))
          continue;
       if(trade.PositionClose(ticket))
          newsCloses++;
@@ -1780,6 +1822,215 @@ void FbDrawTrade(int k, double entry, double sl, double tp)
   }
 
 
+//+==================================================================+
+//|  KAIROS RSI (da Kairos_Fibonacci_M1_XAU, logica invariata)        |
+//+==================================================================+
+CTrade   g_krTrade;
+int      g_krRSI     = INVALID_HANDLE;
+int      g_krATR     = INVALID_HANDLE;
+datetime g_krLastBar = 0;
+bool     g_krOS      = false;  // RSI in ipervenduto (<= 30)
+bool     g_krOB      = false;  // RSI in ipercomprato (>= 70)
+bool     g_krArmBuy  = false;  // entrata al tocco: pronto a comprare al prossimo tocco di 30
+bool     g_krArmSell = false;  // entrata al tocco: pronto a vendere al prossimo tocco di 70
+double   g_krNow     = 0;
+
+int KrInit()
+  {
+   g_krTrade.SetExpertMagicNumber(InpKrMagic);
+   g_krTrade.SetDeviationInPoints(30);
+   g_krTrade.SetTypeFillingBySymbol(_Symbol);
+
+   g_krRSI = iRSI(_Symbol, PERIOD_M1, InpKrPeriod, PRICE_CLOSE);
+   g_krATR = iATR(_Symbol, InpKrATRTF, InpKrATRPeriod);
+   if(g_krRSI == INVALID_HANDLE || g_krATR == INVALID_HANDLE)
+     {
+      Print("Kairos: RSI M1 o ATR non disponibile");
+      return INIT_FAILED;
+     }
+   return INIT_SUCCEEDED;
+  }
+
+void KrDeinit()
+  {
+   if(g_krRSI != INVALID_HANDLE) IndicatorRelease(g_krRSI);
+   if(g_krATR != INVALID_HANDLE) IndicatorRelease(g_krATR);
+  }
+
+void KrOnTick()
+  {
+   // weekend: il venerdi' sera chiude tutto, cosi' nessun trade resta aperto sul gap del lunedi'
+   if(InpKrWeekend && IsFriday(TimeCurrent()) && HHMM(TimeCurrent()) >= InpKrFriClose)
+     {
+      KrCloseAll(POSITION_TYPE_BUY);
+      KrCloseAll(POSITION_TYPE_SELL);
+     }
+
+   // TP: a ogni tick, appena l'RSI torna al livello di uscita
+   double now[1];
+   bool   rsiOk = CopyBuffer(g_krRSI, 0, 0, 1, now) == 1;
+   if(rsiOk)
+     {
+      g_krNow = now[0];
+      if(now[0] >= InpKrExit)       KrCloseAll(POSITION_TYPE_BUY);
+      if(now[0] <= InpKrExitSell)   KrCloseAll(POSITION_TYPE_SELL);
+      if(InpKrBreakEven)
+        {
+         if(now[0] >= InpKrBERSI)       KrBreakEven(POSITION_TYPE_BUY);
+         if(now[0] <= 100 - InpKrBERSI) KrBreakEven(POSITION_TYPE_SELL);
+        }
+     }
+
+   if(InpKrEntryTouch)
+     {
+      if(rsiOk) KrEntryOnTouch();
+      return;
+     }
+
+   datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
+   if(bar0 == 0 || bar0 == g_krLastBar) return;
+   g_krLastBar = bar0;
+
+   // entrata: sulla candela M1 appena chiusa, una sola volta per ogni tocco di 30/70
+   double rsi[1], atr[1];
+   if(CopyBuffer(g_krRSI, 0, 1, 1, rsi) != 1) return;
+   if(CopyBuffer(g_krATR, 0, 1, 1, atr) != 1 || atr[0] <= 0) return;
+
+   if(rsi[0] <= InpKrLow) g_krOS = true;
+   else if(g_krOS)
+     {
+      g_krOS = false;
+      KrOpen(+1, atr[0]);
+     }
+
+   if(rsi[0] >= InpKrHigh) g_krOB = true;
+   else if(g_krOB)
+     {
+      g_krOB = false;
+      KrOpen(-1, atr[0]);
+     }
+  }
+
+// entrata al tocco: a ogni tick, appena l'RSI tocca 30 (BUY) o 70 (SELL).
+// Si riarma solo quando una candela M1 chiude con l'RSI di nuovo dentro 30-70
+void KrEntryOnTouch()
+  {
+   datetime bar0 = iTime(_Symbol, PERIOD_M1, 0);
+   if(bar0 != 0 && bar0 != g_krLastBar)
+     {
+      g_krLastBar = bar0;
+      double rsi[1];
+      if(CopyBuffer(g_krRSI, 0, 1, 1, rsi) == 1)
+        {
+         if(rsi[0] > InpKrLow)  g_krArmBuy  = true;
+         if(rsi[0] < InpKrHigh) g_krArmSell = true;
+        }
+     }
+
+   if(!g_krArmBuy && !g_krArmSell) return;
+   double atr[1];
+   if(CopyBuffer(g_krATR, 0, 1, 1, atr) != 1 || atr[0] <= 0) return;
+
+   if(g_krArmBuy && g_krNow <= InpKrLow)
+     {
+      g_krArmBuy = false;
+      KrOpen(+1, atr[0]);
+     }
+   if(g_krArmSell && g_krNow >= InpKrHigh)
+     {
+      g_krArmSell = false;
+      KrOpen(-1, atr[0]);
+     }
+  }
+
+void KrCloseAll(ENUM_POSITION_TYPE type)
+  {
+   for(int k = PositionsTotal() - 1; k >= 0; k--)
+     {
+      ulong tk = PositionGetTicket(k);
+      if(tk == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpKrMagic) continue;
+      if(PositionGetInteger(POSITION_TYPE) != type) continue;
+      if(g_krTrade.PositionClose(tk))
+         Log(StringFormat("Kairos: %s chiuso, RSI %.1f", type == POSITION_TYPE_BUY ? "BUY" : "SELL", g_krNow));
+     }
+  }
+
+// SL all'entrata (+ punti bloccati), solo se il prezzo lo permette
+void KrBreakEven(ENUM_POSITION_TYPE type)
+  {
+   double bid   = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   double ask   = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double stops = (SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) + 2) * _Point;
+   for(int k = PositionsTotal() - 1; k >= 0; k--)
+     {
+      ulong tk = PositionGetTicket(k);
+      if(tk == 0) continue;
+      if(PositionGetString(POSITION_SYMBOL) != _Symbol) continue;
+      if((ulong)PositionGetInteger(POSITION_MAGIC) != InpKrMagic) continue;
+      if(PositionGetInteger(POSITION_TYPE) != type) continue;
+
+      double open = PositionGetDouble(POSITION_PRICE_OPEN);
+      double sl   = PositionGetDouble(POSITION_SL);
+      if(type == POSITION_TYPE_BUY)
+        {
+         double nsl = NormalizeDouble(open + InpKrBELockPts * _Point, _Digits);
+         if(sl < nsl && bid - nsl > stops && g_krTrade.PositionModify(tk, nsl, 0))
+            Log(StringFormat("Kairos: BUY a break-even, RSI %.1f", g_krNow));
+        }
+      else
+        {
+         double nsl = NormalizeDouble(open - InpKrBELockPts * _Point, _Digits);
+         if((sl == 0 || sl > nsl) && nsl - ask > stops && g_krTrade.PositionModify(tk, nsl, 0))
+            Log(StringFormat("Kairos: SELL a break-even, RSI %.1f", g_krNow));
+        }
+     }
+  }
+
+// dir = +1 BUY / -1 SELL
+void KrOpen(int dir, double atr)
+  {
+   string name = dir > 0 ? "BUY" : "SELL";
+   if(InpKrOneAtTime && CountPositions(InpKrMagic) > 0) { Log("Kairos " + name + ": c'e' gia' un'operazione aperta, segnale ignorato"); return; }
+
+   datetime t  = TimeCurrent();
+   int      hm = HHMM(t);
+   if(InpKrWeekend && IsFriday(t) && hm >= InpKrFriNoNew)                { Log("Kairos " + name + ": venerdi' sera, niente trade nuovi"); return; }
+   if(InpKrUseHours && (hm < InpKrHourStart || hm >= InpKrHourEnd))      { Log("Kairos " + name + ": fuori dalla fascia oraria"); return; }
+   // filtro notizie solo se richiesto (il bot originale non lo aveva)
+   if(InpKrNews && InpNewsFilter && NewsBlocked(t))                      { Log("Kairos " + name + ": vicino a una notizia"); return; }
+
+   double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+   double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+   if(ask <= 0 || bid <= 0) return;
+
+   if(InpKrUseATRFilter)
+     {
+      double pct = atr / bid * 100.0;
+      if(pct < InpKrMinATRPct) { Log(StringFormat("Kairos %s: ATR troppo basso (%.3f%%), niente trade", name, pct)); return; }
+      if(pct > InpKrMaxATRPct) { Log(StringFormat("Kairos %s: ATR troppo alto (%.3f%%), niente trade", name, pct)); return; }
+     }
+
+   // il broker vuole lo SL ad almeno "stops level" punti dal prezzo
+   double dist    = InpKrSLATR * atr;
+   double minDist = (SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) + 5) * _Point;
+   dist = MathMax(dist, minDist);
+
+   double entry = dir > 0 ? ask : bid;
+   double sl    = NormalizeDouble(entry - dir * dist, _Digits);
+
+   double lots = CalcLots();
+   bool ok = dir > 0 ? g_krTrade.Buy(lots, _Symbol, 0, sl, 0, "RSI M1")
+                     : g_krTrade.Sell(lots, _Symbol, 0, sl, 0, "RSI M1");
+   if(ok && (g_krTrade.ResultRetcode() == TRADE_RETCODE_DONE || g_krTrade.ResultRetcode() == TRADE_RETCODE_PLACED))
+      Log(StringFormat("Kairos %s: entrata %s SL %s (%.0f punti = %.1f x ATR), TP quando l'RSI torna a %s", name,
+                       DoubleToString(entry, _Digits), DoubleToString(sl, _Digits), dist / _Point, InpKrSLATR,
+                       DoubleToString(dir > 0 ? InpKrExit : InpKrExitSell, 0)));
+   else
+      Log(StringFormat("Kairos %s: ordine rifiutato (%u %s)", name, g_krTrade.ResultRetcode(), g_krTrade.ResultRetcodeDescription()));
+  }
+
 //+------------------------------------------------------------------+
 //| PANNELLO INFORMATIVO                                             |
 //| Solo lettura: mostra stato, risultati e condizioni di mercato.   |
@@ -1939,7 +2190,7 @@ void PanelUpdate()
    bool   newsNow = InpNewsFilter && NewsBlocked(now);
 
    //--- intestazione e stato
-   PanelLine(i++, "GoldTitan Final 3.00   " + _Symbol, PNL_HEAD);
+   PanelLine(i++, "GoldTitan Final 3.10   " + _Symbol, PNL_HEAD);
    string onList = "";
    for(int k = 0; k < NSTRAT; k++)
       onList += StringFormat("%s %s  ", StratName(k), StratOn(k) ? "ON" : "off");
@@ -2003,7 +2254,7 @@ void PanelUpdate()
       PanelLine(i++, "  In corso " + Money(floating), floating >= 0 ? PNL_OK : PNL_BAD);
    PanelLine(i++, StringFormat("Saldo %.2f   Equity %.2f %s", AccountInfoDouble(ACCOUNT_BALANCE),
                                AccountInfoDouble(ACCOUNT_EQUITY), AccountInfoString(ACCOUNT_CURRENCY)), PNL_TXT);
-   PanelLine(i++, StringFormat("Stop di fila %d / %d (poi pausa %d ore, Fibonacci escluso)", consLosses, InpPauseLosses, InpPauseHours),
+   PanelLine(i++, StringFormat("Stop di fila %d / %d (poi pausa %d ore, Fibo e Kairos esclusi)", consLosses, InpPauseLosses, InpPauseHours),
              consLosses >= InpPauseLosses - 1 && InpPauseLosses > 0 ? PNL_WARN : PNL_TXT);
    PanelLine(i++, "", PNL_TXT);
 
@@ -2052,6 +2303,14 @@ void PanelUpdate()
                          g_fbLegDead ? "in attesa, " : "attivo, ", g_fbStatus);
    PanelLine(i++, fib, PNL_TXT);
 
+   //--- Kairos RSI
+   string kr = "Kairos: strategia spenta";
+   if(InpUseKairos)
+      kr = StringFormat("Kairos %s: RSI(%d) M1 %.1f %s", InpKrUseHours ? StringFormat("%04d-%04d", InpKrHourStart, InpKrHourEnd) : "sempre",
+                        InpKrPeriod, g_krNow,
+                        g_krOS ? "(sotto " + DoubleToString(InpKrLow, 0) + ", attendo il rientro)"
+                               : (g_krOB ? "(sopra " + DoubleToString(InpKrHigh, 0) + ", attendo il rientro)" : ""));
+   PanelLine(i++, kr, PNL_TXT);
 
    //--- prossima notizia
    string nx = "Notizie: filtro spento";
