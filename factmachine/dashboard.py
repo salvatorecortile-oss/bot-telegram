@@ -425,6 +425,16 @@ class App:
         tk.Button(bar, text="debug API",
                   command=lambda: self.cmd_q.put(("apis",))).pack(side="right")
 
+        # incolla URL/ID del mercato -> Carica (metodo sicuro)
+        load_bar = tk.Frame(root)
+        load_bar.pack(fill="x", padx=10, pady=(0, 4))
+        tk.Label(load_bar, text="URL/ID mercato:").pack(side="left")
+        self.url_var = tk.StringVar()
+        ent = tk.Entry(load_bar, textvariable=self.url_var)
+        ent.pack(side="left", fill="x", expand=True, padx=6)
+        ent.bind("<Return>", lambda e: self._load_url())
+        tk.Button(load_bar, text="Carica", command=self._load_url).pack(side="left")
+
         # Due colonne: opzione 1 e opzione 2
         cols = tk.Frame(root)
         cols.pack(fill="x", padx=10, pady=6)
@@ -480,6 +490,13 @@ class App:
 
     def _toggle_auto(self):
         self.cmd_q.put(("auto", self.auto_var.get()))
+
+    def _load_url(self):
+        raw = self.url_var.get().strip()
+        if not raw:
+            return
+        mid = market_id_from_url(raw) or raw
+        self.cmd_q.put(("load", mid))
 
     def _log(self, text):
         self.log.insert("end", text + "\n")
