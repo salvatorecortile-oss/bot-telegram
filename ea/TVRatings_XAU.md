@@ -1,8 +1,60 @@
-# TVRatings_XAU — EA MT5 (v4 finale)
+# TVRatings_XAU — EA MT5 (v5 finale)
 
 Replica le **Technical Ratings** di TradingView (il widget "Analisi tecnica": Forte acquisto / Acquisto / Neutrale / Vendita / Forte vendita) e le usa per aprire e chiudere i trade su XAUUSD.
 
-## Versione finale v4: risultati dei backtest e scelte
+## Versione finale v5: backtest su tutti i timeframe e confronto con GoldTitanFarma
+
+### Risultati v4 per timeframe (2026.01.01 – 2026.10.27, tick reali, 0,01 lotti)
+
+| TF | Netto | PF | DD equity | Trade | Lotti | Panieri chiusi a −300 $ |
+|---|---|---|---|---|---|---|
+| M1 | −1 971 | 0,49 | 2 489 | 3 603 | 36,0 | 11 |
+| **M5** | **+506** | **2,63** | **198** | 1 256 | 12,6 | **0** |
+| **M15** | **+368** | **2,47** | 285 | 683 | 6,8 | **0** |
+| M30 | −122 | 0,75 | 492 | 249 | 2,5 | 1 |
+| H1 | +111 | 1,76 | 243 | 115 | 1,2 | 0 |
+| ATR, tutti i TF (M5) | −110 | 0,93 | 1 034 | 1 041 | 10,4 | 3 |
+
+### Cosa dicono
+
+- **Il risultato dipende solo dai panieri che arrivano alla perdita massima.**
+  - Un paniere vincente rende circa 1 $, uno perdente costa 300 $.
+  - Nei TF in perdita (M1, M30, ATR) tutto il resto è in profitto: TP singoli e panieri normali.
+  - Bastano 1–3 panieri a −300 per azzerare mesi di guadagni.
+- **Molti di questi panieri si perdono in pochi minuti** (30 gennaio, 2 e 5–6 febbraio, 23 marzo 2026). Sono picchi veloci: i 3 livelli della griglia si riempiono in sequenza e il prezzo continua.
+- **In M1, 9 panieri persi su 11 sono SELL**, in un anno di oro in forte salita.
+- **M5 e M15** non hanno mai toccato la perdita massima: sono i timeframe da usare. H1 è positivo ma fa pochi trade.
+
+### Cosa aggiunge la v5 (contro i panieri a −300)
+
+| Input | Cosa fa |
+|---|---|
+| `InpGridMinMinutes` | Minuti minimi fra un livello della griglia e il successivo. In un picco veloce la griglia non si riempie tutta in pochi minuti |
+| `InpUseFilter2` / `InpFilter2TF` | Secondo filtro di direzione, D1 di default. Per esempio, niente SELL contro un D1 in acquisto |
+| `InpATRMaxPts` | Già presente. Ora a fine test il journal stampa la distribuzione dell'ATR H1 (mediana, 90%, 95%, 99%, max) per scegliere la soglia |
+| `InpDirection` | Già presente. Nei .set v5 si ottimizza anche "solo Buy" / "solo Sell" |
+
+Con tutte le protezioni spente (`false` / 0) la v5 si comporta come la v4, cioè come GoldTitanFarma.
+
+### File .set
+
+- `TVRatings_v5_Finale_M5.set`: logica GoldTitan su M5 più le protezioni da ottimizzare.
+- `TVRatings_v5_Finale_M15.set`: la stessa su M15 (TP 50, griglia 500).
+
+### Come confrontarla con GoldTitanFarma
+
+1. **Test singolo, stesso periodo per tutti e due** (2026.01.01 – 2026.10.27): tick reali, deposito 100 000, leva 1:500.
+   - GoldTitanFarma con `GoldTitanFarma.set`;
+   - TVRatings v5 con `TVRatings_v5_Finale_M5.set` senza ottimizzare: le protezioni restano spente.
+
+   Le due differenze di logica sono l'Ichimoku (che nel tuo bot vale sempre 0) e il trend SMA 50 invece di EMA 50 (`InpTrendEMA = true` per toglierla).
+2. **Ottimizzazione delle protezioni su un periodo con panieri persi:**
+   - usa il 2025, oppure il 2024–2025, con Forward 1/3;
+   - nel 2026 su M5 non ci sono panieri persi, quindi lì l'ottimizzazione sceglierebbe sempre "spento".
+3. **Verifica:** il migliore va testato di nuovo sul 2026, e lo stesso fai con GoldTitanFarma su 2024–2025.
+4. **Mandami i report di entrambi** e li metto a confronto con la stessa analisi: panieri persi, mesi, direzione.
+
+## Versione v4: risultati dei backtest e scelte
 
 ### Risultati dei test (XAUUSD-P, 2026.01.01 – 2026.10.27, tick reali 99%, 0,01 lotti)
 

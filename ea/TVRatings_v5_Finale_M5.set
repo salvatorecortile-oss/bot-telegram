@@ -1,0 +1,134 @@
+; TVRatings v5 FINALE - M5 (migliore nei backtest 2026: +506, PF 2.63, DD 198, nessun paniere a -300)
+; Logica = GoldTitanFarma (valori di default). Ottimizzati solo i filtri di protezione: con tutto su false/0 il risultato e' quello della v4.
+; Strategia
+InpStrategy=0
+InpInvert=false
+; Segnale
+InpSignalTF=5
+InpSignalSrc=0
+InpEntryMode=1
+InpBuyLevel=0.1
+InpSellLevel=-0.1
+InpDirection=0||0||1||2||Y
+InpReenterSameBar=false
+InpReopenAfterTP=true
+InpReopenDelaySec=0
+; Filtro direzione su altri timeframe
+InpUseFilter=true
+InpFilterTF=16388
+InpFilterAuto=true
+InpFilterSrc=0
+InpFilterLevel=0.1
+InpUseFilter2=false||false||0||true||Y
+InpFilter2TF=16408
+InpFilterAllTF=false
+; Filtri di mercato
+InpADXSrc=0
+InpADXFiltLen=14
+InpADXMin=50
+InpADXMax=0
+InpADXCloseOut=false
+InpATRMaxPts=0||0||500||4000||Y
+InpVolBlockGrid=false
+InpMaxFlips=0
+InpFlipWindowMin=30
+InpFlipPauseMin=60
+; Notizie
+InpNewsFilter=false
+InpNewsMinBefore=30
+InpNewsMinAfter=30
+InpNewsCurrency=USD
+InpNewsBlockGrid=true
+; Uscita
+InpExitMode=3
+InpNeutralBand=0.1
+; Lotto e stop
+InpLotMode=0
+InpFixedLots=0.01
+InpRiskPercent=1.0
+InpBalancePerLot=1000
+InpMaxLots=0
+InpStopMode=2
+InpSLPips=500
+InpTPPips=1000
+InpATRPeriod=14
+InpSLATR=0
+InpTPATR=0.1
+InpSLPoints=0
+InpTPPoints=30
+InpPipSize=0.01
+InpMaxDDPercent=0
+; Griglia e paniere
+InpGridOn=true
+InpGridStepPts=300
+InpGridStepATR=0
+InpGridLotMult=1.0
+InpGridMaxLevels=3
+InpGridMinMinutes=0||0||5||30||Y
+InpGridOnlyWithSignal=false
+InpBasketExit=1
+InpGridTPPts=0
+InpBasketProfit=1.0
+InpBasketMaxLoss=300||100||50||300||Y
+InpBasketMaxHours=0
+InpBasketScale=true
+InpGridCloseOnFlip=false
+; Hedge (versione 3)
+InpHedgeNeutralOnly=false
+InpHedgeCloseOnTrend=true
+; Filtri orario e spread
+InpUseHours=false
+InpStartHour=8
+InpEndHour=20
+InpMaxSpread=60
+; Ordini
+InpMagic=26102801
+InpSlippage=30
+InpComment=TVRatings
+; Tester
+InpRebatePerLot=35
+InpCommPerLot=0
+InpOptCriterion=1
+; Calcolo e grafico
+InpHistoryBars=300
+InpShowPanel=true
+InpPanelAllTF=true
+InpLogRatings=false
+; Medie mobili (default TradingView)
+InpMA1=10
+InpMA2=20
+InpMA3=30
+InpMA4=50
+InpMA5=100
+InpMA6=200
+InpHullLen=9
+InpVWMALen=20
+InpIchiConv=9
+InpIchiBase=26
+InpIchiSpanB=52
+InpIchiShift=25
+; Oscillatori (default TradingView)
+InpRSILen=14
+InpStochK=14
+InpStochSm=3
+InpStochD=3
+InpCCILen=20
+InpCCITypical=false
+InpADXLen=14
+InpAOFast=5
+InpAOSlow=34
+InpMomLen=10
+InpMACDFast=12
+InpMACDSlow=26
+InpMACDSig=9
+InpSRSIK=3
+InpSRSID=3
+InpSRSIRsi=14
+InpSRSIStoch=14
+InpWPRLen=14
+InpBBPLen=13
+InpUO1=7
+InpUO2=14
+InpUO3=28
+InpTrendLen=50
+InpTrendEMA=false

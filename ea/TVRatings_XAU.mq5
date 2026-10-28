@@ -1,6 +1,9 @@
 //+------------------------------------------------------------------+
 //|                                              TVRatings_XAU.mq5   |
-//|  v4 - Replica delle "Technical Ratings" di TradingView           |
+//|  v5 - Replica delle "Technical Ratings" di TradingView           |
+//|  v5: secondo filtro di direzione (es. D1), pausa minima tra i    |
+//|  livelli della griglia contro i picchi veloci, statistiche ATR   |
+//|  H1 a fine test per scegliere il filtro volatilita'.             |
 //|  Default = configurazione migliore dei backtest 2026 (GoldTitan): |
 //|  M5, ADX >= 50, direzione H4, TP 30 punti, griglia 3 x 300 punti |
 //|  con chiusura del paniere a +1. TP e griglia anche in ATR, per   |
@@ -23,7 +26,7 @@
 //|  di TradingView (RMA di Wilder, EMA con seme SMA, ecc.).         |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "4.00"
+#property version   "5.00"
 #property description "Technical Ratings stile TradingView su XAUUSD: segnale, filtri multi-timeframe, ADX, notizie, griglia a paniere, hedge"
 
 #property tester_file "GT_news.csv"
@@ -122,6 +125,8 @@ input ENUM_TIMEFRAMES InpFilterTF    = PERIOD_H4;   // Timeframe del filtro
 input bool            InpFilterAuto  = false;       // TF del filtro automatico: M1>H1, M5>H4, M15>H4, M30>D1, H1>D1, H4>W1, D1>MN1
 input RatingSource    InpFilterSrc   = SRC_TOTAL;   // Rating usato per il filtro
 input double          InpFilterLevel = 0.1;         // Segnale BUY se filtro > livello, SELL se filtro < -livello (0.1 = almeno Acquisto, -0.1 = non contrario)
+input bool            InpUseFilter2  = false;       // Secondo filtro: deve confermare anche questo TF
+input ENUM_TIMEFRAMES InpFilter2TF   = PERIOD_D1;   // Timeframe del secondo filtro (stessa sorgente e livello del primo)
 input bool            InpFilterAllTF = false;       // Al posto del TF del filtro: devono concordare M1, M5, M15, M30, H1, H4 e D1
 
 input group "Filtri di mercato"
@@ -170,6 +175,7 @@ input double          InpGridStepPts = 300;         // Distanza tra i livelli in
 input double          InpGridStepATR = 0;           // Distanza tra i livelli in ATR del TF segnale (0 = usa i punti)
 input double          InpGridLotMult = 1.0;         // Moltiplicatore lotto per livello (1 = lotto costante)
 input int             InpGridMaxLevels = 3;         // Livelli massimi per direzione (compreso il primo)
+input int             InpGridMinMinutes = 0;        // Minuti minimi tra due livelli della griglia (0 = off): contro i picchi veloci
 input bool            InpGridOnlyWithSignal = false;// Aggiunge livelli solo se il segnale e' ancora nella direzione del paniere
 input BasketExit      InpBasketExit  = BASKET_MONEY; // Uscita del paniere (2+ posizioni)
 input double          InpGridTPPts   = 0;           // TP comune dal prezzo medio, in punti (0 = stesso TP del singolo trade)
@@ -269,6 +275,7 @@ struct SideInfo
    double   lastLot;       // lotto dell'ultimo livello aperto
    double   firstLot;      // lotto del primo livello
    datetime oldest;        // apertura della posizione piu' vecchia
+   datetime newest;        // apertura dell'ultimo livello
    double   profit;
   };
 
@@ -288,7 +295,11 @@ double g_ao[], g_mom[], g_macd[], g_macdSig[], g_srK[], g_srD[];
 double g_wpr[], g_bull[], g_bear[], g_uo[], g_trend[], g_atr[];
 double g_fpdi[], g_fmdi[], g_fadx[];
 
-Rating   g_sigCur, g_sigPrev, g_flt;
+Rating   g_sigCur, g_sigPrev, g_flt, g_flt2;
+datetime g_lastFlt2Bar = 0, g_flt2Closed = 0;
+double   g_atrHist[];             // ATR H1 registrato a ogni ora nel tester
+int      g_atrN = 0;
+datetime g_atrBar = 0;
 double   g_sigATR     = NA;
 datetime g_lastSigBar = 0;   // candela (in corso) del TF segnale gia' elaborata
 datetime g_lastFltBar = 0;
@@ -380,7 +391,7 @@ int OnInit()
    g_sigCur.ok = false; g_flt.ok = false;
    for(int k = 0; k < N_ALLTF; k++) { a_rat[k].ok = false; a_bar[k] = 0; a_closed[k] = 0; }
 
-   if(InpATRMaxPts > 0)
+   if(InpATRMaxPts > 0 || MQLInfoInteger(MQL_TESTER))
      {
       g_hATRH1 = iATR(_Symbol, PERIOD_H1, 14);
       if(g_hATRH1 == INVALID_HANDLE) { Print("Impossibile creare l'ATR H1"); return INIT_FAILED; }
@@ -449,6 +460,7 @@ void OnTick()
       g_sigCur = cur; g_sigPrev = prv; g_sigATR = atr;
 
       if(g_needFlt) UpdateFilter();
+      if(InpUseFilter2) UpdateFilter2();
 
       if(InpLogRatings)
          PrintFormat("%s %s  MA %+.3f  OSC %+.3f  TOT %+.3f  ADX %.1f  (%s)", TFName(g_sigTF),
@@ -466,8 +478,14 @@ void OnTick()
          g_status = (g_desired == 0) ? "nessun segnale" : (g_desired > 0 ? "segnale BUY" : "segnale SELL");
         }
      }
-   else if(g_needFlt && iTime(_Symbol, g_fltTF, 0) != g_lastFltBar)
-      UpdateFilter();                  // filtro non ancora pronto o nuova candela del filtro
+   else
+     {
+      if(g_needFlt && iTime(_Symbol, g_fltTF, 0) != g_lastFltBar)
+         UpdateFilter();               // filtro non ancora pronto o nuova candela del filtro
+      if(InpUseFilter2 && iTime(_Symbol, InpFilter2TF, 0) != g_lastFlt2Bar)
+         UpdateFilter2();
+     }
+   TrackATR();
 
    CheckDrawdown(sigBar);
    ManageBaskets();
@@ -508,6 +526,34 @@ void UpdateFilter()
      }
    else
       g_flt.ok = false;
+  }
+
+void UpdateFilter2()
+  {
+   datetime fBar = iTime(_Symbol, InpFilter2TF, 0);
+   if(fBar == 0 || fBar == g_lastFlt2Bar) return;
+   Rating cur, prv;
+   double atr;
+   if(CalcRatings(InpFilter2TF, cur, prv, atr, g_flt2Closed))
+     {
+      g_flt2 = cur;
+      g_lastFlt2Bar = fBar;
+     }
+   else
+      g_flt2.ok = false;
+  }
+
+// registra l'ATR H1 a ogni nuova ora (statistiche a fine test per scegliere InpATRMaxPts)
+void TrackATR()
+  {
+   if(!MQLInfoInteger(MQL_TESTER) || g_hATRH1 == INVALID_HANDLE) return;
+   datetime t = iTime(_Symbol, PERIOD_H1, 0);
+   if(t == g_atrBar) return;
+   g_atrBar = t;
+   double a = ATRH1Pts();
+   if(a <= 0) return;
+   ArrayResize(g_atrHist, g_atrN + 1, 2000);
+   g_atrHist[g_atrN++] = a;
   }
 
 // tutti i TF: ognuno si ricalcola alla chiusura della propria candela
@@ -740,8 +786,16 @@ bool FilterOk(const int tradeDir)
      }
    if(!g_flt.ok) { g_status = "filtro " + TFName(g_fltTF) + " non disponibile"; return false; }
    double f = Pick(g_flt, InpFilterSrc);
-   if((ind > 0 && f > InpFilterLevel) || (ind < 0 && f < -InpFilterLevel)) return true;
-   g_status = StringFormat("%s bloccato dal filtro %s (%+.2f)", tradeDir > 0 ? "BUY" : "SELL", TFName(g_fltTF), f);
+   if(!((ind > 0 && f > InpFilterLevel) || (ind < 0 && f < -InpFilterLevel)))
+     {
+      g_status = StringFormat("%s bloccato dal filtro %s (%+.2f)", tradeDir > 0 ? "BUY" : "SELL", TFName(g_fltTF), f);
+      return false;
+     }
+   if(!InpUseFilter2) return true;
+   if(!g_flt2.ok) { g_status = "filtro " + TFName(InpFilter2TF) + " non disponibile"; return false; }
+   double f2 = Pick(g_flt2, InpFilterSrc);
+   if((ind > 0 && f2 > InpFilterLevel) || (ind < 0 && f2 < -InpFilterLevel)) return true;
+   g_status = StringFormat("%s bloccato dal filtro %s (%+.2f)", tradeDir > 0 ? "BUY" : "SELL", TFName(InpFilter2TF), f2);
    return false;
   }
 
@@ -860,6 +914,7 @@ void ManageGrid(const datetime bar)
       bool adverse = (side > 0) ? (ask <= si.worstPrice - step) : (bid >= si.worstPrice + step);
       if(!adverse) continue;
       if(g_ddBlockBar == bar || !SpreadOk()) continue;
+      if(InpGridMinMinutes > 0 && TimeCurrent() - si.newest < InpGridMinMinutes * 60) continue;
       if(InpGridOnlyWithSignal && InpStrategy == STRAT_SIGNAL && g_desired != side) continue;
       if(InpNewsBlockGrid && NewsBlocked()) continue;
       if(InpVolBlockGrid && VolTooHigh()) continue;
@@ -1042,7 +1097,7 @@ int PosSide()
 void GetSide(const int side, SideInfo &si)
   {
    si.count = 0; si.volume = 0; si.avgPrice = 0; si.worstPrice = 0;
-   si.lastLot = 0; si.firstLot = 0; si.oldest = 0; si.profit = 0;
+   si.lastLot = 0; si.firstLot = 0; si.oldest = 0; si.newest = 0; si.profit = 0;
    long lastTime = 0, firstTime = 0;
    double pv = 0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
@@ -1052,7 +1107,7 @@ void GetSide(const int side, SideInfo &si)
       double vol = PositionGetDouble(POSITION_VOLUME);
       long   t   = PositionGetInteger(POSITION_TIME_MSC);
       if(si.count == 0 || (side > 0 ? p < si.worstPrice : p > si.worstPrice)) si.worstPrice = p;
-      if(t >= lastTime) { lastTime = t; si.lastLot = vol; }
+      if(t >= lastTime) { lastTime = t; si.lastLot = vol; si.newest = (datetime)(t / 1000); }
       if(firstTime == 0 || t < firstTime) { firstTime = t; si.firstLot = vol; si.oldest = (datetime)(t / 1000); }
       si.count++;
       si.volume += vol;
@@ -1161,6 +1216,14 @@ double OnTester()
                lots, net, lots * InpCommPerLot, rebate, net + rebate, dd, TesterStatistics(STAT_EQUITYDD_PERCENT), g_maxLotUsed);
    PrintFormat("Inversioni %d | livelli griglia %d | panieri chiusi: profitto %d, perdita max %d, durata max %d | stop drawdown %d | blocchi notizie %d, volatilita' %d",
                g_flips, g_gridAdds, g_profitCloses, g_lossCloses, g_timeCloses, g_ddStops, g_newsBlocks, g_volBlocks);
+   if(g_atrN > 10)
+     {
+      double a[];
+      ArrayCopy(a, g_atrHist, 0, 0, g_atrN);
+      ArraySort(a);
+      PrintFormat("ATR(14) H1 in punti nel periodo: min %.0f | 25%% %.0f | mediana %.0f | 75%% %.0f | 90%% %.0f | 95%% %.0f | 99%% %.0f | max %.0f",
+                  a[0], a[g_atrN / 4], a[g_atrN / 2], a[g_atrN * 3 / 4], a[g_atrN * 9 / 10], a[g_atrN * 95 / 100], a[g_atrN * 99 / 100], a[g_atrN - 1]);
+     }
    if(InpOptCriterion == OPT_RATIO_DD)    return dd > 0 ? (net + rebate) / dd : 0;
    if(InpOptCriterion == OPT_RATIO_DD_PF) return dd > 0 ? (net + rebate) / dd * pf : 0;
    return net + rebate;
@@ -1809,6 +1872,8 @@ void DrawPanel()
    row = RatingRows(row, "Segnale " + TFName(g_sigTF), g_sigCur, g_sigClosed);
    if(g_needFlt)
       row = RatingRows(row, "Filtro " + TFName(g_fltTF), g_flt, g_fltClosed);
+   if(InpUseFilter2)
+      row = RatingRows(row, "Filtro 2 " + TFName(InpFilter2TF), g_flt2, g_flt2Closed);
 
    if(g_needAll)
      {
