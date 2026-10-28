@@ -1,6 +1,10 @@
 //+------------------------------------------------------------------+
 //|                                              TVRatings_XAU.mq5   |
-//|  v3 - Replica delle "Technical Ratings" di TradingView           |
+//|  v4 - Replica delle "Technical Ratings" di TradingView           |
+//|  Default = configurazione migliore dei backtest 2026 (GoldTitan): |
+//|  M5, ADX >= 50, direzione H4, TP 30 punti, griglia 3 x 300 punti |
+//|  con chiusura del paniere a +1. TP e griglia anche in ATR, per   |
+//|  usare la stessa logica su tutti i timeframe.                    |
 //|  (widget "Analisi tecnica": Forte acquisto ... Forte vendita)    |
 //|  - 15 componenti medie mobili + 11 oscillatori, voto +1/-1/0     |
 //|  - calcolo alla chiusura di ogni candela del TF scelto           |
@@ -19,7 +23,7 @@
 //|  di TradingView (RMA di Wilder, EMA con seme SMA, ecc.).         |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "3.00"
+#property version   "4.00"
 #property description "Technical Ratings stile TradingView su XAUUSD: segnale, filtri multi-timeframe, ADX, notizie, griglia a paniere, hedge"
 
 #property tester_file "GT_news.csv"
@@ -102,11 +106,11 @@ input StrategyMode    InpStrategy    = STRAT_SIGNAL; // Strategia
 input bool            InpInvert      = false;        // Inverti: BUY quando l'indicatore dice SELL e viceversa
 
 input group "Segnale"
-input ENUM_TIMEFRAMES InpSignalTF    = PERIOD_H1;   // Timeframe del segnale
+input ENUM_TIMEFRAMES InpSignalTF    = PERIOD_M5;   // Timeframe del segnale
 input RatingSource    InpSignalSrc   = SRC_TOTAL;   // Rating usato per il segnale
-input EntryMode       InpEntryMode   = ENTRY_CROSS; // Modalita' di ingresso
-input double          InpBuyLevel    = 0.5;         // Soglia segnale BUY dell'indicatore (rating sopra)
-input double          InpSellLevel   = -0.5;        // Soglia segnale SELL dell'indicatore (rating sotto)
+input EntryMode       InpEntryMode   = ENTRY_LEVEL; // Modalita' di ingresso
+input double          InpBuyLevel    = 0.1;         // Soglia segnale BUY dell'indicatore (rating sopra)
+input double          InpSellLevel   = -0.1;        // Soglia segnale SELL dell'indicatore (rating sotto)
 input TradeDir        InpDirection   = DIR_BOTH;    // Direzioni ammesse (dei trade, dopo l'inversione)
 input bool            InpReenterSameBar = false;    // Dopo una chiusura (es. TP) rientra subito, anche nella stessa candela
 input bool            InpReopenAfterTP  = true;     // Dopo un TP rientra nella stessa direzione (false = aspetta un segnale nuovo)
@@ -114,7 +118,8 @@ input int             InpReopenDelaySec = 0;        // Attesa in secondi dopo un
 
 input group "Filtro direzione su altri timeframe"
 input bool            InpUseFilter   = true;        // Usa il filtro
-input ENUM_TIMEFRAMES InpFilterTF    = PERIOD_D1;   // Timeframe del filtro
+input ENUM_TIMEFRAMES InpFilterTF    = PERIOD_H4;   // Timeframe del filtro
+input bool            InpFilterAuto  = false;       // TF del filtro automatico: M1>H1, M5>H4, M15>H4, M30>D1, H1>D1, H4>W1, D1>MN1
 input RatingSource    InpFilterSrc   = SRC_TOTAL;   // Rating usato per il filtro
 input double          InpFilterLevel = 0.1;         // Segnale BUY se filtro > livello, SELL se filtro < -livello (0.1 = almeno Acquisto, -0.1 = non contrario)
 input bool            InpFilterAllTF = false;       // Al posto del TF del filtro: devono concordare M1, M5, M15, M30, H1, H4 e D1
@@ -122,7 +127,7 @@ input bool            InpFilterAllTF = false;       // Al posto del TF del filtr
 input group "Filtri di mercato"
 input AdxSource       InpADXSrc      = ADXSRC_SIGNAL; // Timeframe dell'ADX
 input int             InpADXFiltLen  = 14;            // Periodo ADX del filtro
-input double          InpADXMin      = 0;             // ADX minimo per aprire (0 = off) - trend
+input double          InpADXMin      = 50;            // ADX minimo per aprire (0 = off) - trend
 input double          InpADXMax      = 0;             // ADX massimo per aprire (0 = off) - laterale
 input bool            InpADXCloseOut = false;         // Chiude tutto quando l'ADX esce dalla zona
 input int             InpATRMaxPts   = 0;             // Volatilita' massima: ATR(14) H1 in punti oltre cui non apre (0 = off)
@@ -139,7 +144,7 @@ input string          InpNewsCurrency  = "USD";     // Valuta delle notizie
 input bool            InpNewsBlockGrid = true;      // Blocca anche i livelli della griglia
 
 input group "Uscita"
-input ExitMode        InpExitMode    = EXIT_NEUTRAL; // Tipo di uscita (strategia Segnale)
+input ExitMode        InpExitMode    = EXIT_OPPOSITE; // Tipo di uscita (strategia Segnale)
 input double          InpNeutralBand = 0.1;          // Fascia neutra (+/-): neutro = tra -X e +X
 
 input group "Lotto e stop"
@@ -148,30 +153,31 @@ input double          InpFixedLots   = 0.01;        // Lotto fisso (con l'intere
 input double          InpRiskPercent = 1.0;         // Rischio % del saldo (solo modalita' %, serve uno SL)
 input double          InpBalancePerLot = 1000;      // Interesse composto: un lotto fisso ogni X di saldo
 input double          InpMaxLots     = 0;           // Lotto massimo (0 = nessun limite)
-input StopMode        InpStopMode    = STOP_ATR;    // SL/TP in pips, ATR o punti
+input StopMode        InpStopMode    = STOP_POINTS;   // SL/TP in pips, ATR o punti
 input double          InpSLPips      = 500;         // SL in pips (0 = nessuno) - 500 pips = 5.00 $
 input double          InpTPPips      = 1000;        // TP in pips (0 = nessuno)
 input int             InpATRPeriod   = 14;          // Periodo ATR (sul TF del segnale)
-input double          InpSLATR       = 1.5;         // SL = ATR x (0 = nessuno)
-input double          InpTPATR       = 3.0;         // TP = ATR x (0 = nessuno)
+input double          InpSLATR       = 0;           // SL = ATR x (0 = nessuno)
+input double          InpTPATR       = 0.1;         // TP = ATR x (0 = nessuno)
 input double          InpSLPoints    = 0;           // SL in punti (0 = nessuno)
-input double          InpTPPoints    = 10;          // TP in punti (0 = nessuno) - oro a 2 decimali: 10 punti = 0.10 $
+input double          InpTPPoints    = 30;          // TP in punti (0 = nessuno) - oro a 2 decimali: 30 punti = 0.30 $
 input double          InpPipSize     = 0.01;        // Valore di 1 pip in prezzo (oro: 0.01)
 input double          InpMaxDDPercent= 0;           // Chiude tutto se la perdita aperta supera X% del saldo (0 = off)
 
 input group "Griglia e paniere"
-input bool            InpGridOn      = false;       // Griglia: aggiunge posizioni quando il prezzo va contro
-input double          InpGridStepPts = 200;         // Distanza tra i livelli in punti
+input bool            InpGridOn      = true;        // Griglia: aggiunge posizioni quando il prezzo va contro
+input double          InpGridStepPts = 300;         // Distanza tra i livelli in punti
+input double          InpGridStepATR = 0;           // Distanza tra i livelli in ATR del TF segnale (0 = usa i punti)
 input double          InpGridLotMult = 1.0;         // Moltiplicatore lotto per livello (1 = lotto costante)
-input int             InpGridMaxLevels = 5;         // Livelli massimi per direzione (compreso il primo)
+input int             InpGridMaxLevels = 3;         // Livelli massimi per direzione (compreso il primo)
 input bool            InpGridOnlyWithSignal = false;// Aggiunge livelli solo se il segnale e' ancora nella direzione del paniere
-input BasketExit      InpBasketExit  = BASKET_TP_PRICE; // Uscita del paniere (2+ posizioni)
+input BasketExit      InpBasketExit  = BASKET_MONEY; // Uscita del paniere (2+ posizioni)
 input double          InpGridTPPts   = 0;           // TP comune dal prezzo medio, in punti (0 = stesso TP del singolo trade)
 input double          InpBasketProfit= 1.0;         // Profitto del paniere per chiudere (valuta conto, modalita' profitto)
-input double          InpBasketMaxLoss = 0;         // Chiude il paniere se la perdita arriva a X (valuta conto, 0 = off)
+input double          InpBasketMaxLoss = 300;       // Chiude il paniere se la perdita arriva a X (valuta conto, 0 = off)
 input double          InpBasketMaxHours= 0;         // Chiude il paniere aperto da piu' di X ore (0 = off)
 input bool            InpBasketScale = true;        // Profitto e perdita del paniere crescono con il lotto (riferimento: lotto fisso)
-input bool            InpGridCloseOnFlip = true;    // Con 2+ posizioni chiude anche sul segnale (false = aspetta profitto, perdita max o durata)
+input bool            InpGridCloseOnFlip = false;   // Con 2+ posizioni chiude anche sul segnale (false = aspetta profitto, perdita max o durata)
 
 input group "Hedge (versione 3)"
 input bool            InpHedgeNeutralOnly  = false; // Laterale solo se anche il rating e' neutro
@@ -181,7 +187,7 @@ input group "Filtri orario e spread"
 input bool            InpUseHours    = false;       // Usa il filtro orario (ora del server)
 input int             InpStartHour   = 8;           // Ora di inizio (inclusa)
 input int             InpEndHour     = 20;          // Ora di fine (esclusa; se < inizio passa la mezzanotte)
-input double          InpMaxSpread   = 50;          // Spread massimo in pips (0 = off; oro: 1 pip = 1 punto)
+input double          InpMaxSpread   = 60;          // Spread massimo in pips (0 = off; oro: 1 pip = 1 punto)
 
 input group "Ordini"
 input long            InpMagic       = 26102801;    // Magic number
@@ -189,11 +195,12 @@ input double          InpSlippage    = 30;          // Slippage massimo in pips
 input string          InpComment     = "TVRatings"; // Commento ordini
 
 input group "Tester"
-input double          InpRebatePerLot = 0;          // Rebate per lotto (solo per il risultato Custom)
-input OptCriterion    InpOptCriterion = OPT_PROFIT_REBATE; // Criterio Custom del tester
+input double          InpRebatePerLot = 35;         // Rebate per lotto (solo per il risultato Custom)
+input double          InpCommPerLot   = 0;          // Commissione per lotto andata e ritorno da sottrarre nel risultato Custom (se il tester non la applica)
+input OptCriterion    InpOptCriterion = OPT_RATIO_DD; // Criterio Custom del tester
 
 input group "Calcolo e grafico"
-input int             InpHistoryBars = 400;         // Candele usate per il calcolo (min. circa 260)
+input int             InpHistoryBars = 300;         // Candele usate per il calcolo (min. circa 260)
 input bool            InpShowPanel   = true;        // Mostra i rating sul grafico
 input bool            InpPanelAllTF  = true;        // Nel pannello anche il rating di M1, M5, M15, M30, H1, H4, D1
 input bool            InpLogRatings  = false;       // Scrive i rating nel journal a ogni candela
@@ -329,6 +336,7 @@ int OnInit()
   {
    g_sigTF = (InpSignalTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : InpSignalTF;
    g_fltTF = (InpFilterTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : InpFilterTF;
+   if(InpFilterAuto) g_fltTF = AutoFilterTF(g_sigTF);
    g_needFlt = (InpUseFilter && !InpFilterAllTF) || ((InpADXMin > 0 || InpADXMax > 0) && InpADXSrc == ADXSRC_FILTER);
 
    g_maLen[0] = InpMA1; g_maLen[1] = InpMA2; g_maLen[2] = InpMA3;
@@ -470,6 +478,18 @@ void OnTick()
    if(InpGridOn) ManageGrid(sigBar);
 
    DrawPanel();
+  }
+
+// TF del filtro scelto in base al TF del segnale (circa 12-48 volte piu' lento)
+ENUM_TIMEFRAMES AutoFilterTF(const ENUM_TIMEFRAMES tf)
+  {
+   if(tf <= PERIOD_M1)  return PERIOD_H1;
+   if(tf <= PERIOD_M5)  return PERIOD_H4;
+   if(tf <= PERIOD_M15) return PERIOD_H4;
+   if(tf <= PERIOD_M30) return PERIOD_D1;
+   if(tf <= PERIOD_H1)  return PERIOD_D1;
+   if(tf <= PERIOD_H4)  return PERIOD_W1;
+   return PERIOD_MN1;
   }
 
 //+------------------------------------------------------------------+
@@ -825,6 +845,11 @@ void HedgeTick(const datetime bar)
 void ManageGrid(const datetime bar)
   {
    double step = InpGridStepPts * _Point;
+   if(InpGridStepATR > 0)
+     {
+      if(g_sigATR == NA || g_sigATR <= 0) return;
+      step = InpGridStepATR * g_sigATR;
+     }
    for(int side = 1; side >= -1; side -= 2)
      {
       SideInfo si;
@@ -1128,12 +1153,12 @@ double OnTester()
          if(HistoryDealGetInteger(t, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;
          lots += HistoryDealGetDouble(t, DEAL_VOLUME);
         }
-   double net    = TesterStatistics(STAT_PROFIT);
+   double net    = TesterStatistics(STAT_PROFIT) - lots * InpCommPerLot;
    double rebate = lots * InpRebatePerLot;
    double dd     = TesterStatistics(STAT_EQUITY_DD);
    double pf     = TesterStatistics(STAT_PROFIT_FACTOR);
-   PrintFormat("Lotti %.2f | profitto %.2f | rebate %.2f | totale %.2f | DD equity %.2f (%.2f%%) | lotto max %.2f",
-               lots, net, rebate, net + rebate, dd, TesterStatistics(STAT_EQUITYDD_PERCENT), g_maxLotUsed);
+   PrintFormat("Lotti %.2f | profitto %.2f (commissione simulata %.2f) | rebate %.2f | totale %.2f | DD equity %.2f (%.2f%%) | lotto max %.2f",
+               lots, net, lots * InpCommPerLot, rebate, net + rebate, dd, TesterStatistics(STAT_EQUITYDD_PERCENT), g_maxLotUsed);
    PrintFormat("Inversioni %d | livelli griglia %d | panieri chiusi: profitto %d, perdita max %d, durata max %d | stop drawdown %d | blocchi notizie %d, volatilita' %d",
                g_flips, g_gridAdds, g_profitCloses, g_lossCloses, g_timeCloses, g_ddStops, g_newsBlocks, g_volBlocks);
    if(InpOptCriterion == OPT_RATIO_DD)    return dd > 0 ? (net + rebate) / dd : 0;

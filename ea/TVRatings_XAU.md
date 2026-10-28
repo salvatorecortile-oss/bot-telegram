@@ -1,6 +1,73 @@
-# TVRatings_XAU — EA MT5 (v3)
+# TVRatings_XAU — EA MT5 (v4 finale)
 
 Replica le **Technical Ratings** di TradingView (il widget "Analisi tecnica": Forte acquisto / Acquisto / Neutrale / Vendita / Forte vendita) e le usa per aprire e chiudere i trade su XAUUSD.
+
+## Versione finale v4: risultati dei backtest e scelte
+
+### Risultati dei test (XAUUSD-P, 2026.01.01 – 2026.10.27, tick reali 99%, 0,01 lotti)
+
+| Test | Netto | Profit factor | DD equity | Trade | Lotti | Netto + rebate 35 |
+|---|---|---|---|---|---|---|
+| V1 a favore (H1) | −111 | 0,97 | 922 | 218 | 2,2 | −35 |
+| V1 contraria (H1) | −171 | 0,96 | 1 180 | 218 | 2,2 | −95 |
+| V2 a favore (M5) | −23 499 | 0,21 | 23 504 | 46 998 | 470 | −7 050 |
+| V2 contraria (M5) | −16 616 | 0,18 | 16 619 | 29 212 | 292 | −6 392 |
+| V3 hedge (M5) | −22 370 | 0,21 | 22 370 | 42 888 | 429 | −7 359 |
+| **GoldTitan equivalente (M5)** | **+506** | **2,63** | **198** | 1 256 | 12,6 | **+946** |
+
+### Cosa dicono i numeri
+
+- **V2 e V3 (farm in laterale) perdono per motivi strutturali.**
+  - Il TP vale in media +0,13 $; la chiusura sul segnale opposto in media −9 $ (V2) e −12,7 $ (V3).
+  - Con questi valori servirebbe una percentuale di vincita sopra il 96%; ne fanno il 85%.
+  - Neanche con il rebate di 35 $/lotto tornano in positivo.
+  - Spostare le soglie non cambia la struttura: in laterale il rating si gira continuamente.
+- **V1 (stop and reverse su H1) è in pari** in entrambe le direzioni (profit factor 0,96–0,97). Da solo il rating H1 non dà un vantaggio.
+- **La logica GoldTitan funziona.** Insieme portano il risultato:
+  - si entra solo con ADX ≥ 50 e nella direzione di H4;
+  - TP piccolo;
+  - quando va contro, la griglia (3 livelli a 300 punti) recupera e il paniere chiude appena è a +1 $.
+
+  Il dettaglio:
+  - **ogni mese** da gennaio a ottobre è positivo, e anche ogni ora e ogni giorno della settimana;
+  - Buy e Sell rendono uguale;
+  - sono 195 panieri chiusi, tutti in profitto; la perdita massima del paniere (300 $) non è mai scattata;
+  - una sola chiusura su tutto il periodo è negativa (−0,16 $).
+
+### Cosa cambia nella v4
+
+- **Valori di default = configurazione GoldTitan.** L'EA appena caricato lavora già con la logica migliore.
+- **Funziona su tutti i timeframe in due modi:**
+  - TP e passo della griglia **in ATR** (`InpStopMode = ATR`, `InpTPATR`, `InpGridStepATR`), così la stessa impostazione si adatta da M1 a H4;
+  - oppure in punti, con un file .set per ogni timeframe e range già scalati.
+- **Filtro di direzione automatico** (`InpFilterAuto`): M1→H1, M5→H4, M15→H4, M30→D1, H1→D1, H4→W1.
+- **Commissione simulata** (`InpCommPerLot`): nei test la commissione era 0. Se il tuo conto reale ne paga una, inseriscila qui e il risultato Custom la sottrae.
+- **Criterio Custom di default:** (profitto + rebate − commissione) / drawdown, con rebate 35 $/lotto.
+
+### File .set della versione finale
+
+| File | Timeframe | TP (punti) | Passo griglia (punti) |
+|---|---|---|---|
+| `TVRatings_Finale_M1.set` | M1 | 10–40 | 100–400 |
+| `TVRatings_Finale_M5.set` | M5 | 20–60 | 200–600 |
+| `TVRatings_Finale_M15.set` | M15 | 30–100 | 300–1000 |
+| `TVRatings_Finale_M30.set` | M30 | 50–200 | 500–1500 |
+| `TVRatings_Finale_H1.set` | H1 | 50–300 | 600–2400 |
+| `TVRatings_Finale_H4.set` | H4 | 100–600 | 1000–5000 |
+| `TVRatings_Finale_ATR_tuttiTF.set` | da M1 a H4 (si ottimizza anche il TF) | 0,05–0,3 × ATR | 0,5–2 × ATR |
+
+In tutti i file si ottimizzano anche:
+- ADX minimo (25–60);
+- profitto del paniere (0,5–3 $);
+- livelli della griglia (2–5);
+- filtro di direzione acceso o spento;
+- pausa dopo troppe inversioni.
+
+### Attenzione prima del conto reale
+
+- **Un solo periodo:** 10 mesi di un anno con trend forti sull'oro. Ripeti il test migliore anche sul 2024 e sul 2025.
+- **Nessuno SL:** il rischio vero è la perdita massima del paniere. Su un conto da 1 000 $ con 0,01 lotti, 300 $ sono il 30% del conto. Valuta di ridurla o di attivare `InpMaxDDPercent`.
+- **Drawdown sul tuo saldo:** 198 $ sono lo 0,2% di 100 000 $, ma il 20% di 1 000 $. Ragiona sul drawdown in valuta.
 
 ## Come calcola il rating
 
