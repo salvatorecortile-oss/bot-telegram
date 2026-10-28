@@ -1,0 +1,101 @@
+; TVRatings v2 - VERSIONE 1 a favore: stop and reverse, senza SL e TP, ADX > livello (trend), H1
+; Valori con ||inizio||passo||fine||Y = ottimizzati. Caricali da Strategy Tester > Parametri > tasto destro > Carica.
+; Strategia
+InpStrategy=0
+InpInvert=false
+; Segnale
+InpSignalTF=16385
+InpSignalSrc=0
+InpEntryMode=1
+InpBuyLevel=0.1||0.1||0.1||0.5||Y
+InpSellLevel=-0.1||-0.5||0.1||-0.1||Y
+InpDirection=0
+InpReenterSameBar=false
+; Filtro sul secondo timeframe
+InpUseFilter=false||false||0||true||Y
+InpFilterTF=16408
+InpFilterSrc=0
+InpFilterLevel=0.1
+; Filtro ADX
+InpADXMode=1||0||1||1||Y
+InpADXSrc=0
+InpADXFiltLen=14
+InpADXLevel=25||15||5||40||Y
+InpADXCloseOut=false||false||0||true||Y
+; Uscita
+InpExitMode=3
+InpNeutralBand=0.1
+; Gestione del rischio
+InpLotMode=0
+InpFixedLots=0.01
+InpRiskPercent=1.0
+InpStopMode=2
+InpSLPips=500
+InpTPPips=1000
+InpATRPeriod=14
+InpSLATR=1.5
+InpTPATR=3.0
+InpSLPoints=0
+InpTPPoints=0
+InpPipSize=0.01
+InpMaxDDPercent=0
+; Griglia
+InpGridOn=false||false||0||true||Y
+InpGridStepPts=200||100||100||1000||Y
+InpGridLotMult=1.0
+InpGridMaxLevels=5||2||1||8||Y
+InpGridTPPts=0
+; Hedge (versione 3)
+InpHedgeNeutralOnly=false
+InpHedgeCloseOnTrend=true
+; Filtri orario e spread
+InpUseHours=false
+InpStartHour=8
+InpEndHour=20
+InpMaxSpread=0
+; Ordini
+InpMagic=26102801
+InpSlippage=30
+InpComment=TVRatings
+; Calcolo e grafico
+InpHistoryBars=800
+InpShowPanel=true
+InpLogRatings=false
+; Medie mobili (default TradingView)
+InpMA1=10
+InpMA2=20
+InpMA3=30
+InpMA4=50
+InpMA5=100
+InpMA6=200
+InpHullLen=9
+InpVWMALen=20
+InpIchiConv=9
+InpIchiBase=26
+InpIchiSpanB=52
+InpIchiShift=25
+; Oscillatori (default TradingView)
+InpRSILen=14
+InpStochK=14
+InpStochSm=3
+InpStochD=3
+InpCCILen=20
+InpCCITypical=false
+InpADXLen=14
+InpAOFast=5
+InpAOSlow=34
+InpMomLen=10
+InpMACDFast=12
+InpMACDSlow=26
+InpMACDSig=9
+InpSRSIK=3
+InpSRSID=3
+InpSRSIRsi=14
+InpSRSIStoch=14
+InpWPRLen=14
+InpBBPLen=13
+InpUO1=7
+InpUO2=14
+InpUO3=28
+InpTrendLen=50
+InpTrendEMA=false

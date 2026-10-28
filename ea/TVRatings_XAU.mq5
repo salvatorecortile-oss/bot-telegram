@@ -1,24 +1,33 @@
 //+------------------------------------------------------------------+
 //|                                              TVRatings_XAU.mq5   |
-//|  v1 - Replica delle "Technical Ratings" di TradingView           |
+//|  v2 - Replica delle "Technical Ratings" di TradingView           |
 //|  (widget "Analisi tecnica": Forte acquisto ... Forte vendita)    |
 //|  - 15 componenti medie mobili + 11 oscillatori, voto +1/-1/0     |
-//|  - calcolo sulle candele CHIUSE del timeframe scelto             |
-//|  - ingresso sul passaggio di soglia, filtro su un secondo TF     |
-//|  - lotto fisso o % del saldo, SL/TP in pips o multipli di ATR    |
-//|  - uscita su rating neutro / girato, oppure solo SL e TP         |
+//|  - calcolo alla chiusura di ogni candela del TF scelto           |
+//|    (M1 ogni minuto, M5 ogni 5 minuti, ...)                       |
+//|  - segnale a favore o contrario all'indicatore (Inverti)         |
+//|  - versione 1: stop and reverse senza SL/TP                       |
+//|  - versione 2: TP in punti, chiude sul segnale opposto (farm)     |
+//|  - versione 3: Buy e Sell insieme quando il mercato e' laterale  |
+//|  - filtro ADX (trend / laterale), griglia opzionale              |
 //|  Tutti gli indicatori sono calcolati nel codice con le formule   |
 //|  di TradingView (RMA di Wilder, EMA con seme SMA, ecc.), non con |
 //|  gli indicatori standard di MT5, che in alcuni casi differiscono |
 //|  (es. iADX).                                                     |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "1.00"
-#property description "Technical Ratings stile TradingView su XAUUSD: segnale + filtro multi-timeframe"
+#property version   "2.00"
+#property description "Technical Ratings stile TradingView su XAUUSD: segnale, filtro multi-timeframe, ADX, griglia, hedge"
 
 #include <Trade\Trade.mqh>
 
 #define NA EMPTY_VALUE   // valore "non disponibile" (come na in Pine)
+
+enum StrategyMode
+  {
+   STRAT_SIGNAL = 0, // Segnale: una direzione alla volta (versioni 1 e 2)
+   STRAT_HEDGE  = 1  // Hedge: Buy e Sell insieme in laterale (versione 3)
+  };
 
 enum RatingSource
   {
@@ -30,7 +39,7 @@ enum RatingSource
 enum EntryMode
   {
    ENTRY_CROSS = 0, // Solo quando il rating attraversa la soglia
-   ENTRY_LEVEL = 1  // Ogni candela in cui il rating e' oltre la soglia
+   ENTRY_LEVEL = 1  // Finche' il rating e' oltre la soglia
   };
 
 enum TradeDir
@@ -42,9 +51,10 @@ enum TradeDir
 
 enum ExitMode
   {
-   EXIT_SLTP    = 0, // Solo SL e TP
-   EXIT_NEUTRAL = 1, // Chiude quando il rating torna neutro (o si gira)
-   EXIT_REVERSE = 2  // Chiude solo quando il rating si gira
+   EXIT_SLTP     = 0, // Solo SL e TP
+   EXIT_NEUTRAL  = 1, // Chiude quando il rating torna neutro (o si gira)
+   EXIT_REVERSE  = 2, // Chiude quando il rating passa la fascia neutra opposta
+   EXIT_OPPOSITE = 3  // Chiude quando il segnale diventa opposto (oltre la soglia opposta)
   };
 
 enum LotMode
@@ -55,40 +65,80 @@ enum LotMode
 
 enum StopMode
   {
-   STOP_PIPS = 0, // SL e TP in pips
-   STOP_ATR  = 1  // SL e TP in multipli di ATR
+   STOP_PIPS   = 0, // SL e TP in pips
+   STOP_ATR    = 1, // SL e TP in multipli di ATR
+   STOP_POINTS = 2  // SL e TP in punti (1 punto = _Point)
+  };
+
+enum AdxMode
+  {
+   ADX_OFF   = 0, // Nessun filtro ADX
+   ADX_ABOVE = 1, // Solo con ADX sopra il livello (trend)
+   ADX_BELOW = 2  // Solo con ADX sotto il livello (laterale)
+  };
+
+enum AdxSource
+  {
+   ADXSRC_SIGNAL = 0, // ADX sul TF del segnale
+   ADXSRC_FILTER = 1  // ADX sul TF del filtro
   };
 
 //--- parametri ------------------------------------------------------
+input group "Strategia"
+input StrategyMode    InpStrategy    = STRAT_SIGNAL; // Strategia
+input bool            InpInvert      = false;        // Inverti: BUY quando l'indicatore dice SELL e viceversa
+
 input group "Segnale"
 input ENUM_TIMEFRAMES InpSignalTF    = PERIOD_H1;   // Timeframe del segnale
 input RatingSource    InpSignalSrc   = SRC_TOTAL;   // Rating usato per il segnale
 input EntryMode       InpEntryMode   = ENTRY_CROSS; // Modalita' di ingresso
-input double          InpBuyLevel    = 0.5;         // Soglia BUY (rating sopra)
-input double          InpSellLevel   = -0.5;        // Soglia SELL (rating sotto)
-input TradeDir        InpDirection   = DIR_BOTH;    // Direzioni ammesse
+input double          InpBuyLevel    = 0.5;         // Soglia segnale BUY dell'indicatore (rating sopra)
+input double          InpSellLevel   = -0.5;        // Soglia segnale SELL dell'indicatore (rating sotto)
+input TradeDir        InpDirection   = DIR_BOTH;    // Direzioni ammesse (dei trade, dopo l'inversione)
+input bool            InpReenterSameBar = false;    // Dopo una chiusura (es. TP) rientra subito, anche nella stessa candela
 
 input group "Filtro sul secondo timeframe"
 input bool            InpUseFilter   = true;        // Usa il filtro
 input ENUM_TIMEFRAMES InpFilterTF    = PERIOD_D1;   // Timeframe del filtro
 input RatingSource    InpFilterSrc   = SRC_TOTAL;   // Rating usato per il filtro
-input double          InpFilterLevel = 0.1;         // BUY se filtro > livello, SELL se filtro < -livello (0.1 = almeno Acquisto, -0.1 = non contrario)
+input double          InpFilterLevel = 0.1;         // Segnale BUY se filtro > livello, SELL se filtro < -livello (0.1 = almeno Acquisto, -0.1 = non contrario)
+
+input group "Filtro ADX"
+input AdxMode         InpADXMode     = ADX_OFF;       // Filtro ADX
+input AdxSource       InpADXSrc      = ADXSRC_SIGNAL; // Timeframe dell'ADX
+input int             InpADXFiltLen  = 14;            // Periodo ADX del filtro
+input double          InpADXLevel    = 25;            // Livello ADX
+input bool            InpADXCloseOut = false;         // Chiude tutto quando l'ADX esce dalla zona
 
 input group "Uscita"
-input ExitMode        InpExitMode    = EXIT_NEUTRAL; // Tipo di uscita
+input ExitMode        InpExitMode    = EXIT_NEUTRAL; // Tipo di uscita (strategia Segnale)
 input double          InpNeutralBand = 0.1;          // Fascia neutra (+/-): neutro = tra -X e +X
 
 input group "Gestione del rischio"
 input LotMode         InpLotMode     = LOT_FIXED;   // Calcolo del lotto
 input double          InpFixedLots   = 0.01;        // Lotto fisso
-input double          InpRiskPercent = 1.0;         // Rischio % del saldo (solo modalita' %)
-input StopMode        InpStopMode    = STOP_ATR;    // SL/TP in pips o ATR
+input double          InpRiskPercent = 1.0;         // Rischio % del saldo (solo modalita' %, serve uno SL)
+input StopMode        InpStopMode    = STOP_ATR;    // SL/TP in pips, ATR o punti
 input double          InpSLPips      = 500;         // SL in pips (0 = nessuno) - 500 pips = 5.00 $
 input double          InpTPPips      = 1000;        // TP in pips (0 = nessuno)
 input int             InpATRPeriod   = 14;          // Periodo ATR (sul TF del segnale)
 input double          InpSLATR       = 1.5;         // SL = ATR x (0 = nessuno)
 input double          InpTPATR       = 3.0;         // TP = ATR x (0 = nessuno)
+input double          InpSLPoints    = 0;           // SL in punti (0 = nessuno)
+input double          InpTPPoints    = 10;          // TP in punti (0 = nessuno) - oro a 2 decimali: 10 punti = 0.10 $
 input double          InpPipSize     = 0.01;        // Valore di 1 pip in prezzo (oro: 0.01)
+input double          InpMaxDDPercent= 0;           // Chiude tutto se la perdita aperta supera X% del saldo (0 = off)
+
+input group "Griglia"
+input bool            InpGridOn      = false;       // Griglia: aggiunge posizioni quando il prezzo va contro
+input double          InpGridStepPts = 200;         // Distanza tra i livelli in punti
+input double          InpGridLotMult = 1.0;         // Moltiplicatore lotto per livello (1 = lotto costante)
+input int             InpGridMaxLevels = 5;         // Livelli massimi per direzione (compreso il primo)
+input double          InpGridTPPts   = 0;           // TP del cesto dal prezzo medio, in punti (0 = stesso TP del singolo trade)
+
+input group "Hedge (versione 3)"
+input bool            InpHedgeNeutralOnly  = false; // Laterale solo se anche il rating e' neutro
+input bool            InpHedgeCloseOnTrend = true;  // Chiude tutto quando il mercato smette di essere laterale
 
 input group "Filtri orario e spread"
 input bool            InpUseHours    = false;       // Usa il filtro orario (ora del server)
@@ -127,7 +177,7 @@ input int    InpStochSm  = 3;     // Stocastico smussamento %K
 input int    InpStochD   = 3;     // Stocastico %D
 input int    InpCCILen   = 20;    // CCI
 input bool   InpCCITypical = false; // CCI su prezzo tipico (false = su chiusura, come TradingView)
-input int    InpADXLen   = 14;    // ADX / DI
+input int    InpADXLen   = 14;    // ADX / DI (componente del rating)
 input int    InpAOFast   = 5;     // Awesome Oscillator veloce
 input int    InpAOSlow   = 34;    // Awesome Oscillator lento
 input int    InpMomLen   = 10;    // Momentum
@@ -157,13 +207,25 @@ struct Rating
    double ma, osc, total;
    int    nMA, nOsc;              // componenti valide
    int    bMA, sMA, bOsc, sOsc;   // quanti in acquisto / vendita
+   double adx;                    // ADX del filtro (InpADXFiltLen)
    bool   ok;
+  };
+
+struct SideInfo
+  {
+   int    count;
+   double volume;
+   double avgPrice;
+   double worstPrice;    // buy: prezzo di ingresso piu' basso, sell: piu' alto
+   double lastLot;       // lotto dell'ultimo livello aperto
+   double profit;
   };
 
 //--- stato ------------------------------------------------------------
 CTrade          g_trade;
 ENUM_TIMEFRAMES g_sigTF, g_fltTF;
 int             g_maLen[6];
+bool            g_needFlt = false;
 
 // serie di prezzo e indicatori (indice 0 = candela piu' vecchia)
 double g_c[], g_h[], g_l[], g_vol[], g_hl2[], g_cciSrc[];
@@ -172,36 +234,55 @@ double g_hma[], g_vwma[], g_conv[], g_base[], g_spanB[];
 double g_rsi[], g_stK[], g_stD[], g_cci[], g_pdi[], g_mdi[], g_adx[];
 double g_ao[], g_mom[], g_macd[], g_macdSig[], g_srK[], g_srD[];
 double g_wpr[], g_bull[], g_bear[], g_uo[], g_trend[], g_atr[];
+double g_fpdi[], g_fmdi[], g_fadx[];
 
 Rating   g_sigCur, g_sigPrev, g_flt;
-double   g_sigATR    = NA;
+double   g_sigATR     = NA;
 datetime g_lastSigBar = 0;   // candela (in corso) del TF segnale gia' elaborata
 datetime g_lastFltBar = 0;
 datetime g_sigClosed  = 0;   // orario della candela chiusa usata
 datetime g_fltClosed  = 0;
 
-int      g_pending    = 0;   // 1 = buy, -1 = sell, valido solo nella candela corrente
-datetime g_pendingBar = 0;
+int      g_desired    = 0;   // direzione del trade voluta in questa candela (1 buy, -1 sell, 0 nessuna)
+bool     g_adxOk      = true;
+bool     g_lateral    = false;
+datetime g_lastEntryBar = 0; // candela dell'ultimo ingresso (strategia Segnale)
+datetime g_lastBuyBar   = 0; // candela dell'ultimo buy base (Hedge)
+datetime g_lastSellBar  = 0; // candela dell'ultimo sell base (Hedge)
+datetime g_ddBlockBar   = 0; // stop per drawdown: niente ingressi fino alla candela successiva
 string   g_status     = "avvio";
 string   g_pfx        = "TVR_";
 bool     g_draw       = true;
+bool     g_warnedStops = false;
 
 //+------------------------------------------------------------------+
 int OnInit()
   {
    g_sigTF = (InpSignalTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : InpSignalTF;
    g_fltTF = (InpFilterTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : InpFilterTF;
+   g_needFlt = InpUseFilter || (InpADXMode != ADX_OFF && InpADXSrc == ADXSRC_FILTER);
 
    g_maLen[0] = InpMA1; g_maLen[1] = InpMA2; g_maLen[2] = InpMA3;
    g_maLen[3] = InpMA4; g_maLen[4] = InpMA5; g_maLen[5] = InpMA6;
 
-   if(InpPipSize <= 0 || InpHistoryBars < 100 || InpBuyLevel <= InpSellLevel)
+   if(InpPipSize <= 0 || InpHistoryBars < 100 || InpBuyLevel <= InpSellLevel || InpADXFiltLen < 1)
      {
-      Print("Parametri non validi: controlla dimensione pip, candele di calcolo e soglie");
+      Print("Parametri non validi: controlla dimensione pip, candele di calcolo, soglie e periodo ADX");
       return INIT_PARAMETERS_INCORRECT;
      }
    for(int k = 0; k < 6; k++)
       if(g_maLen[k] < 1) return INIT_PARAMETERS_INCORRECT;
+   if(InpGridOn && (InpGridStepPts <= 0 || InpGridMaxLevels < 1 || InpGridLotMult <= 0))
+     {
+      Print("Parametri della griglia non validi");
+      return INIT_PARAMETERS_INCORRECT;
+     }
+   bool hedging = (AccountInfoInteger(ACCOUNT_MARGIN_MODE) == ACCOUNT_MARGIN_MODE_RETAIL_HEDGING);
+   if((InpStrategy == STRAT_HEDGE || InpGridOn) && !hedging)
+     {
+      Print("Hedge e griglia richiedono un conto hedging (questo conto e' netting)");
+      return INIT_FAILED;
+     }
    if(InpHistoryBars < MinBars() + 50)
       Print("Attenzione: InpHistoryBars basso, la media a ", MaxMALen(), " periodi non avra' il tempo di stabilizzarsi");
 
@@ -228,7 +309,9 @@ void OnTick()
    datetime sigBar = iTime(_Symbol, g_sigTF, 0);
    if(sigBar == 0) return;
 
-   //--- nuova candela sul TF del segnale: ricalcolo, uscite, nuovo segnale
+   //--- chiusa una candela del TF del segnale: ricalcolo e decisioni.
+   //    Il rating si aggiorna solo qui, cioe' alla chiusura di ogni
+   //    candela del TF scelto (M1 ogni minuto, M5 ogni 5 minuti, ...)
    if(sigBar != g_lastSigBar)
      {
       Rating cur, prv;
@@ -242,24 +325,31 @@ void OnTick()
       g_lastSigBar = sigBar;
       g_sigCur = cur; g_sigPrev = prv; g_sigATR = atr;
 
-      if(InpUseFilter) UpdateFilter();
+      if(g_needFlt) UpdateFilter();
 
       if(InpLogRatings)
-         PrintFormat("%s %s  MA %+.3f  OSC %+.3f  TOT %+.3f  (%s)", TFName(g_sigTF),
-                     TimeToString(g_sigClosed), cur.ma, cur.osc, cur.total, RatingText(cur.total));
+         PrintFormat("%s %s  MA %+.3f  OSC %+.3f  TOT %+.3f  ADX %.1f  (%s)", TFName(g_sigTF),
+                     TimeToString(g_sigClosed), cur.ma, cur.osc, cur.total, cur.adx, RatingText(cur.total));
 
-      ManageExit();
-      g_pending    = NewSignal();
-      g_pendingBar = sigBar;
-      g_status     = (g_pending == 0) ? "nessun segnale" : (g_pending > 0 ? "segnale BUY" : "segnale SELL");
+      g_adxOk = AdxZoneOk();
+      if(InpStrategy == STRAT_HEDGE)
+         HedgeOnBar();
+      else
+        {
+         ManageExit();
+         g_desired = NewSignal();
+         g_status  = (g_desired == 0) ? "nessun segnale" : (g_desired > 0 ? "segnale BUY" : "segnale SELL");
+        }
      }
-   else if(InpUseFilter && iTime(_Symbol, g_fltTF, 0) != g_lastFltBar)
+   else if(g_needFlt && iTime(_Symbol, g_fltTF, 0) != g_lastFltBar)
       UpdateFilter();                  // filtro non ancora pronto o nuova candela del filtro
 
-   //--- il segnale resta valido per tutta la candela: se spread/orario
-   //    bloccano l'ingresso all'apertura, riprova ai tick successivi
-   if(g_pending != 0 && g_pendingBar == sigBar)
-      TryEntry(g_pending);
+   CheckDrawdown(sigBar);
+
+   if(InpStrategy == STRAT_HEDGE) HedgeTick(sigBar);
+   else                           SignalTick(sigBar);
+
+   if(InpGridOn) ManageGrid(sigBar);
 
    DrawPanel();
   }
@@ -283,110 +373,98 @@ void UpdateFilter()
   }
 
 //+------------------------------------------------------------------+
-//| Segnale sulla candela appena chiusa                              |
+//| Segnale dell'indicatore sulla candela appena chiusa:              |
+//| +1 = BUY, -1 = SELL, 0 = niente                                   |
 //+------------------------------------------------------------------+
-int NewSignal()
+int IndicatorSignal()
   {
    if(!g_sigCur.ok) return 0;
    double v = Pick(g_sigCur, InpSignalSrc);
    double p = g_sigPrev.ok ? Pick(g_sigPrev, InpSignalSrc) : NA;
-
-   bool buy, sell;
    if(InpEntryMode == ENTRY_CROSS)
      {
-      buy  = (p != NA && p <= InpBuyLevel  && v > InpBuyLevel);
-      sell = (p != NA && p >= InpSellLevel && v < InpSellLevel);
+      if(p != NA && p <= InpBuyLevel  && v > InpBuyLevel)  return 1;
+      if(p != NA && p >= InpSellLevel && v < InpSellLevel) return -1;
+      return 0;
      }
-   else
-     {
-      buy  = (v > InpBuyLevel);
-      sell = (v < InpSellLevel);
-     }
-   if(InpDirection == DIR_SELL) buy  = false;
-   if(InpDirection == DIR_BUY)  sell = false;
-   if(buy)  return 1;
-   if(sell) return -1;
+   if(v > InpBuyLevel)  return 1;
+   if(v < InpSellLevel) return -1;
    return 0;
   }
 
-//+------------------------------------------------------------------+
-//| Ingresso                                                         |
-//+------------------------------------------------------------------+
-void TryEntry(const int dir)
+// direzione del trade: segnale dell'indicatore, invertito se richiesto
+int NewSignal()
   {
-   if(HasPosition()) { g_pending = 0; return; }   // una sola posizione alla volta
+   int dir = IndicatorSignal();
+   if(InpInvert) dir = -dir;
+   if(InpDirection == DIR_SELL && dir > 0) dir = 0;
+   if(InpDirection == DIR_BUY  && dir < 0) dir = 0;
+   return dir;
+  }
 
-   if(InpUseFilter)
+//+------------------------------------------------------------------+
+//| ADX: il mercato e' nella zona voluta (trend o laterale)?          |
+//+------------------------------------------------------------------+
+double CurrentADX()
+  {
+   if(InpADXSrc == ADXSRC_FILTER) return g_flt.ok ? g_flt.adx : NA;
+   return g_sigCur.ok ? g_sigCur.adx : NA;
+  }
+
+bool AdxZoneOk()
+  {
+   if(InpADXMode == ADX_OFF) return true;
+   double a = CurrentADX();
+   if(a == NA) return false;
+   if(InpADXMode == ADX_ABOVE) return a > InpADXLevel;
+   return a < InpADXLevel;
+  }
+
+//+------------------------------------------------------------------+
+//| Controlli comuni prima di aprire                                 |
+//+------------------------------------------------------------------+
+bool CanOpen(const datetime bar)
+  {
+   if(g_ddBlockBar == bar) { g_status = "stop per drawdown, riparte alla prossima candela"; return false; }
+   if(InpUseHours && !InHours()) { g_status = "fuori orario"; return false; }
+   if(InpMaxSpread > 0)
      {
-      if(!g_flt.ok) { g_status = "filtro " + TFName(g_fltTF) + " non disponibile"; return; }
-      double f = Pick(g_flt, InpFilterSrc);
-      if((dir > 0 && !(f > InpFilterLevel)) || (dir < 0 && !(f < -InpFilterLevel)))
-        {
-         g_status  = StringFormat("%s bloccato dal filtro %s (%+.2f)", dir > 0 ? "BUY" : "SELL", TFName(g_fltTF), f);
-         g_pending = 0;
-         return;
-        }
+      double spreadPips = (SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID)) / InpPipSize;
+      if(spreadPips > InpMaxSpread)
+        { g_status = StringFormat("spread alto (%.0f pips), in attesa", spreadPips); return false; }
      }
+   return true;
+  }
 
-   if(InpUseHours && !InHours())
-     { g_status = "fuori orario, segnale in attesa"; return; }
+// il filtro deve confermare il segnale dell'indicatore (prima dell'inversione):
+// cosi' la versione invertita e' lo specchio esatto di quella a favore
+bool FilterOk(const int tradeDir)
+  {
+   if(!InpUseFilter) return true;
+   if(!g_flt.ok) { g_status = "filtro " + TFName(g_fltTF) + " non disponibile"; return false; }
+   int ind = InpInvert ? -tradeDir : tradeDir;
+   double f = Pick(g_flt, InpFilterSrc);
+   if((ind > 0 && f > InpFilterLevel) || (ind < 0 && f < -InpFilterLevel)) return true;
+   g_status = StringFormat("%s bloccato dal filtro %s (%+.2f)", tradeDir > 0 ? "BUY" : "SELL", TFName(g_fltTF), f);
+   return false;
+  }
 
-   MqlTick tk;
-   if(!SymbolInfoTick(_Symbol, tk) || tk.ask <= 0 || tk.bid <= 0) return;
-   double spreadPips = (tk.ask - tk.bid) / InpPipSize;
-   if(InpMaxSpread > 0 && spreadPips > InpMaxSpread)
-     { g_status = StringFormat("spread alto (%.0f pips), segnale in attesa", spreadPips); return; }
-
-   //--- distanze SL / TP
-   double slDist = 0, tpDist = 0;
-   if(InpStopMode == STOP_PIPS)
-     {
-      slDist = InpSLPips * InpPipSize;
-      tpDist = InpTPPips * InpPipSize;
-     }
-   else
-     {
-      if(g_sigATR == NA || g_sigATR <= 0) { g_status = "ATR non disponibile"; return; }
-      slDist = InpSLATR * g_sigATR;
-      tpDist = InpTPATR * g_sigATR;
-     }
-   double minDist = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
-   if(slDist > 0 && slDist < minDist) slDist = minDist;
-   if(tpDist > 0 && tpDist < minDist) tpDist = minDist;
-
-   bool   isBuy = (dir > 0);
-   double price = isBuy ? tk.ask : tk.bid;
-   double sl = 0, tp = 0;
-   if(slDist > 0) sl = NormPrice(isBuy ? price - slDist : price + slDist);
-   if(tpDist > 0) tp = NormPrice(isBuy ? price + tpDist : price - tpDist);
-
-   double lots = CalcLots(isBuy, price, slDist);
-   if(lots <= 0) { g_status = "lotto non calcolabile"; g_pending = 0; return; }
-
-   double margin = 0;
-   ENUM_ORDER_TYPE type = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-   if(OrderCalcMargin(type, _Symbol, lots, price, margin) &&
-      margin > AccountInfoDouble(ACCOUNT_MARGIN_FREE))
-     { g_status = "margine insufficiente"; g_pending = 0; return; }
-
-   bool sent = isBuy ? g_trade.Buy(lots, _Symbol, price, sl, tp, InpComment)
-                     : g_trade.Sell(lots, _Symbol, price, sl, tp, InpComment);
-   uint rc = g_trade.ResultRetcode();
-   if(sent && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED || rc == TRADE_RETCODE_DONE_PARTIAL))
-     {
-      g_status  = StringFormat("aperto %s %.2f @ %s", isBuy ? "BUY" : "SELL", lots, DoubleToString(price, _Digits));
-      g_pending = 0;
-      PrintFormat("%s %.2f lotti  SL %s  TP %s  rating %+.3f  filtro %+.3f", isBuy ? "BUY" : "SELL", lots,
-                  DoubleToString(sl, _Digits), DoubleToString(tp, _Digits),
-                  Pick(g_sigCur, InpSignalSrc), InpUseFilter ? Pick(g_flt, InpFilterSrc) : 0.0);
-     }
-   else
-     {
-      g_status = StringFormat("ordine rifiutato: %u %s", rc, g_trade.ResultRetcodeDescription());
-      Print(g_status);
-      if(rc != TRADE_RETCODE_REQUOTE && rc != TRADE_RETCODE_PRICE_CHANGED && rc != TRADE_RETCODE_PRICE_OFF)
-         g_pending = 0;               // errori non temporanei: non ritenta in questa candela
-     }
+//+------------------------------------------------------------------+
+//| Strategia Segnale (versioni 1 e 2)                               |
+//+------------------------------------------------------------------+
+void SignalTick(const datetime bar)
+  {
+   if(g_desired == 0) return;
+   SideInfo b, s;
+   GetSide(1, b);
+   GetSide(-1, s);
+   if(b.count + s.count > 0) return;                  // una direzione (o un cesto) alla volta
+   if((InpEntryMode == ENTRY_CROSS || !InpReenterSameBar) && g_lastEntryBar == bar) return;
+   if(!g_adxOk) { g_status = StringFormat("ADX %.1f fuori zona", CurrentADX()); return; }
+   if(!FilterOk(g_desired)) return;
+   if(!CanOpen(bar)) return;
+   if(OpenTrade(g_desired > 0, CalcLots(g_desired > 0, BaseSLDist())))
+      g_lastEntryBar = bar;
   }
 
 //+------------------------------------------------------------------+
@@ -394,30 +472,200 @@ void TryEntry(const int dir)
 //+------------------------------------------------------------------+
 void ManageExit()
   {
+   if(InpADXCloseOut && !g_adxOk && CountMine() > 0)
+     {
+      CloseAll(0);
+      g_status = StringFormat("chiuso tutto: ADX %.1f fuori zona", CurrentADX());
+      Print(g_status);
+      return;
+     }
    if(InpExitMode == EXIT_SLTP || !g_sigCur.ok) return;
-   double v = Pick(g_sigCur, InpSignalSrc);
+   double v  = Pick(g_sigCur, InpSignalSrc);
+   int    sg = InpInvert ? -1 : 1;
 
+   for(int side = 1; side >= -1; side -= 2)
+     {
+      // o = direzione dell'indicatore che ha giustificato la posizione
+      int  o = sg * side;
+      bool close;
+      if(InpExitMode == EXIT_NEUTRAL)
+         close = (o > 0) ? (v <= InpNeutralBand) : (v >= -InpNeutralBand);
+      else if(InpExitMode == EXIT_REVERSE)
+         close = (o > 0) ? (v < -InpNeutralBand) : (v > InpNeutralBand);
+      else
+         close = (o > 0) ? (v < InpSellLevel) : (v > InpBuyLevel);
+      if(close && CountSide(side) > 0)
+        {
+         CloseAll(side);
+         g_status = StringFormat("chiuso %s: rating %+.2f (%s)", side > 0 ? "BUY" : "SELL", v, RatingText(v));
+         Print(g_status);
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Strategia Hedge (versione 3): Buy e Sell insieme in laterale      |
+//+------------------------------------------------------------------+
+void HedgeOnBar()
+  {
+   bool lat = g_adxOk && g_sigCur.ok;
+   if(lat && InpHedgeNeutralOnly)
+      lat = MathAbs(Pick(g_sigCur, InpSignalSrc)) <= InpNeutralBand;
+   g_lateral = lat;
+   if(!lat && InpHedgeCloseOnTrend && CountMine() > 0)
+     {
+      CloseAll(0);
+      g_status = "mercato non piu' laterale: chiuso tutto";
+      Print(g_status);
+     }
+   else
+      g_status = lat ? "laterale: hedge attivo" : "non laterale: in attesa";
+  }
+
+void HedgeTick(const datetime bar)
+  {
+   if(!g_lateral) return;
+   for(int side = 1; side >= -1; side -= 2)
+     {
+      if(CountSide(side) > 0) continue;
+      datetime last = (side > 0) ? g_lastBuyBar : g_lastSellBar;
+      if(!InpReenterSameBar && last == bar) continue;
+      if(!CanOpen(bar)) return;
+      if(OpenTrade(side > 0, CalcLots(side > 0, BaseSLDist())))
+        {
+         if(side > 0) g_lastBuyBar = bar; else g_lastSellBar = bar;
+        }
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Griglia: aggiunge livelli quando il prezzo va contro              |
+//+------------------------------------------------------------------+
+void ManageGrid(const datetime bar)
+  {
+   double step = InpGridStepPts * _Point;
+   for(int side = 1; side >= -1; side -= 2)
+     {
+      SideInfo si;
+      GetSide(side, si);
+      if(si.count == 0 || si.count >= InpGridMaxLevels) continue;
+      double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+      double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      bool adverse = (side > 0) ? (ask <= si.worstPrice - step) : (bid >= si.worstPrice + step);
+      if(!adverse) continue;
+      if(g_ddBlockBar == bar) continue;
+      if(InpMaxSpread > 0 && (ask - bid) / InpPipSize > InpMaxSpread) continue;
+      double lots = NormLots(si.lastLot * InpGridLotMult);
+      if(OpenTrade(side > 0, lots))
+        {
+         g_status = StringFormat("griglia %s livello %d", side > 0 ? "BUY" : "SELL", si.count + 1);
+         SetBasketTP(side);
+        }
+     }
+  }
+
+// TP comune a tutto il cesto: prezzo medio +/- distanza
+void SetBasketTP(const int side)
+  {
+   SideInfo si;
+   GetSide(side, si);
+   if(si.count < 2) return;
+   double dist = (InpGridTPPts > 0) ? InpGridTPPts * _Point : BaseTPDist();
+   if(dist <= 0) return;
+   double tp = NormPrice(side > 0 ? si.avgPrice + dist : si.avgPrice - dist);
+   double ts = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
       ulong ticket = PositionGetTicket(i);
-      if(ticket == 0 || !IsMine()) continue;
-      bool isBuy = (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY);
-      bool close;
-      if(InpExitMode == EXIT_NEUTRAL)
-         close = isBuy ? (v <= InpNeutralBand) : (v >= -InpNeutralBand);
-      else
-         close = isBuy ? (v < -InpNeutralBand) : (v > InpNeutralBand);
-      if(close)
-        {
-         if(g_trade.PositionClose(ticket))
-           {
-            g_status = StringFormat("chiuso %s: rating %+.2f (%s)", isBuy ? "BUY" : "SELL", v, RatingText(v));
-            Print(g_status);
-           }
-         else
-            Print("Chiusura fallita: ", g_trade.ResultRetcode(), " ", g_trade.ResultRetcodeDescription());
-        }
+      if(ticket == 0 || !IsMine() || PosSide() != side) continue;
+      if(MathAbs(PositionGetDouble(POSITION_TP) - tp) < ts / 2) continue;
+      if(!g_trade.PositionModify(ticket, PositionGetDouble(POSITION_SL), tp))
+         Print("TP del cesto non impostato: ", g_trade.ResultRetcode(), " ", g_trade.ResultRetcodeDescription());
      }
+  }
+
+//+------------------------------------------------------------------+
+//| Stop di sicurezza sulla perdita aperta                           |
+//+------------------------------------------------------------------+
+void CheckDrawdown(const datetime bar)
+  {
+   if(InpMaxDDPercent <= 0) return;
+   SideInfo b, s;
+   GetSide(1, b);
+   GetSide(-1, s);
+   double floating = b.profit + s.profit;
+   double limit = AccountInfoDouble(ACCOUNT_BALANCE) * InpMaxDDPercent / 100.0;
+   if(b.count + s.count > 0 && floating < -limit)
+     {
+      CloseAll(0);
+      g_ddBlockBar = bar;
+      g_status = StringFormat("stop drawdown: perdita %.2f oltre %.2f", floating, limit);
+      Print(g_status);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| Apertura                                                         |
+//+------------------------------------------------------------------+
+double BaseSLDist()
+  {
+   if(InpStopMode == STOP_PIPS)   return InpSLPips * InpPipSize;
+   if(InpStopMode == STOP_POINTS) return InpSLPoints * _Point;
+   return (g_sigATR != NA && g_sigATR > 0) ? InpSLATR * g_sigATR : 0;
+  }
+
+double BaseTPDist()
+  {
+   if(InpStopMode == STOP_PIPS)   return InpTPPips * InpPipSize;
+   if(InpStopMode == STOP_POINTS) return InpTPPoints * _Point;
+   return (g_sigATR != NA && g_sigATR > 0) ? InpTPATR * g_sigATR : 0;
+  }
+
+bool OpenTrade(const bool isBuy, const double lots)
+  {
+   if(lots <= 0) { g_status = "lotto non calcolabile"; return false; }
+   if(InpStopMode == STOP_ATR && (g_sigATR == NA || g_sigATR <= 0) && (InpSLATR > 0 || InpTPATR > 0))
+     { g_status = "ATR non disponibile"; return false; }
+
+   MqlTick tk;
+   if(!SymbolInfoTick(_Symbol, tk) || tk.ask <= 0 || tk.bid <= 0) return false;
+
+   double slDist = BaseSLDist(), tpDist = BaseTPDist();
+   double minDist = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
+   if((slDist > 0 && slDist < minDist) || (tpDist > 0 && tpDist < minDist))
+     {
+      if(!g_warnedStops)
+         PrintFormat("SL/TP sotto il livello minimo del broker (%.0f punti): uso il minimo", minDist / _Point);
+      g_warnedStops = true;
+     }
+   if(slDist > 0 && slDist < minDist) slDist = minDist;
+   if(tpDist > 0 && tpDist < minDist) tpDist = minDist;
+
+   double price = isBuy ? tk.ask : tk.bid;
+   double sl = 0, tp = 0;
+   if(slDist > 0) sl = NormPrice(isBuy ? price - slDist : price + slDist);
+   if(tpDist > 0) tp = NormPrice(isBuy ? price + tpDist : price - tpDist);
+
+   double margin = 0;
+   ENUM_ORDER_TYPE type = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   if(OrderCalcMargin(type, _Symbol, lots, price, margin) &&
+      margin > AccountInfoDouble(ACCOUNT_MARGIN_FREE))
+     { g_status = "margine insufficiente"; return false; }
+
+   bool sent = isBuy ? g_trade.Buy(lots, _Symbol, price, sl, tp, InpComment)
+                     : g_trade.Sell(lots, _Symbol, price, sl, tp, InpComment);
+   uint rc = g_trade.ResultRetcode();
+   if(sent && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED || rc == TRADE_RETCODE_DONE_PARTIAL))
+     {
+      g_status = StringFormat("aperto %s %.2f @ %s", isBuy ? "BUY" : "SELL", lots, DoubleToString(price, _Digits));
+      if(InpLogRatings)
+         PrintFormat("%s %.2f lotti  SL %s  TP %s  rating %+.3f", isBuy ? "BUY" : "SELL", lots,
+                     DoubleToString(sl, _Digits), DoubleToString(tp, _Digits), Pick(g_sigCur, InpSignalSrc));
+      return true;
+     }
+   g_status = StringFormat("ordine rifiutato: %u %s", rc, g_trade.ResultRetcodeDescription());
+   Print(g_status);
+   return false;
   }
 
 //+------------------------------------------------------------------+
@@ -428,22 +676,75 @@ bool IsMine()
    return PositionGetString(POSITION_SYMBOL) == _Symbol && PositionGetInteger(POSITION_MAGIC) == InpMagic;
   }
 
-bool HasPosition()
+int PosSide()
   {
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
-      if(PositionGetTicket(i) > 0 && IsMine()) return true;
-   return false;
+   return (PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY) ? 1 : -1;
   }
 
-double CalcLots(const bool isBuy, const double price, const double slDist)
+void GetSide(const int side, SideInfo &si)
+  {
+   si.count = 0; si.volume = 0; si.avgPrice = 0; si.worstPrice = 0; si.lastLot = 0; si.profit = 0;
+   long lastTime = 0;
+   double pv = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      if(PositionGetTicket(i) == 0 || !IsMine() || PosSide() != side) continue;
+      double p   = PositionGetDouble(POSITION_PRICE_OPEN);
+      double vol = PositionGetDouble(POSITION_VOLUME);
+      long   t   = PositionGetInteger(POSITION_TIME_MSC);
+      if(si.count == 0 || (side > 0 ? p < si.worstPrice : p > si.worstPrice)) si.worstPrice = p;
+      if(t >= lastTime) { lastTime = t; si.lastLot = vol; }
+      si.count++;
+      si.volume += vol;
+      pv += p * vol;
+      si.profit += PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP);
+     }
+   if(si.volume > 0) si.avgPrice = pv / si.volume;
+  }
+
+int CountSide(const int side)
+  {
+   SideInfo si;
+   GetSide(side, si);
+   return si.count;
+  }
+
+int CountMine() { return CountSide(1) + CountSide(-1); }
+
+// side: 1 = solo buy, -1 = solo sell, 0 = tutto
+void CloseAll(const int side)
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !IsMine()) continue;
+      if(side != 0 && PosSide() != side) continue;
+      if(!g_trade.PositionClose(ticket))
+         Print("Chiusura fallita: ", g_trade.ResultRetcode(), " ", g_trade.ResultRetcodeDescription());
+     }
+  }
+
+double NormLots(double lots)
+  {
+   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+   double vmin = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+   double vmax = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+   if(step > 0) lots = MathFloor(lots / step + 1e-9) * step;
+   if(lots < vmin) lots = vmin;
+   if(lots > vmax) lots = vmax;
+   return NormalizeDouble(lots, 2);
+  }
+
+double CalcLots(const bool isBuy, const double slDist)
   {
    double lots = InpFixedLots;
    if(InpLotMode == LOT_RISK)
      {
       if(slDist <= 0)
-         Print("Rischio %: serve uno SL, uso il lotto fisso");
+         lots = InpFixedLots;          // senza SL il rischio non e' calcolabile: lotto fisso
       else
         {
+         double price = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
          double profit = 0;
          ENUM_ORDER_TYPE type = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
          double slPrice = isBuy ? price - slDist : price + slDist;
@@ -453,13 +754,7 @@ double CalcLots(const bool isBuy, const double price, const double slDist)
          lots = risk / (-profit);
         }
      }
-   double step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
-   double vmin = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
-   double vmax = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
-   if(step > 0) lots = MathFloor(lots / step + 1e-9) * step;
-   if(lots < vmin) lots = vmin;
-   if(lots > vmax) lots = vmax;
-   return NormalizeDouble(lots, 2);
+   return NormLots(lots);
   }
 
 double NormPrice(const double p)
@@ -621,8 +916,13 @@ bool CalcRatings(const ENUM_TIMEFRAMES tf, Rating &cur, Rating &prv, double &atr
    RMA(tr, InpATRPeriod, g_atr);
    atr = g_atr[n - 1];
 
+   //--- ADX del filtro (periodo separato da quello della componente del rating)
+   DMI(InpADXFiltLen, g_fpdi, g_fmdi, g_fadx);
+
    Evaluate(n - 1, cur);
    Evaluate(n - 2, prv);
+   cur.adx = g_fadx[n - 1];
+   prv.adx = g_fadx[n - 2];
    return cur.ok;
   }
 
@@ -1101,7 +1401,8 @@ string Num(const double v) { return (v == NA) ? "  n.d." : StringFormat("%+6.2f"
 
 int RatingRows(int row, const string title, const Rating &r, const datetime t)
   {
-   Label(row++, StringFormat("%s  (candela chiusa %s)", title, TimeToString(t, TIME_DATE | TIME_MINUTES)), clrWhite);
+   string adx = (r.ok && r.adx != NA) ? StringFormat("  ADX %.1f", r.adx) : "";
+   Label(row++, StringFormat("%s  (candela chiusa %s)%s", title, TimeToString(t, TIME_DATE | TIME_MINUTES), adx), clrWhite);
    if(!r.ok) { Label(row++, "  dati non disponibili", clrGray); Label(row++, " ", clrGray); Label(row++, " ", clrGray); return row; }
    Label(row++, StringFormat("  Medie mobili %s  %-15s B %2d  S %2d  su %d", Num(r.ma), RatingText(r.ma), r.bMA, r.sMA, r.nMA), RatingColor(r.ma));
    Label(row++, StringFormat("  Oscillatori  %s  %-15s B %2d  S %2d  su %d", Num(r.osc), RatingText(r.osc), r.bOsc, r.sOsc, r.nOsc), RatingColor(r.osc));
@@ -1113,23 +1414,27 @@ void DrawPanel()
   {
    if(!g_draw) return;
    int row = 0;
-   Label(row++, "TV Technical Ratings  " + _Symbol, clrGold);
+   string mode = (InpStrategy == STRAT_HEDGE) ? "Hedge (Buy+Sell in laterale)"
+                 : (InpInvert ? "Segnale CONTRARIO all'indicatore" : "Segnale A FAVORE dell'indicatore");
+   if(InpGridOn) mode += StringFormat(" + griglia %d liv.", InpGridMaxLevels);
+   Label(row++, "TV Technical Ratings  " + _Symbol + "  -  " + mode, clrGold);
    row = RatingRows(row, "Segnale " + TFName(g_sigTF), g_sigCur, g_sigClosed);
-   if(InpUseFilter)
+   if(g_needFlt)
       row = RatingRows(row, "Filtro " + TFName(g_fltTF), g_flt, g_fltClosed);
 
-   string pos = "nessuna";
-   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   if(InpADXMode != ADX_OFF)
      {
-      if(PositionGetTicket(i) == 0 || !IsMine()) continue;
-      pos = StringFormat("%s %.2f @ %s  P/L %.2f",
-                         PositionGetInteger(POSITION_TYPE) == POSITION_TYPE_BUY ? "BUY" : "SELL",
-                         PositionGetDouble(POSITION_VOLUME),
-                         DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN), _Digits),
-                         PositionGetDouble(POSITION_PROFIT) + PositionGetDouble(POSITION_SWAP));
-      break;
+      double a = CurrentADX();
+      Label(row++, StringFormat("ADX %s %s %.0f: %s", a == NA ? "n.d." : DoubleToString(a, 1),
+                                InpADXMode == ADX_ABOVE ? ">" : "<", InpADXLevel,
+                                g_adxOk ? "zona OK" : "fuori zona"), g_adxOk ? clrLime : clrOrange);
      }
-   Label(row++, "Posizione: " + pos, clrWhite);
+
+   SideInfo b, s;
+   GetSide(1, b);
+   GetSide(-1, s);
+   Label(row++, StringFormat("Buy: %d pos. %.2f lotti  P/L %.2f   Sell: %d pos. %.2f lotti  P/L %.2f",
+                             b.count, b.volume, b.profit, s.count, s.volume, s.profit), clrWhite);
    Label(row++, "Stato: " + g_status, clrSilver);
    ChartRedraw();
   }
