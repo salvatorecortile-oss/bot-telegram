@@ -188,3 +188,9 @@ Replica la logica del bot del video: ordini **BUY STOP** e **SELL STOP** sempre 
   - Rottura e Fibonacci invariati.
 - Risultato nel backtest gen–ott 2026: +3.395 $, DD circa 251 $, PF 1,61, recovery 13,8.
 - `GoldTitan_Quattro_16combinazioni.set` resta con i valori base di prima.
+
+---
+
+# GoldTitan Final 3.00
+
+`GoldTitan_Final.mq5` è la versione definitiva. Ha le 4 strategie con i valori migliori dei test (pass 47 delle 64 combinazioni) già impostati come **default nel codice**, quindi non serve nessun file set. Non contiene Kairos RSI né i profili per l'ottimizzazione. Il magic number di ogni strategia è lo stesso del Quattro.
