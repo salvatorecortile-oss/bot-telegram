@@ -1,4 +1,4 @@
-; TVRatings v2 - VERSIONE 1 a favore: stop and reverse, senza SL e TP, ADX > livello (trend), H1
+; TVRatings v3 - VERSIONE 1 a favore: stop and reverse, senza SL e TP, ADX minimo (trend), H1
 ; Valori con ||inizio||passo||fine||Y = ottimizzati. Caricali da Strategy Tester > Parametri > tasto destro > Carica.
 ; Strategia
 InpStrategy=0
@@ -11,24 +11,40 @@ InpBuyLevel=0.1||0.1||0.1||0.5||Y
 InpSellLevel=-0.1||-0.5||0.1||-0.1||Y
 InpDirection=0
 InpReenterSameBar=false
-; Filtro sul secondo timeframe
+InpReopenAfterTP=true
+InpReopenDelaySec=0
+; Filtro direzione su altri timeframe
 InpUseFilter=false||false||0||true||Y
 InpFilterTF=16408
 InpFilterSrc=0
 InpFilterLevel=0.1
-; Filtro ADX
-InpADXMode=1||0||1||1||Y
+InpFilterAllTF=false
+; Filtri di mercato
 InpADXSrc=0
 InpADXFiltLen=14
-InpADXLevel=25||15||5||40||Y
+InpADXMin=25||0||5||40||Y
+InpADXMax=0
 InpADXCloseOut=false||false||0||true||Y
+InpATRMaxPts=0
+InpVolBlockGrid=false
+InpMaxFlips=0||0||2||6||Y
+InpFlipWindowMin=30
+InpFlipPauseMin=60
+; Notizie
+InpNewsFilter=false
+InpNewsMinBefore=30
+InpNewsMinAfter=30
+InpNewsCurrency=USD
+InpNewsBlockGrid=true
 ; Uscita
 InpExitMode=3
 InpNeutralBand=0.1
-; Gestione del rischio
+; Lotto e stop
 InpLotMode=0
 InpFixedLots=0.01
 InpRiskPercent=1.0
+InpBalancePerLot=1000
+InpMaxLots=0
 InpStopMode=2
 InpSLPips=500
 InpTPPips=1000
@@ -39,12 +55,19 @@ InpSLPoints=0
 InpTPPoints=0
 InpPipSize=0.01
 InpMaxDDPercent=0
-; Griglia
+; Griglia e paniere
 InpGridOn=false||false||0||true||Y
 InpGridStepPts=200||100||100||1000||Y
 InpGridLotMult=1.0
 InpGridMaxLevels=5||2||1||8||Y
+InpGridOnlyWithSignal=false
+InpBasketExit=0
 InpGridTPPts=0
+InpBasketProfit=1.0
+InpBasketMaxLoss=0
+InpBasketMaxHours=0
+InpBasketScale=true
+InpGridCloseOnFlip=true
 ; Hedge (versione 3)
 InpHedgeNeutralOnly=false
 InpHedgeCloseOnTrend=true
@@ -57,9 +80,13 @@ InpMaxSpread=0
 InpMagic=26102801
 InpSlippage=30
 InpComment=TVRatings
+; Tester
+InpRebatePerLot=0
+InpOptCriterion=1
 ; Calcolo e grafico
-InpHistoryBars=800
+InpHistoryBars=300
 InpShowPanel=true
+InpPanelAllTF=true
 InpLogRatings=false
 ; Medie mobili (default TradingView)
 InpMA1=10

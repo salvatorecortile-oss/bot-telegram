@@ -1,4 +1,4 @@
-# TVRatings_XAU — EA MT5 (v2)
+# TVRatings_XAU — EA MT5 (v3)
 
 Replica le **Technical Ratings** di TradingView (il widget "Analisi tecnica": Forte acquisto / Acquisto / Neutrale / Vendita / Forte vendita) e le usa per aprire e chiudere i trade su XAUUSD.
 
@@ -81,17 +81,18 @@ Il pannello sul grafico mostra, per il TF del segnale e per il TF del filtro:
 
 Il rating si ricalcola **alla chiusura di ogni candela** del timeframe scelto in `InpSignalTF`: in M1 ogni minuto, in M5 ogni 5 minuti, in H1 ogni ora. Il filtro (`InpFilterTF`) si ricalcola alla chiusura della sua candela. Fra una chiusura e l'altra il rating non cambia; durante la candela l'EA controlla solo TP, griglia, spread e drawdown.
 
-### Le 5 configurazioni
+### Le configurazioni
 
 Per ogni configurazione c'è un file .set pronto: Strategy Tester > Parametri > tasto destro > Carica.
 
 | File .set | Versione | Cosa fa |
 |---|---|---|
-| `TVRatings_V1_trend_favore.set` | 1 a favore | BUY quando l'indicatore dice acquisto, SELL quando dice vendita. Niente SL e niente TP. Quando l'indicatore diventa opposto chiude e apre subito il trade opposto (stop and reverse). ADX sopra il livello (trend). H1 |
+| `TVRatings_V1_trend_favore.set` | 1 a favore | BUY quando l'indicatore dice acquisto, SELL quando dice vendita. Niente SL e niente TP. Quando l'indicatore diventa opposto chiude e apre subito il trade opposto (stop and reverse). ADX minimo (trend). H1 |
 | `TVRatings_V1_trend_contrario.set` | 1 contraria | Come sopra, ma BUY quando l'indicatore dice vendita e SELL quando dice acquisto |
-| `TVRatings_V2_farm_favore.set` | 2 a favore | Niente SL, TP a 10 punti. Chiude se l'indicatore diventa opposto. Dopo il TP rientra subito finché il segnale resta valido (per fare volume). ADX sotto il livello (laterale). M5 |
+| `TVRatings_V2_farm_favore.set` | 2 a favore | Niente SL, TP a 10 punti. Chiude se l'indicatore diventa opposto. Dopo il TP rientra subito finché il segnale resta valido (per fare volume). ADX massimo (laterale). M5 |
 | `TVRatings_V2_farm_contrario.set` | 2 contraria | Come sopra, con la direzione invertita |
-| `TVRatings_V3_hedge.set` | 3 hedge | Quando il mercato è laterale (ADX sotto il livello) tiene aperti un BUY e un SELL insieme, ognuno con TP a 10 punti. Quando uno chiude in TP lo riapre. Se il mercato smette di essere laterale chiude tutto. Serve un conto **hedging** |
+| `TVRatings_GoldTitan_equivalente.set` | confronto | Stessa configurazione del tuo GoldTitanFarma.set, per confrontare i due EA |
+| `TVRatings_V3_hedge.set` | 3 hedge | Quando il mercato è laterale (ADX sotto `InpADXMax`) tiene aperti un BUY e un SELL insieme, ognuno con TP a 10 punti. Quando uno chiude in TP lo riapre. Se il mercato smette di essere laterale chiude tutto. Serve un conto **hedging** |
 
 ### Come le versioni si traducono negli input
 
@@ -107,14 +108,15 @@ Per ogni configurazione c'è un file .set pronto: Strategy Tester > Parametri > 
 
 | Input | Funzione |
 |---|---|
-| `InpADXMode` | spento / solo con ADX sopra il livello (trend, versione 1) / solo sotto (laterale, versioni 2 e 3) |
-| `InpADXLevel` | livello, da ottimizzare (versione 1: 15–40, versioni 2 e 3: 15–35) |
+| `InpADXMin` | apre solo con ADX almeno a questo valore (trend, versione 1). 0 = spento |
+| `InpADXMax` | apre solo con ADX al massimo a questo valore (laterale, versioni 2 e 3). 0 = spento. Puoi usare insieme minimo e massimo per una fascia |
 | `InpADXSrc` | ADX sul TF del segnale o su quello del filtro |
 | `InpADXFiltLen` | periodo dell'ADX del filtro, separato da quello della componente del rating, che resta 14 come TradingView |
 | `InpADXCloseOut` | se true, chiude tutto quando l'ADX esce dalla zona |
 
 - **Quando conta:** l'ADX blocca solo i nuovi ingressi. Le posizioni aperte escono con la loro regola, salvo `InpADXCloseOut`.
-- **Con e senza filtro:** nei file .set `InpADXMode` è ottimizzato fra "spento" e "acceso", così vedi in un'unica ottimizzazione se il filtro ADX migliora la versione.
+- **Con e senza filtro:** nei file .set il range di ottimizzazione parte da 0 (spento), così vedi in un'unica ottimizzazione se il filtro ADX migliora la versione.
+- **Versione 3:** il mercato è "laterale" quando l'ADX è dentro la zona, quindi va impostato `InpADXMax`.
 
 ### Griglia
 
@@ -126,7 +128,7 @@ Per ogni configurazione c'è un file .set pronto: Strategy Tester > Parametri > 
 - **Nella versione 3:** la griglia lavora separatamente sul lato BUY e sul lato SELL.
 - **Conto:** serve un conto hedging. Su un conto netting l'EA rifiuta di partire con la griglia accesa.
 - **Rischio:** senza SL una griglia può accumulare perdite grandi. `InpMaxDDPercent` chiude tutto quando la perdita aperta supera la % del saldo indicata e blocca gli ingressi fino alla candela successiva.
-- **Il tuo bot a griglia:** mandamelo e allineo la logica (distanze, lotti, chiusura del cesto) a quella che usi già.
+- **Paniere:** uscita al TP comune o al profitto in valuta, perdita e durata massime, e altre opzioni: vedi "Novità v3" più sotto.
 
 ### Impostazioni del tester per le versioni 2 e 3
 
@@ -142,13 +144,55 @@ Per ogni configurazione c'è un file .set pronto: Strategy Tester > Parametri > 
 | InpStrategy | Segnale | Segnale (versioni 1 e 2) oppure Hedge (versione 3) |
 | InpInvert | false | true = versione contraria |
 | InpReenterSameBar | false | true = dopo il TP rientra subito (farm) |
-| InpADXMode / InpADXSrc / InpADXFiltLen / InpADXLevel / InpADXCloseOut | spento / TF segnale / 14 / 25 / false | filtro ADX |
+| InpADXSrc / InpADXFiltLen / InpADXMin / InpADXMax / InpADXCloseOut | TF segnale / 14 / 0 / 0 / false | filtro ADX (v3: minimo e massimo al posto di modo + livello) |
 | InpExitMode = EXIT_OPPOSITE | — | nuova uscita: segnale opposto |
 | InpStopMode = Punti, InpSLPoints, InpTPPoints | — / 0 / 10 | SL e TP in punti |
 | InpMaxDDPercent | 0 | stop di sicurezza sulla perdita aperta in % del saldo |
 | InpGridOn / InpGridStepPts / InpGridLotMult / InpGridMaxLevels / InpGridTPPts | false / 200 / 1.0 / 5 / 0 | griglia |
 | InpHedgeNeutralOnly | false | versione 3: laterale solo se anche il rating è neutro |
 | InpHedgeCloseOnTrend | true | versione 3: chiude tutto quando il mercato non è più laterale |
+
+## Novità v3 (idee prese da GoldTitanFarma)
+
+### Cosa ho preso dal tuo bot e cosa ho migliorato
+
+| Funzione | In GoldTitanFarma | In TVRatings v3 |
+|---|---|---|
+| Uscita del paniere | profitto totale in valuta | a scelta: profitto in valuta (`InpBasketExit = profitto`) oppure TP comune dal prezzo medio, che resta sul server anche se l'EA si ferma |
+| Perdita massima e durata massima del paniere | sì | sì (`InpBasketMaxLoss`, `InpBasketMaxHours`); con `InpBasketScale` crescono insieme al lotto |
+| Profitto del paniere con l'interesse composto | fisso, non cresce col lotto | cresce col lotto, come la perdita massima |
+| Griglia solo col segnale / chiusura del paniere sull'inversione | sì | sì (`InpGridOnlyWithSignal`, `InpGridCloseOnFlip`) |
+| Filtro notizie | CSV nel tester, calendario MT5 dal vivo | identico, legge lo stesso `GT_news.csv` |
+| ADX minimo e massimo | sì | sì (`InpADXMin`, `InpADXMax`), sul TF del segnale o del filtro |
+| ATR H1 massimo | sì | sì (`InpATRMaxPts`, `InpVolBlockGrid`) |
+| Pausa dopo troppe inversioni | sì | sì (`InpMaxFlips`, `InpFlipWindowMin`, `InpFlipPauseMin`) |
+| Direzione di un TF superiore | H1, H4, M15 o tutti i TF | qualsiasi TF (`InpFilterTF`) oppure tutti i TF da M1 a D1 (`InpFilterAllTF`) |
+| Interesse composto | sì | `InpLotMode = Interesse composto`, più lotto fisso e % di rischio |
+| Dopo un TP aspetta un segnale nuovo | controlla lo storico dei deal a ogni tick (lento nel tester) | lo legge da `OnTradeTransaction`, senza ricerche nello storico |
+| Ritardo di riapertura | 8 valori fissi | secondi liberi (`InpReopenDelaySec`) |
+| Risultato Custom del tester con rebate | profitto + rebate, o diviso il drawdown | in più: diviso il drawdown × profit factor (`InpOptCriterion`) |
+| Pannello con tutti i TF | M1–D1 | M1–D1, ognuno aggiornato alla chiusura della propria candela |
+| Ichimoku | **vale sempre 0** (nuvola non spostata: la regola non può mai scattare) | nuvola spostata come TradingView, la componente funziona |
+| Velocità | ricalcolo completo | le serie con finestra (massimi, minimi, WMA, CCI) si calcolano solo sulle ultime 40 candele |
+| Stop di sicurezza sul conto | no | `InpMaxDDPercent`: chiude tutto oltre una perdita in % del saldo |
+
+### Confronto diretto con il tuo bot
+
+`TVRatings_GoldTitan_equivalente.set` riproduce il tuo `GoldTitanFarma.set`:
+- segnale M5, ±0,1, chiude e si gira quando il rating si inverte;
+- TP 30 punti, ADX minimo 50, direzione H4;
+- griglia di 3 posizioni a 300 punti, paniere +1 / −300;
+- spread 60, rebate 35.
+
+Lancialo sullo stesso periodo del tuo bot e confronta i risultati. Ci saranno due piccole differenze:
+- da me l'Ichimoku vota;
+- il trend di Stoch RSI e Bull Bear Power è la SMA 50; il tuo bot usa la EMA 50, che puoi attivare con `InpTrendEMA = true`.
+
+**Nota sul tuo .set:** usa ADX minimo 50, cioè lavora solo nei trend molto forti, non nel laterale. Vale la pena confrontarlo con la versione 2 (ADX massimo, laterale) per capire quale delle due idee rende di più.
+
+### File notizie
+
+Per usare il filtro notizie nel tester copia il `GT_news.csv` che crei con il tuo script GT_NewsExport in *MQL5\Files* oppure in *Common\Files*. Dal vivo usa il calendario economico di MT5 e il file non serve.
 
 ## Installazione
 
@@ -213,7 +257,7 @@ Note:
 | InpMagic | 26102801 | no | | | |
 | InpSlippage | 30 | no | | | |
 | InpComment | TVRatings | no | | | |
-| InpHistoryBars | 800 | no (più alto = più fedele, più lento) | | | |
+| InpHistoryBars | 400 | no (più alto = più fedele, più lento) | | | |
 | InpShowPanel | true | no (in ottimizzazione il pannello è spento in automatico) | | | |
 | InpLogRatings | false | no | | | |
 | Periodi indicatori (MA, Ichimoku, RSI, Stoch, CCI, ADX, AO, Momentum, MACD, StochRSI, W%R, BBP, UO, Trend) | default TradingView | **no**: cambiandoli non replichi più TradingView; ottimizzali solo se vuoi un rating "tuo" | | | |

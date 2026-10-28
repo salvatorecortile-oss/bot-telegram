@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                              TVRatings_XAU.mq5   |
-//|  v2 - Replica delle "Technical Ratings" di TradingView           |
+//|  v3 - Replica delle "Technical Ratings" di TradingView           |
 //|  (widget "Analisi tecnica": Forte acquisto ... Forte vendita)    |
 //|  - 15 componenti medie mobili + 11 oscillatori, voto +1/-1/0     |
 //|  - calcolo alla chiusura di ogni candela del TF scelto           |
@@ -9,19 +9,25 @@
 //|  - versione 1: stop and reverse senza SL/TP                       |
 //|  - versione 2: TP in punti, chiude sul segnale opposto (farm)     |
 //|  - versione 3: Buy e Sell insieme quando il mercato e' laterale  |
-//|  - filtro ADX (trend / laterale), griglia opzionale              |
+//|  - griglia a paniere: TP dal prezzo medio o profitto in valuta,  |
+//|    perdita massima e durata massima del paniere                  |
+//|  - filtri: ADX min/max, ATR H1, notizie, troppe inversioni,      |
+//|    direzione di un TF superiore o di tutti i TF                  |
+//|  - lotto fisso, % di rischio o interesse composto                |
+//|  - criterio Custom del tester con rebate per lotto               |
 //|  Tutti gli indicatori sono calcolati nel codice con le formule   |
-//|  di TradingView (RMA di Wilder, EMA con seme SMA, ecc.), non con |
-//|  gli indicatori standard di MT5, che in alcuni casi differiscono |
-//|  (es. iADX).                                                     |
+//|  di TradingView (RMA di Wilder, EMA con seme SMA, ecc.).         |
 //+------------------------------------------------------------------+
 #property copyright "bot-telegram"
-#property version   "2.00"
-#property description "Technical Ratings stile TradingView su XAUUSD: segnale, filtro multi-timeframe, ADX, griglia, hedge"
+#property version   "3.00"
+#property description "Technical Ratings stile TradingView su XAUUSD: segnale, filtri multi-timeframe, ADX, notizie, griglia a paniere, hedge"
+
+#property tester_file "GT_news.csv"
 
 #include <Trade\Trade.mqh>
 
 #define NA EMPTY_VALUE   // valore "non disponibile" (come na in Pine)
+#define N_ALLTF 7
 
 enum StrategyMode
   {
@@ -59,8 +65,9 @@ enum ExitMode
 
 enum LotMode
   {
-   LOT_FIXED = 0, // Lotto fisso
-   LOT_RISK  = 1  // % del saldo rischiata sullo SL
+   LOT_FIXED    = 0, // Lotto fisso
+   LOT_RISK     = 1, // % del saldo rischiata sullo SL
+   LOT_COMPOUND = 2  // Interesse composto: lotto fisso ogni X di saldo
   };
 
 enum StopMode
@@ -70,17 +77,23 @@ enum StopMode
    STOP_POINTS = 2  // SL e TP in punti (1 punto = _Point)
   };
 
-enum AdxMode
-  {
-   ADX_OFF   = 0, // Nessun filtro ADX
-   ADX_ABOVE = 1, // Solo con ADX sopra il livello (trend)
-   ADX_BELOW = 2  // Solo con ADX sotto il livello (laterale)
-  };
-
 enum AdxSource
   {
    ADXSRC_SIGNAL = 0, // ADX sul TF del segnale
    ADXSRC_FILTER = 1  // ADX sul TF del filtro
+  };
+
+enum BasketExit
+  {
+   BASKET_TP_PRICE = 0, // TP comune dal prezzo medio (punti)
+   BASKET_MONEY    = 1  // Chiude quando il profitto totale arriva a X (valuta conto)
+  };
+
+enum OptCriterion
+  {
+   OPT_PROFIT_REBATE = 0, // Profitto + rebate
+   OPT_RATIO_DD      = 1, // (Profitto + rebate) / drawdown di equity
+   OPT_RATIO_DD_PF   = 2  // (Profitto + rebate) / drawdown x profit factor
   };
 
 //--- parametri ------------------------------------------------------
@@ -96,28 +109,45 @@ input double          InpBuyLevel    = 0.5;         // Soglia segnale BUY dell'i
 input double          InpSellLevel   = -0.5;        // Soglia segnale SELL dell'indicatore (rating sotto)
 input TradeDir        InpDirection   = DIR_BOTH;    // Direzioni ammesse (dei trade, dopo l'inversione)
 input bool            InpReenterSameBar = false;    // Dopo una chiusura (es. TP) rientra subito, anche nella stessa candela
+input bool            InpReopenAfterTP  = true;     // Dopo un TP rientra nella stessa direzione (false = aspetta un segnale nuovo)
+input int             InpReopenDelaySec = 0;        // Attesa in secondi dopo una chiusura prima di riaprire (0 = nessuna)
 
-input group "Filtro sul secondo timeframe"
+input group "Filtro direzione su altri timeframe"
 input bool            InpUseFilter   = true;        // Usa il filtro
 input ENUM_TIMEFRAMES InpFilterTF    = PERIOD_D1;   // Timeframe del filtro
 input RatingSource    InpFilterSrc   = SRC_TOTAL;   // Rating usato per il filtro
 input double          InpFilterLevel = 0.1;         // Segnale BUY se filtro > livello, SELL se filtro < -livello (0.1 = almeno Acquisto, -0.1 = non contrario)
+input bool            InpFilterAllTF = false;       // Al posto del TF del filtro: devono concordare M1, M5, M15, M30, H1, H4 e D1
 
-input group "Filtro ADX"
-input AdxMode         InpADXMode     = ADX_OFF;       // Filtro ADX
+input group "Filtri di mercato"
 input AdxSource       InpADXSrc      = ADXSRC_SIGNAL; // Timeframe dell'ADX
 input int             InpADXFiltLen  = 14;            // Periodo ADX del filtro
-input double          InpADXLevel    = 25;            // Livello ADX
+input double          InpADXMin      = 0;             // ADX minimo per aprire (0 = off) - trend
+input double          InpADXMax      = 0;             // ADX massimo per aprire (0 = off) - laterale
 input bool            InpADXCloseOut = false;         // Chiude tutto quando l'ADX esce dalla zona
+input int             InpATRMaxPts   = 0;             // Volatilita' massima: ATR(14) H1 in punti oltre cui non apre (0 = off)
+input bool            InpVolBlockGrid= false;         // Il filtro volatilita' blocca anche i livelli della griglia
+input int             InpMaxFlips    = 0;             // Inversioni massime nella finestra prima della pausa (0 = off)
+input int             InpFlipWindowMin = 30;          // Finestra per contare le inversioni (minuti)
+input int             InpFlipPauseMin  = 60;          // Pausa dopo troppe inversioni (minuti)
+
+input group "Notizie"
+input bool            InpNewsFilter    = false;     // Blocca i nuovi ingressi vicino alle notizie ad alto impatto
+input int             InpNewsMinBefore = 30;        // Minuti prima della notizia
+input int             InpNewsMinAfter  = 30;        // Minuti dopo la notizia
+input string          InpNewsCurrency  = "USD";     // Valuta delle notizie
+input bool            InpNewsBlockGrid = true;      // Blocca anche i livelli della griglia
 
 input group "Uscita"
 input ExitMode        InpExitMode    = EXIT_NEUTRAL; // Tipo di uscita (strategia Segnale)
 input double          InpNeutralBand = 0.1;          // Fascia neutra (+/-): neutro = tra -X e +X
 
-input group "Gestione del rischio"
+input group "Lotto e stop"
 input LotMode         InpLotMode     = LOT_FIXED;   // Calcolo del lotto
-input double          InpFixedLots   = 0.01;        // Lotto fisso
+input double          InpFixedLots   = 0.01;        // Lotto fisso (con l'interesse composto: lotto per ogni blocco di saldo)
 input double          InpRiskPercent = 1.0;         // Rischio % del saldo (solo modalita' %, serve uno SL)
+input double          InpBalancePerLot = 1000;      // Interesse composto: un lotto fisso ogni X di saldo
+input double          InpMaxLots     = 0;           // Lotto massimo (0 = nessun limite)
 input StopMode        InpStopMode    = STOP_ATR;    // SL/TP in pips, ATR o punti
 input double          InpSLPips      = 500;         // SL in pips (0 = nessuno) - 500 pips = 5.00 $
 input double          InpTPPips      = 1000;        // TP in pips (0 = nessuno)
@@ -129,12 +159,19 @@ input double          InpTPPoints    = 10;          // TP in punti (0 = nessuno)
 input double          InpPipSize     = 0.01;        // Valore di 1 pip in prezzo (oro: 0.01)
 input double          InpMaxDDPercent= 0;           // Chiude tutto se la perdita aperta supera X% del saldo (0 = off)
 
-input group "Griglia"
+input group "Griglia e paniere"
 input bool            InpGridOn      = false;       // Griglia: aggiunge posizioni quando il prezzo va contro
 input double          InpGridStepPts = 200;         // Distanza tra i livelli in punti
 input double          InpGridLotMult = 1.0;         // Moltiplicatore lotto per livello (1 = lotto costante)
 input int             InpGridMaxLevels = 5;         // Livelli massimi per direzione (compreso il primo)
-input double          InpGridTPPts   = 0;           // TP del cesto dal prezzo medio, in punti (0 = stesso TP del singolo trade)
+input bool            InpGridOnlyWithSignal = false;// Aggiunge livelli solo se il segnale e' ancora nella direzione del paniere
+input BasketExit      InpBasketExit  = BASKET_TP_PRICE; // Uscita del paniere (2+ posizioni)
+input double          InpGridTPPts   = 0;           // TP comune dal prezzo medio, in punti (0 = stesso TP del singolo trade)
+input double          InpBasketProfit= 1.0;         // Profitto del paniere per chiudere (valuta conto, modalita' profitto)
+input double          InpBasketMaxLoss = 0;         // Chiude il paniere se la perdita arriva a X (valuta conto, 0 = off)
+input double          InpBasketMaxHours= 0;         // Chiude il paniere aperto da piu' di X ore (0 = off)
+input bool            InpBasketScale = true;        // Profitto e perdita del paniere crescono con il lotto (riferimento: lotto fisso)
+input bool            InpGridCloseOnFlip = true;    // Con 2+ posizioni chiude anche sul segnale (false = aspetta profitto, perdita max o durata)
 
 input group "Hedge (versione 3)"
 input bool            InpHedgeNeutralOnly  = false; // Laterale solo se anche il rating e' neutro
@@ -144,16 +181,21 @@ input group "Filtri orario e spread"
 input bool            InpUseHours    = false;       // Usa il filtro orario (ora del server)
 input int             InpStartHour   = 8;           // Ora di inizio (inclusa)
 input int             InpEndHour     = 20;          // Ora di fine (esclusa; se < inizio passa la mezzanotte)
-input double          InpMaxSpread   = 50;          // Spread massimo in pips (0 = off)
+input double          InpMaxSpread   = 50;          // Spread massimo in pips (0 = off; oro: 1 pip = 1 punto)
 
 input group "Ordini"
 input long            InpMagic       = 26102801;    // Magic number
 input double          InpSlippage    = 30;          // Slippage massimo in pips
 input string          InpComment     = "TVRatings"; // Commento ordini
 
+input group "Tester"
+input double          InpRebatePerLot = 0;          // Rebate per lotto (solo per il risultato Custom)
+input OptCriterion    InpOptCriterion = OPT_PROFIT_REBATE; // Criterio Custom del tester
+
 input group "Calcolo e grafico"
-input int             InpHistoryBars = 800;         // Candele usate per il calcolo
+input int             InpHistoryBars = 400;         // Candele usate per il calcolo (min. circa 260)
 input bool            InpShowPanel   = true;        // Mostra i rating sul grafico
+input bool            InpPanelAllTF  = true;        // Nel pannello anche il rating di M1, M5, M15, M30, H1, H4, D1
 input bool            InpLogRatings  = false;       // Scrive i rating nel journal a ogni candela
 
 input group "Medie mobili (default TradingView)"
@@ -213,12 +255,14 @@ struct Rating
 
 struct SideInfo
   {
-   int    count;
-   double volume;
-   double avgPrice;
-   double worstPrice;    // buy: prezzo di ingresso piu' basso, sell: piu' alto
-   double lastLot;       // lotto dell'ultimo livello aperto
-   double profit;
+   int      count;
+   double   volume;
+   double   avgPrice;
+   double   worstPrice;    // buy: prezzo di ingresso piu' basso, sell: piu' alto
+   double   lastLot;       // lotto dell'ultimo livello aperto
+   double   firstLot;      // lotto del primo livello
+   datetime oldest;        // apertura della posizione piu' vecchia
+   double   profit;
   };
 
 //--- stato ------------------------------------------------------------
@@ -226,6 +270,7 @@ CTrade          g_trade;
 ENUM_TIMEFRAMES g_sigTF, g_fltTF;
 int             g_maLen[6];
 bool            g_needFlt = false;
+int             g_from    = 0;   // primo indice calcolato per le serie con finestra
 
 // serie di prezzo e indicatori (indice 0 = candela piu' vecchia)
 double g_c[], g_h[], g_l[], g_vol[], g_hl2[], g_cciSrc[];
@@ -243,6 +288,14 @@ datetime g_lastFltBar = 0;
 datetime g_sigClosed  = 0;   // orario della candela chiusa usata
 datetime g_fltClosed  = 0;
 
+// tutti i timeframe (filtro "tutti concordano" e pannello)
+ENUM_TIMEFRAMES a_tf[N_ALLTF] = {PERIOD_M1, PERIOD_M5, PERIOD_M15, PERIOD_M30, PERIOD_H1, PERIOD_H4, PERIOD_D1};
+Rating   a_rat[N_ALLTF];
+datetime a_bar[N_ALLTF];
+datetime a_closed[N_ALLTF];
+int      g_allDir   = 0;     // +1 tutti in acquisto, -1 tutti in vendita, 0 discordi
+bool     g_needAll  = false;
+
 int      g_desired    = 0;   // direzione del trade voluta in questa candela (1 buy, -1 sell, 0 nessuna)
 bool     g_adxOk      = true;
 bool     g_lateral    = false;
@@ -250,6 +303,22 @@ datetime g_lastEntryBar = 0; // candela dell'ultimo ingresso (strategia Segnale)
 datetime g_lastBuyBar   = 0; // candela dell'ultimo buy base (Hedge)
 datetime g_lastSellBar  = 0; // candela dell'ultimo sell base (Hedge)
 datetime g_ddBlockBar   = 0; // stop per drawdown: niente ingressi fino alla candela successiva
+datetime g_lastClose    = 0; // ora dell'ultima chiusura di una posizione di questo EA
+int      g_tpBlockDir   = 0; // dopo un TP non riapre in questa direzione finche' il segnale non cambia
+
+// filtri
+int      g_hATRH1     = INVALID_HANDLE;
+datetime g_flipTimes[];
+datetime g_pauseUntil = 0;
+datetime g_news[];
+int      g_newsN = 0, g_newsPos = 0;
+datetime g_newsLoaded = 0;
+
+// statistiche (stampate a fine test)
+int      g_flips = 0, g_gridAdds = 0, g_profitCloses = 0, g_lossCloses = 0, g_timeCloses = 0;
+int      g_ddStops = 0, g_newsBlocks = 0, g_volBlocks = 0;
+double   g_maxLotUsed = 0;
+
 string   g_status     = "avvio";
 string   g_pfx        = "TVR_";
 bool     g_draw       = true;
@@ -260,7 +329,7 @@ int OnInit()
   {
    g_sigTF = (InpSignalTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : InpSignalTF;
    g_fltTF = (InpFilterTF == PERIOD_CURRENT) ? (ENUM_TIMEFRAMES)_Period : InpFilterTF;
-   g_needFlt = InpUseFilter || (InpADXMode != ADX_OFF && InpADXSrc == ADXSRC_FILTER);
+   g_needFlt = (InpUseFilter && !InpFilterAllTF) || ((InpADXMin > 0 || InpADXMax > 0) && InpADXSrc == ADXSRC_FILTER);
 
    g_maLen[0] = InpMA1; g_maLen[1] = InpMA2; g_maLen[2] = InpMA3;
    g_maLen[3] = InpMA4; g_maLen[4] = InpMA5; g_maLen[5] = InpMA6;
@@ -270,6 +339,13 @@ int OnInit()
       Print("Parametri non validi: controlla dimensione pip, candele di calcolo, soglie e periodo ADX");
       return INIT_PARAMETERS_INCORRECT;
      }
+   if(InpADXMin > 0 && InpADXMax > 0 && InpADXMin >= InpADXMax)
+     {
+      Print("ADX minimo deve essere sotto l'ADX massimo");
+      return INIT_PARAMETERS_INCORRECT;
+     }
+   if(InpLotMode == LOT_COMPOUND && InpBalancePerLot <= 0)
+      return INIT_PARAMETERS_INCORRECT;
    for(int k = 0; k < 6; k++)
       if(g_maLen[k] < 1) return INIT_PARAMETERS_INCORRECT;
    if(InpGridOn && (InpGridStepPts <= 0 || InpGridMaxLevels < 1 || InpGridLotMult <= 0))
@@ -292,7 +368,25 @@ int OnInit()
 
    g_draw = InpShowPanel && !MQLInfoInteger(MQL_OPTIMIZATION) &&
             (!MQLInfoInteger(MQL_TESTER) || MQLInfoInteger(MQL_VISUAL_MODE));
+   g_needAll = (InpUseFilter && InpFilterAllTF) || (g_draw && InpPanelAllTF);
    g_sigCur.ok = false; g_flt.ok = false;
+   for(int k = 0; k < N_ALLTF; k++) { a_rat[k].ok = false; a_bar[k] = 0; a_closed[k] = 0; }
+
+   if(InpATRMaxPts > 0)
+     {
+      g_hATRH1 = iATR(_Symbol, PERIOD_H1, 14);
+      if(g_hATRH1 == INVALID_HANDLE) { Print("Impossibile creare l'ATR H1"); return INIT_FAILED; }
+     }
+   if(InpNewsFilter && MQLInfoInteger(MQL_TESTER))
+     {
+      if(!LoadNewsFile() || g_newsN == 0)
+        {
+         Print("Filtro notizie: GT_news.csv non trovato o vuoto (MQL5\\Files o Common\\Files)");
+         return INIT_FAILED;
+        }
+      PrintFormat("Filtro notizie: %d notizie %s caricate dal file", g_newsN, InpNewsCurrency);
+      g_newsLoaded = 1;
+     }
    return INIT_SUCCEEDED;
   }
 
@@ -300,7 +394,25 @@ int OnInit()
 void OnDeinit(const int reason)
   {
    ObjectsDeleteAll(0, g_pfx);
+   if(g_hATRH1 != INVALID_HANDLE) IndicatorRelease(g_hATRH1);
    ChartRedraw();
+  }
+
+//+------------------------------------------------------------------+
+//| Chiusure: ora dell'ultima chiusura e blocco dopo il TP            |
+//+------------------------------------------------------------------+
+void OnTradeTransaction(const MqlTradeTransaction &trans, const MqlTradeRequest &request, const MqlTradeResult &result)
+  {
+   if(trans.type != TRADE_TRANSACTION_DEAL_ADD) return;
+   if(!HistoryDealSelect(trans.deal)) return;
+   if(HistoryDealGetInteger(trans.deal, DEAL_MAGIC) != InpMagic) return;
+   if(HistoryDealGetString(trans.deal, DEAL_SYMBOL) != _Symbol) return;
+   long e = HistoryDealGetInteger(trans.deal, DEAL_ENTRY);
+   if(e != DEAL_ENTRY_OUT && e != DEAL_ENTRY_OUT_BY) return;
+   g_lastClose = TimeCurrent();
+   if(!InpReopenAfterTP && HistoryDealGetInteger(trans.deal, DEAL_REASON) == DEAL_REASON_TP)
+      // la chiusura di un BUY e' un deal SELL
+      g_tpBlockDir = (HistoryDealGetInteger(trans.deal, DEAL_TYPE) == DEAL_TYPE_SELL) ? 1 : -1;
   }
 
 //+------------------------------------------------------------------+
@@ -308,6 +420,9 @@ void OnTick()
   {
    datetime sigBar = iTime(_Symbol, g_sigTF, 0);
    if(sigBar == 0) return;
+
+   UpdateNews();
+   if(g_needAll) UpdateAllTF();
 
    //--- chiusa una candela del TF del segnale: ricalcolo e decisioni.
    //    Il rating si aggiorna solo qui, cioe' alla chiusura di ogni
@@ -336,15 +451,18 @@ void OnTick()
          HedgeOnBar();
       else
         {
-         ManageExit();
-         g_desired = NewSignal();
-         g_status  = (g_desired == 0) ? "nessun segnale" : (g_desired > 0 ? "segnale BUY" : "segnale SELL");
+         int closed = ManageExit();
+         g_desired  = NewSignal();
+         if(g_tpBlockDir != 0 && g_desired != g_tpBlockDir) g_tpBlockDir = 0;   // segnale cambiato: sblocca
+         if(closed != 0 && g_desired == -closed) RegisterFlip();
+         g_status = (g_desired == 0) ? "nessun segnale" : (g_desired > 0 ? "segnale BUY" : "segnale SELL");
         }
      }
    else if(g_needFlt && iTime(_Symbol, g_fltTF, 0) != g_lastFltBar)
       UpdateFilter();                  // filtro non ancora pronto o nuova candela del filtro
 
    CheckDrawdown(sigBar);
+   ManageBaskets();
 
    if(InpStrategy == STRAT_HEDGE) HedgeTick(sigBar);
    else                           SignalTick(sigBar);
@@ -370,6 +488,34 @@ void UpdateFilter()
      }
    else
       g_flt.ok = false;
+  }
+
+// tutti i TF: ognuno si ricalcola alla chiusura della propria candela
+void UpdateAllTF()
+  {
+   bool changed = false;
+   for(int k = 0; k < N_ALLTF; k++)
+     {
+      datetime t = iTime(_Symbol, a_tf[k], 0);
+      if(t == 0 || t == a_bar[k]) continue;
+      Rating cur, prv;
+      double atr;
+      if(CalcRatings(a_tf[k], cur, prv, atr, a_closed[k])) { a_rat[k] = cur; a_bar[k] = t; }
+      else a_rat[k].ok = false;
+      changed = true;
+     }
+   if(!changed) return;
+   int d = 0;
+   for(int k = 0; k < N_ALLTF; k++)
+     {
+      if(!a_rat[k].ok) { d = 0; break; }
+      double v = Pick(a_rat[k], InpFilterSrc);
+      int dk = (v > InpFilterLevel) ? 1 : ((v < -InpFilterLevel) ? -1 : 0);
+      if(k == 0) d = dk;
+      else if(dk != d) d = 0;
+      if(d == 0) break;
+     }
+   g_allDir = d;
   }
 
 //+------------------------------------------------------------------+
@@ -413,36 +559,166 @@ double CurrentADX()
 
 bool AdxZoneOk()
   {
-   if(InpADXMode == ADX_OFF) return true;
+   if(InpADXMin <= 0 && InpADXMax <= 0) return true;
    double a = CurrentADX();
    if(a == NA) return false;
-   if(InpADXMode == ADX_ABOVE) return a > InpADXLevel;
-   return a < InpADXLevel;
+   if(InpADXMin > 0 && a < InpADXMin) return false;
+   if(InpADXMax > 0 && a > InpADXMax) return false;
+   return true;
+  }
+
+string AdxZoneText()
+  {
+   if(InpADXMin > 0 && InpADXMax > 0) return StringFormat("%.0f-%.0f", InpADXMin, InpADXMax);
+   if(InpADXMin > 0) return StringFormat(">= %.0f", InpADXMin);
+   return StringFormat("<= %.0f", InpADXMax);
   }
 
 //+------------------------------------------------------------------+
-//| Controlli comuni prima di aprire                                 |
+//| Filtri ATR, inversioni, notizie                                  |
+//+------------------------------------------------------------------+
+double ATRH1Pts()
+  {
+   if(g_hATRH1 == INVALID_HANDLE) return 0;
+   double b[];
+   if(CopyBuffer(g_hATRH1, 0, 1, 1, b) != 1) return 0;
+   return b[0] / _Point;
+  }
+
+bool VolTooHigh()
+  {
+   if(InpATRMaxPts <= 0) return false;
+   double a = ATRH1Pts();
+   return (a > 0 && a > InpATRMaxPts);
+  }
+
+void RegisterFlip()
+  {
+   g_flips++;
+   if(InpMaxFlips <= 0) return;
+   datetime now = TimeCurrent();
+   int n = ArraySize(g_flipTimes), k = 0;
+   ArrayResize(g_flipTimes, n + 1);
+   g_flipTimes[n] = now;
+   for(int i = 0; i <= n; i++)
+      if(now - g_flipTimes[i] <= InpFlipWindowMin * 60) g_flipTimes[k++] = g_flipTimes[i];
+   ArrayResize(g_flipTimes, k);
+   if(k >= InpMaxFlips)
+     {
+      g_pauseUntil = now + InpFlipPauseMin * 60;
+      ArrayResize(g_flipTimes, 0);
+      if(!MQLInfoInteger(MQL_OPTIMIZATION))
+         PrintFormat("Troppe inversioni (%d in %d min): pausa fino alle %s", k, InpFlipWindowMin,
+                     TimeToString(g_pauseUntil, TIME_DATE | TIME_MINUTES));
+     }
+  }
+
+// Notizie. Nel tester legge MQL5\Files\GT_news.csv (o Common\Files), righe
+// "aaaa.mm.gg hh:mm;VALUTA;...". Dal vivo usa il calendario economico di MT5.
+// Gli orari sono in ora del server.
+void SortNews()
+  {
+   for(int i = 1; i < g_newsN; i++)
+     {
+      datetime v = g_news[i];
+      int j = i - 1;
+      while(j >= 0 && g_news[j] > v) { g_news[j + 1] = g_news[j]; j--; }
+      g_news[j + 1] = v;
+     }
+  }
+
+bool LoadNewsFile()
+  {
+   int h = FileOpen("GT_news.csv", FILE_READ | FILE_TXT | FILE_ANSI | FILE_SHARE_READ);
+   if(h == INVALID_HANDLE) h = FileOpen("GT_news.csv", FILE_READ | FILE_TXT | FILE_ANSI | FILE_SHARE_READ | FILE_COMMON);
+   if(h == INVALID_HANDLE) return false;
+   g_newsN = 0;
+   while(!FileIsEnding(h))
+     {
+      string line = FileReadString(h);
+      if(StringLen(line) < 10 || StringGetCharacter(line, 0) == ';') continue;
+      string f[];
+      if(StringSplit(line, ';', f) < 2) continue;
+      if(InpNewsCurrency != "" && f[1] != InpNewsCurrency) continue;
+      datetime tm = StringToTime(f[0]);
+      if(tm <= 0) continue;
+      ArrayResize(g_news, g_newsN + 1, 1000);
+      g_news[g_newsN++] = tm;
+     }
+   FileClose(h);
+   SortNews();
+   g_newsPos = 0;
+   return true;
+  }
+
+void LoadNewsCalendar()
+  {
+   MqlCalendarValue v[];
+   datetime now = TimeTradeServer();
+   int n = CalendarValueHistory(v, now - 86400, now + 3 * 86400, NULL, InpNewsCurrency);
+   g_newsN = 0;
+   for(int i = 0; i < n; i++)
+     {
+      MqlCalendarEvent ev;
+      if(!CalendarEventById(v[i].event_id, ev)) continue;
+      if(ev.importance != CALENDAR_IMPORTANCE_HIGH) continue;
+      ArrayResize(g_news, g_newsN + 1, 100);
+      g_news[g_newsN++] = v[i].time;
+     }
+   SortNews();
+   g_newsPos = 0;
+  }
+
+void UpdateNews()
+  {
+   if(!InpNewsFilter || MQLInfoInteger(MQL_TESTER)) return;   // nel tester il file e' caricato in OnInit
+   datetime now = TimeCurrent();
+   if(g_newsLoaded == 0 || now - g_newsLoaded >= 3600) { LoadNewsCalendar(); g_newsLoaded = now; }
+  }
+
+bool NewsBlocked()
+  {
+   if(!InpNewsFilter || g_newsN == 0) return false;
+   datetime now = TimeCurrent();
+   while(g_newsPos < g_newsN && g_news[g_newsPos] + InpNewsMinAfter * 60 < now) g_newsPos++;
+   if(g_newsPos >= g_newsN) return false;
+   return (now >= g_news[g_newsPos] - InpNewsMinBefore * 60);
+  }
+
+//+------------------------------------------------------------------+
+//| Controlli comuni prima di aprire una posizione base              |
 //+------------------------------------------------------------------+
 bool CanOpen(const datetime bar)
   {
    if(g_ddBlockBar == bar) { g_status = "stop per drawdown, riparte alla prossima candela"; return false; }
+   if(InpMaxFlips > 0 && TimeCurrent() < g_pauseUntil)
+     { g_status = "pausa per troppe inversioni fino alle " + TimeToString(g_pauseUntil, TIME_MINUTES); return false; }
+   if(InpReopenDelaySec > 0 && TimeCurrent() - g_lastClose < InpReopenDelaySec)
+     { g_status = "attesa dopo la chiusura"; return false; }
    if(InpUseHours && !InHours()) { g_status = "fuori orario"; return false; }
-   if(InpMaxSpread > 0)
-     {
-      double spreadPips = (SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID)) / InpPipSize;
-      if(spreadPips > InpMaxSpread)
-        { g_status = StringFormat("spread alto (%.0f pips), in attesa", spreadPips); return false; }
-     }
+   if(NewsBlocked()) { g_newsBlocks++; g_status = "notizia vicina, niente ingressi"; return false; }
+   if(VolTooHigh()) { g_volBlocks++; g_status = StringFormat("volatilita' alta (ATR H1 %.0f punti)", ATRH1Pts()); return false; }
+   if(!SpreadOk())
+     { g_status = StringFormat("spread alto (%.0f pips), in attesa", SpreadPips()); return false; }
    return true;
   }
+
+double SpreadPips() { return (SymbolInfoDouble(_Symbol, SYMBOL_ASK) - SymbolInfoDouble(_Symbol, SYMBOL_BID)) / InpPipSize; }
+bool   SpreadOk()   { return InpMaxSpread <= 0 || SpreadPips() <= InpMaxSpread; }
 
 // il filtro deve confermare il segnale dell'indicatore (prima dell'inversione):
 // cosi' la versione invertita e' lo specchio esatto di quella a favore
 bool FilterOk(const int tradeDir)
   {
    if(!InpUseFilter) return true;
-   if(!g_flt.ok) { g_status = "filtro " + TFName(g_fltTF) + " non disponibile"; return false; }
    int ind = InpInvert ? -tradeDir : tradeDir;
+   if(InpFilterAllTF)
+     {
+      if(g_allDir == ind) return true;
+      g_status = StringFormat("%s bloccato: i TF non concordano", tradeDir > 0 ? "BUY" : "SELL");
+      return false;
+     }
+   if(!g_flt.ok) { g_status = "filtro " + TFName(g_fltTF) + " non disponibile"; return false; }
    double f = Pick(g_flt, InpFilterSrc);
    if((ind > 0 && f > InpFilterLevel) || (ind < 0 && f < -InpFilterLevel)) return true;
    g_status = StringFormat("%s bloccato dal filtro %s (%+.2f)", tradeDir > 0 ? "BUY" : "SELL", TFName(g_fltTF), f);
@@ -455,12 +731,10 @@ bool FilterOk(const int tradeDir)
 void SignalTick(const datetime bar)
   {
    if(g_desired == 0) return;
-   SideInfo b, s;
-   GetSide(1, b);
-   GetSide(-1, s);
-   if(b.count + s.count > 0) return;                  // una direzione (o un cesto) alla volta
+   if(CountMine() > 0) return;                        // una direzione (o un paniere) alla volta
    if((InpEntryMode == ENTRY_CROSS || !InpReenterSameBar) && g_lastEntryBar == bar) return;
-   if(!g_adxOk) { g_status = StringFormat("ADX %.1f fuori zona", CurrentADX()); return; }
+   if(g_tpBlockDir == g_desired) { g_status = "dopo il TP aspetta un segnale nuovo"; return; }
+   if(!g_adxOk) { g_status = StringFormat("ADX %.1f fuori zona (%s)", CurrentADX(), AdxZoneText()); return; }
    if(!FilterOk(g_desired)) return;
    if(!CanOpen(bar)) return;
    if(OpenTrade(g_desired > 0, CalcLots(g_desired > 0, BaseSLDist())))
@@ -469,22 +743,27 @@ void SignalTick(const datetime bar)
 
 //+------------------------------------------------------------------+
 //| Uscita sul rating (a ogni candela chiusa del TF segnale)          |
+//| restituisce la direzione chiusa (1 buy, -1 sell, 0 nessuna)       |
 //+------------------------------------------------------------------+
-void ManageExit()
+int ManageExit()
   {
    if(InpADXCloseOut && !g_adxOk && CountMine() > 0)
      {
       CloseAll(0);
       g_status = StringFormat("chiuso tutto: ADX %.1f fuori zona", CurrentADX());
       Print(g_status);
-      return;
+      return 0;
      }
-   if(InpExitMode == EXIT_SLTP || !g_sigCur.ok) return;
+   if(InpExitMode == EXIT_SLTP || !g_sigCur.ok) return 0;
    double v  = Pick(g_sigCur, InpSignalSrc);
    int    sg = InpInvert ? -1 : 1;
+   int    closed = 0;
 
    for(int side = 1; side >= -1; side -= 2)
      {
+      int n = CountSide(side);
+      if(n == 0) continue;
+      if(n >= 2 && !InpGridCloseOnFlip) continue;     // il paniere esce su profitto, perdita o durata
       // o = direzione dell'indicatore che ha giustificato la posizione
       int  o = sg * side;
       bool close;
@@ -494,13 +773,15 @@ void ManageExit()
          close = (o > 0) ? (v < -InpNeutralBand) : (v > InpNeutralBand);
       else
          close = (o > 0) ? (v < InpSellLevel) : (v > InpBuyLevel);
-      if(close && CountSide(side) > 0)
+      if(close)
         {
          CloseAll(side);
+         closed = side;
          g_status = StringFormat("chiuso %s: rating %+.2f (%s)", side > 0 ? "BUY" : "SELL", v, RatingText(v));
-         Print(g_status);
+         if(InpLogRatings) Print(g_status);
         }
      }
+   return closed;
   }
 
 //+------------------------------------------------------------------+
@@ -516,7 +797,7 @@ void HedgeOnBar()
      {
       CloseAll(0);
       g_status = "mercato non piu' laterale: chiuso tutto";
-      Print(g_status);
+      if(InpLogRatings) Print(g_status);
      }
    else
       g_status = lat ? "laterale: hedge attivo" : "non laterale: in attesa";
@@ -553,18 +834,22 @@ void ManageGrid(const datetime bar)
       double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
       bool adverse = (side > 0) ? (ask <= si.worstPrice - step) : (bid >= si.worstPrice + step);
       if(!adverse) continue;
-      if(g_ddBlockBar == bar) continue;
-      if(InpMaxSpread > 0 && (ask - bid) / InpPipSize > InpMaxSpread) continue;
+      if(g_ddBlockBar == bar || !SpreadOk()) continue;
+      if(InpGridOnlyWithSignal && InpStrategy == STRAT_SIGNAL && g_desired != side) continue;
+      if(InpNewsBlockGrid && NewsBlocked()) continue;
+      if(InpVolBlockGrid && VolTooHigh()) continue;
       double lots = NormLots(si.lastLot * InpGridLotMult);
-      if(OpenTrade(side > 0, lots))
+      if(OpenTrade(side > 0, lots, false))
         {
+         g_gridAdds++;
          g_status = StringFormat("griglia %s livello %d", side > 0 ? "BUY" : "SELL", si.count + 1);
-         SetBasketTP(side);
+         if(InpBasketExit == BASKET_TP_PRICE) SetBasketTP(side);
+         else                                 RemoveTPs(side);
         }
      }
   }
 
-// TP comune a tutto il cesto: prezzo medio +/- distanza
+// TP comune a tutto il paniere: prezzo medio +/- distanza
 void SetBasketTP(const int side)
   {
    SideInfo si;
@@ -580,7 +865,51 @@ void SetBasketTP(const int side)
       if(ticket == 0 || !IsMine() || PosSide() != side) continue;
       if(MathAbs(PositionGetDouble(POSITION_TP) - tp) < ts / 2) continue;
       if(!g_trade.PositionModify(ticket, PositionGetDouble(POSITION_SL), tp))
-         Print("TP del cesto non impostato: ", g_trade.ResultRetcode(), " ", g_trade.ResultRetcodeDescription());
+         Print("TP del paniere non impostato: ", g_trade.ResultRetcode(), " ", g_trade.ResultRetcodeDescription());
+     }
+  }
+
+// paniere a profitto in valuta: i TP dei singoli livelli non servono piu'
+void RemoveTPs(const int side)
+  {
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+     {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket == 0 || !IsMine() || PosSide() != side) continue;
+      if(PositionGetDouble(POSITION_TP) != 0)
+         g_trade.PositionModify(ticket, PositionGetDouble(POSITION_SL), 0);
+     }
+  }
+
+// profitto, perdita massima e durata massima dei panieri (2+ posizioni)
+void ManageBaskets()
+  {
+   if(!InpGridOn) return;
+   for(int side = 1; side >= -1; side -= 2)
+     {
+      SideInfo si;
+      GetSide(side, si);
+      if(si.count < 2) continue;
+      double scale = (InpBasketScale && InpFixedLots > 0) ? si.firstLot / InpFixedLots : 1.0;
+      string name  = side > 0 ? "BUY" : "SELL";
+      if(InpBasketExit == BASKET_MONEY && si.profit >= InpBasketProfit * scale)
+        {
+         CloseAll(side); g_profitCloses++;
+         g_status = StringFormat("paniere %s chiuso in profitto %.2f", name, si.profit);
+         continue;
+        }
+      if(InpBasketMaxLoss > 0 && si.profit <= -InpBasketMaxLoss * scale)
+        {
+         CloseAll(side); g_lossCloses++;
+         g_status = StringFormat("paniere %s chiuso per perdita massima %.2f", name, si.profit);
+         if(InpLogRatings) Print(g_status);
+         continue;
+        }
+      if(InpBasketMaxHours > 0 && TimeCurrent() - si.oldest >= (long)(InpBasketMaxHours * 3600))
+        {
+         CloseAll(side); g_timeCloses++;
+         g_status = StringFormat("paniere %s chiuso per durata massima (%.2f)", name, si.profit);
+        }
      }
   }
 
@@ -599,6 +928,7 @@ void CheckDrawdown(const datetime bar)
      {
       CloseAll(0);
       g_ddBlockBar = bar;
+      g_ddStops++;
       g_status = StringFormat("stop drawdown: perdita %.2f oltre %.2f", floating, limit);
       Print(g_status);
      }
@@ -621,7 +951,8 @@ double BaseTPDist()
    return (g_sigATR != NA && g_sigATR > 0) ? InpTPATR * g_sigATR : 0;
   }
 
-bool OpenTrade(const bool isBuy, const double lots)
+// withTP = false per i livelli della griglia: il TP lo decide il paniere
+bool OpenTrade(const bool isBuy, const double lots, const bool withTP = true)
   {
    if(lots <= 0) { g_status = "lotto non calcolabile"; return false; }
    if(InpStopMode == STOP_ATR && (g_sigATR == NA || g_sigATR <= 0) && (InpSLATR > 0 || InpTPATR > 0))
@@ -630,7 +961,7 @@ bool OpenTrade(const bool isBuy, const double lots)
    MqlTick tk;
    if(!SymbolInfoTick(_Symbol, tk) || tk.ask <= 0 || tk.bid <= 0) return false;
 
-   double slDist = BaseSLDist(), tpDist = BaseTPDist();
+   double slDist = BaseSLDist(), tpDist = withTP ? BaseTPDist() : 0;
    double minDist = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL) * _Point;
    if((slDist > 0 && slDist < minDist) || (tpDist > 0 && tpDist < minDist))
      {
@@ -652,11 +983,13 @@ bool OpenTrade(const bool isBuy, const double lots)
       margin > AccountInfoDouble(ACCOUNT_MARGIN_FREE))
      { g_status = "margine insufficiente"; return false; }
 
-   bool sent = isBuy ? g_trade.Buy(lots, _Symbol, price, sl, tp, InpComment)
-                     : g_trade.Sell(lots, _Symbol, price, sl, tp, InpComment);
+   string cmt = withTP ? InpComment : InpComment + " grid";
+   bool sent = isBuy ? g_trade.Buy(lots, _Symbol, price, sl, tp, cmt)
+                     : g_trade.Sell(lots, _Symbol, price, sl, tp, cmt);
    uint rc = g_trade.ResultRetcode();
    if(sent && (rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_PLACED || rc == TRADE_RETCODE_DONE_PARTIAL))
      {
+      if(lots > g_maxLotUsed) g_maxLotUsed = lots;
       g_status = StringFormat("aperto %s %.2f @ %s", isBuy ? "BUY" : "SELL", lots, DoubleToString(price, _Digits));
       if(InpLogRatings)
          PrintFormat("%s %.2f lotti  SL %s  TP %s  rating %+.3f", isBuy ? "BUY" : "SELL", lots,
@@ -683,8 +1016,9 @@ int PosSide()
 
 void GetSide(const int side, SideInfo &si)
   {
-   si.count = 0; si.volume = 0; si.avgPrice = 0; si.worstPrice = 0; si.lastLot = 0; si.profit = 0;
-   long lastTime = 0;
+   si.count = 0; si.volume = 0; si.avgPrice = 0; si.worstPrice = 0;
+   si.lastLot = 0; si.firstLot = 0; si.oldest = 0; si.profit = 0;
+   long lastTime = 0, firstTime = 0;
    double pv = 0;
    for(int i = PositionsTotal() - 1; i >= 0; i--)
      {
@@ -694,6 +1028,7 @@ void GetSide(const int side, SideInfo &si)
       long   t   = PositionGetInteger(POSITION_TIME_MSC);
       if(si.count == 0 || (side > 0 ? p < si.worstPrice : p > si.worstPrice)) si.worstPrice = p;
       if(t >= lastTime) { lastTime = t; si.lastLot = vol; }
+      if(firstTime == 0 || t < firstTime) { firstTime = t; si.firstLot = vol; si.oldest = (datetime)(t / 1000); }
       si.count++;
       si.volume += vol;
       pv += p * vol;
@@ -704,9 +1039,10 @@ void GetSide(const int side, SideInfo &si)
 
 int CountSide(const int side)
   {
-   SideInfo si;
-   GetSide(side, si);
-   return si.count;
+   int n = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+      if(PositionGetTicket(i) > 0 && IsMine() && PosSide() == side) n++;
+   return n;
   }
 
 int CountMine() { return CountSide(1) + CountSide(-1); }
@@ -732,27 +1068,24 @@ double NormLots(double lots)
    if(step > 0) lots = MathFloor(lots / step + 1e-9) * step;
    if(lots < vmin) lots = vmin;
    if(lots > vmax) lots = vmax;
+   if(InpMaxLots > 0 && lots > InpMaxLots) lots = InpMaxLots;
    return NormalizeDouble(lots, 2);
   }
 
 double CalcLots(const bool isBuy, const double slDist)
   {
    double lots = InpFixedLots;
-   if(InpLotMode == LOT_RISK)
+   if(InpLotMode == LOT_COMPOUND)
+      lots = MathMax(1.0, MathFloor(AccountInfoDouble(ACCOUNT_BALANCE) / InpBalancePerLot + 1e-9)) * InpFixedLots;
+   else if(InpLotMode == LOT_RISK && slDist > 0)   // senza SL il rischio non e' calcolabile: lotto fisso
      {
-      if(slDist <= 0)
-         lots = InpFixedLots;          // senza SL il rischio non e' calcolabile: lotto fisso
-      else
-        {
-         double price = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-         double profit = 0;
-         ENUM_ORDER_TYPE type = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
-         double slPrice = isBuy ? price - slDist : price + slDist;
-         if(!OrderCalcProfit(type, _Symbol, 1.0, price, slPrice, profit) || profit >= 0)
-            return 0;
-         double risk = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercent / 100.0;
-         lots = risk / (-profit);
-        }
+      double price = isBuy ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
+      double profit = 0;
+      ENUM_ORDER_TYPE type = isBuy ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+      double slPrice = isBuy ? price - slDist : price + slDist;
+      if(!OrderCalcProfit(type, _Symbol, 1.0, price, slPrice, profit) || profit >= 0)
+         return 0;
+      lots = AccountInfoDouble(ACCOUNT_BALANCE) * InpRiskPercent / 100.0 / (-profit);
      }
    return NormLots(lots);
   }
@@ -779,6 +1112,33 @@ double Pick(const Rating &r, const RatingSource s)
    if(s == SRC_MA)  return r.ma;
    if(s == SRC_OSC) return r.osc;
    return r.total;
+  }
+
+//+------------------------------------------------------------------+
+//| Risultato Custom del tester: profitto + rebate per lotto          |
+//+------------------------------------------------------------------+
+double OnTester()
+  {
+   double lots = 0;
+   if(HistorySelect(0, TimeCurrent() + 86400))
+      for(int i = HistoryDealsTotal() - 1; i >= 0; i--)
+        {
+         ulong t = HistoryDealGetTicket(i);
+         if(t == 0 || HistoryDealGetInteger(t, DEAL_MAGIC) != InpMagic) continue;
+         if(HistoryDealGetInteger(t, DEAL_ENTRY) != DEAL_ENTRY_IN) continue;
+         lots += HistoryDealGetDouble(t, DEAL_VOLUME);
+        }
+   double net    = TesterStatistics(STAT_PROFIT);
+   double rebate = lots * InpRebatePerLot;
+   double dd     = TesterStatistics(STAT_EQUITY_DD);
+   double pf     = TesterStatistics(STAT_PROFIT_FACTOR);
+   PrintFormat("Lotti %.2f | profitto %.2f | rebate %.2f | totale %.2f | DD equity %.2f (%.2f%%) | lotto max %.2f",
+               lots, net, rebate, net + rebate, dd, TesterStatistics(STAT_EQUITYDD_PERCENT), g_maxLotUsed);
+   PrintFormat("Inversioni %d | livelli griglia %d | panieri chiusi: profitto %d, perdita max %d, durata max %d | stop drawdown %d | blocchi notizie %d, volatilita' %d",
+               g_flips, g_gridAdds, g_profitCloses, g_lossCloses, g_timeCloses, g_ddStops, g_newsBlocks, g_volBlocks);
+   if(InpOptCriterion == OPT_RATIO_DD)    return dd > 0 ? (net + rebate) / dd : 0;
+   if(InpOptCriterion == OPT_RATIO_DD_PF) return dd > 0 ? (net + rebate) / dd * pf : 0;
+   return net + rebate;
   }
 
 //+------------------------------------------------------------------+
@@ -841,6 +1201,9 @@ bool CalcRatings(const ENUM_TIMEFRAMES tf, Rating &cur, Rating &prv, double &atr
    int n = CopyRates(_Symbol, tf, 1, cnt, r);     // solo candele chiuse
    if(n < need) return false;
    closedTime = r[n - 1].time;
+   // le serie con finestra (massimi, minimi, WMA, CCI) servono solo sulle ultime
+   // candele: le calcolo da g_from in poi (le medie esponenziali restano complete)
+   g_from = MathMax(0, n - 40);
 
    ArrayResize(g_c, n);   ArrayResize(g_h, n);   ArrayResize(g_l, n);
    ArrayResize(g_vol, n); ArrayResize(g_hl2, n); ArrayResize(g_cciSrc, n);
@@ -1140,7 +1503,7 @@ void WMA(const double &src[], const int len, double &out[])
    for(int i = 0; i < n; i++)
      {
       out[i] = NA;
-      if(len < 1 || i < len - 1) continue;
+      if(len < 1 || i < len - 1 || i < g_from) continue;
       double s = 0, w = 0;
       bool ok = true;
       for(int k = 0; k < len; k++)
@@ -1186,7 +1549,7 @@ void Highest(const double &src[], const int len, double &out[])
    for(int i = 0; i < n; i++)
      {
       out[i] = NA;
-      if(len < 1 || i < len - 1) continue;
+      if(len < 1 || i < len - 1 || i < g_from) continue;
       double m = -DBL_MAX;
       bool ok = true;
       for(int k = 0; k < len; k++)
@@ -1205,7 +1568,7 @@ void Lowest(const double &src[], const int len, double &out[])
    for(int i = 0; i < n; i++)
      {
       out[i] = NA;
-      if(len < 1 || i < len - 1) continue;
+      if(len < 1 || i < len - 1 || i < g_from) continue;
       double m = DBL_MAX;
       bool ok = true;
       for(int k = 0; k < len; k++)
@@ -1282,7 +1645,7 @@ void CCI(const double &src[], const int len, double &out[])
    for(int i = 0; i < n; i++)
      {
       out[i] = NA;
-      if(ma[i] == NA) continue;
+      if(ma[i] == NA || i < g_from) continue;
       double md = 0;
       for(int k = 0; k < len; k++) md += MathAbs(src[i - k] - ma[i]);
       md /= len;
@@ -1422,13 +1785,31 @@ void DrawPanel()
    if(g_needFlt)
       row = RatingRows(row, "Filtro " + TFName(g_fltTF), g_flt, g_fltClosed);
 
-   if(InpADXMode != ADX_OFF)
+   if(g_needAll)
+     {
+      for(int k = 0; k < N_ALLTF; k++)
+        {
+         if(!a_rat[k].ok) { Label(row++, StringFormat("%-4s  n.d.", TFName(a_tf[k])), clrGray); continue; }
+         double v = a_rat[k].total;
+         Label(row++, StringFormat("%-4s %s  %-15s  B %2d / S %2d   candela %s", TFName(a_tf[k]), Num(v), RatingText(v),
+                                   a_rat[k].bMA + a_rat[k].bOsc, a_rat[k].sMA + a_rat[k].sOsc,
+                                   TimeToString(a_closed[k], TIME_DATE | TIME_MINUTES)), RatingColor(v));
+        }
+      if(InpUseFilter && InpFilterAllTF)
+         Label(row++, "Tutti i TF: " + (g_allDir > 0 ? "concordi BUY" : (g_allDir < 0 ? "concordi SELL" : "non concordi")),
+               g_allDir != 0 ? clrLime : clrOrange);
+     }
+
+   string f = "";
+   if(InpADXMin > 0 || InpADXMax > 0)
      {
       double a = CurrentADX();
-      Label(row++, StringFormat("ADX %s %s %.0f: %s", a == NA ? "n.d." : DoubleToString(a, 1),
-                                InpADXMode == ADX_ABOVE ? ">" : "<", InpADXLevel,
-                                g_adxOk ? "zona OK" : "fuori zona"), g_adxOk ? clrLime : clrOrange);
+      f += StringFormat("ADX %s (%s) %s", a == NA ? "n.d." : DoubleToString(a, 1), AdxZoneText(), g_adxOk ? "OK" : "fuori zona");
      }
+   if(InpATRMaxPts > 0) f += StringFormat("  |  ATR H1 %.0f / %d", ATRH1Pts(), InpATRMaxPts);
+   if(InpNewsFilter)    f += NewsBlocked() ? "  |  NOTIZIA VICINA" : "  |  notizie ok";
+   if(InpMaxFlips > 0)  f += (TimeCurrent() < g_pauseUntil) ? "  |  PAUSA inversioni" : "  |  inversioni ok";
+   if(f != "") Label(row++, "Filtri: " + f, clrSilver);
 
    SideInfo b, s;
    GetSide(1, b);
