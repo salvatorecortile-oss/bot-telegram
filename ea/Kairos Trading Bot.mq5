@@ -165,6 +165,13 @@ int OnInit()
      {
       ChartSetInteger(0, CHART_FOREGROUND, false);   // dashboard e disegni davanti alle candele
       Comment("");
+      // Fibonacci e segni dei trade lasciati dalle versioni precedenti: sullo sfondo, dietro la dashboard
+      for(int i = ObjectsTotal(0) - 1; i >= 0; i--)
+        {
+         string nm = ObjectName(0, i);
+         if(StringFind(nm, "FIBM1_") == 0 || StringFind(nm, "FIBT_") == 0)
+            ObjectSetInteger(0, nm, OBJPROP_BACK, true);
+        }
      }
 
    if(InpFbOn && FbInit() != INIT_SUCCEEDED)
@@ -805,6 +812,7 @@ void FbDrawFibo(string nm, bool rayRight, color legColor, bool dim)
    ObjectSetInteger(0, nm, OBJPROP_COLOR, legColor);
    ObjectSetInteger(0, nm, OBJPROP_RAY_RIGHT, rayRight);
    ObjectSetInteger(0, nm, OBJPROP_SELECTABLE, true);
+   ObjectSetInteger(0, nm, OBJPROP_BACK, true);   // sullo sfondo: la dashboard resta sempre davanti
   }
 
 // a ogni trade Fibonacci lascia sul grafico il suo schema fisso: Fibonacci dell'impulso,
@@ -825,6 +833,7 @@ void FbDrawTrade(int k, double entry, double sl, double tp)
      {
       ObjectSetInteger(0, ar, OBJPROP_COLOR, c);
       ObjectSetInteger(0, ar, OBJPROP_WIDTH, 3);
+      ObjectSetInteger(0, ar, OBJPROP_BACK, true);
      }
 
    string tx = id + "_txt";
@@ -834,6 +843,7 @@ void FbDrawTrade(int k, double entry, double sl, double tp)
                       DoubleToString(entry, _Digits), DoubleToString(sl, _Digits), DoubleToString(tp, _Digits)));
       ObjectSetInteger(0, tx, OBJPROP_COLOR, c);
       ObjectSetInteger(0, tx, OBJPROP_FONTSIZE, 8);
+      ObjectSetInteger(0, tx, OBJPROP_BACK, true);
       ObjectSetInteger(0, tx, OBJPROP_ANCHOR, buy ? ANCHOR_LEFT_UPPER : ANCHOR_LEFT_LOWER);
      }
    ChartRedraw();
