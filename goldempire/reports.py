@@ -47,6 +47,37 @@ def _fmt_day(day):
     return f"{day.day} {_MONTHS[day.month]}"
 
 
+def _open_list():
+    """Elenco delle operazioni aperte, con lotti e profitto/perdita attuale da MT5."""
+    rows = db.get_open_signals()
+    if not rows:
+        return ""
+
+    # Profitto e lotti attuali da MT5 (se MT5 non e' collegato, mostra solo i dati del segnale).
+    positions = {}
+    try:
+        import mt5_executor as mt5x
+        positions = {int(p.ticket): (float(p.profit), float(p.volume)) for p in mt5x.get_bot_positions()}
+    except Exception:
+        pass
+
+    lines = []
+    total = 0.0
+    for r in rows:
+        line = f"• SIGNAL {r['signal_no']} {r['direction']} @ {r['open_price']:.2f}"
+        info = positions.get(int(r["position_ticket"] or 0))
+        if info:
+            profit, volume = info
+            total += profit
+            line += f" | {volume:.2f} lot | {profit:+.2f} $"
+        lines.append(line)
+
+    text = "\n".join(lines) + "\n"
+    if positions:
+        text += f"💰 Flottante totale: {total:+.2f} $\n"
+    return text
+
+
 def _stats(rows):
     operations = len(rows)
     wins = sum(1 for r in rows if r["status"] != "CLOSED_BE" and r["pips"] > _MIN_PIPS_RESULT)
@@ -59,6 +90,7 @@ def _stats(rows):
         "pips": sum(r["pips"] for r in rows),
         # Operazioni ancora aperte al momento del report.
         "open_operations": len(db.get_open_signals()),
+        "open_list": _open_list(),
     }
 
 

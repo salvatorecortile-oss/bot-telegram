@@ -177,6 +177,7 @@ DAILY_REPORT_TEMPLATE = (
 
     "Operazioni chiuse: {operations}\n"
     "Operazioni ancora aperte: {open_operations}\n"
+    "{open_list}"
     "✅ Vincenti: {wins}\n"
     "❌ Perse: {losses}\n\n"
 
@@ -198,6 +199,7 @@ WEEKLY_REPORT_TEMPLATE = (
 
     "Operazioni chiuse: {operations}\n"
     "Operazioni ancora aperte: {open_operations}\n"
+    "{open_list}"
     "✅ Vincenti: {wins}\n"
     "❌ Perse: {losses}\n\n"
 
@@ -220,6 +222,7 @@ MONTHLY_REPORT_TEMPLATE = (
 
     "Operazioni chiuse: {operations}\n"
     "Operazioni ancora aperte: {open_operations}\n"
+    "{open_list}"
     "✅ Vincenti: {wins}\n"
     "❌ Perse: {losses}\n\n"
 
