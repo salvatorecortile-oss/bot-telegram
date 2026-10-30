@@ -78,6 +78,9 @@ def _exit_and_pips(text):
     return exit_price, pips
 
 
+# Numero del segnale citato nel testo ("segnale 6", "signal 6").
+_BLOCK_NUMBER = r"\b(?:SEGNALE|SIGNAL)\s*#?\s*(\d+)\b"
+
 # Chiusura scritta a parole, senza "SIGNAL N" (es. "Chiudiamo quindi 1 trade su 4").
 _FREE_CLOSE_VERB = r"\b(?:CHIUDIAMO|CHIUDETE|CHIUDERE|CHIUDO|CHIUDI|USCIAMO|USCITE)\b"
 # "non chiudiamo", "non lo chiudiamo ancora"...
@@ -90,8 +93,15 @@ _FREE_CLOSE_LATER = (
 )
 
 
+# "Non apriamo" in reply a un segnale: segnale mandato per errore -> si chiude.
+_CANCEL_SIGNAL = r"\bNON\s+(?:LO\s+|LA\s+)?(?:APRIAMO|APRITE|APRIRE|ENTRIAMO|ENTRATE|ENTRARE)\b"
+
+
 def _parse_free_close(clean):
     upper = clean.upper()
+    if re.search(_CANCEL_SIGNAL, upper):
+        # Vale solo in risposta a un segnale (vedi handle_free_close in main.py).
+        return {"action": "FREE_CLOSE", "symbol": SYMBOL, "signal_no": None, "reply_only": True}
     if not re.search(_FREE_CLOSE_VERB, upper):
         return None
     if re.search(_FREE_CLOSE_NEGATION, upper) or re.search(_FREE_CLOSE_LATER, upper):
@@ -99,13 +109,38 @@ def _parse_free_close(clean):
     # Domanda ("chiudiamo?"): non e' un'istruzione.
     if re.search(_FREE_CLOSE_VERB + r"[^.!\n]*\?", upper):
         return None
-    return {"action": "FREE_CLOSE", "symbol": SYMBOL, "signal_no": None}
+    # "Chiudiamo il segnale 6": se nomina il numero, si chiude quel SIGNAL.
+    number = re.search(_BLOCK_NUMBER, upper)
+    return {"action": "FREE_CLOSE", "symbol": SYMBOL,
+            "signal_no": int(number.group(1)) if number else None, "reply_only": False}
+
+
+# "Se dovesse arrivare un altro segnale 6 di oggi non lo apriamo":
+# blocca le nuove aperture di quel SIGNAL fino a fine giornata.
+_BLOCK_NOT_OPEN = r"\bNON\s+(?:LO\s+|LA\s+|LI\s+)?(?:APRIAMO|APRITE|APRIRE|APRIREMO|ENTRIAMO|ENTRATE|ENTRARE)\b"
+
+
+def _parse_block(clean):
+    upper = clean.upper()
+    number = re.search(_BLOCK_NUMBER, upper)
+    if not number or not re.search(_BLOCK_NOT_OPEN, upper):
+        return None
+    # Deve parlare di un segnale FUTURO ("se arriva", "un altro", "di oggi"...),
+    # non di un segnale gia' mandato.
+    if not re.search(r"\b(?:SE|ALTRO|ALTRI|PROSSIMO|PROSSIMI|NUOVO|NUOVI|ARRIVA|ARRIVASSE|DOVESSE|DOVVESSE|"
+                     r"OGGI|PIU|PIÙ)\b", upper):
+        return None
+    return {"action": "BLOCK_SIGNAL", "symbol": SYMBOL, "signal_no": int(number.group(1))}
 
 
 def parse_signal(text):
     clean = _clean(text)
     if not clean:
         return None
+
+    block = _parse_block(clean)
+    if block is not None:
+        return block
 
     header = _header(clean)
     if not header:

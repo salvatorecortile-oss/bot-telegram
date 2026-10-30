@@ -110,7 +110,25 @@ Uscita      al segnale della strategia
 
 Valori per 0,01 lotti · XAUUSD"""
 
-FREE_CLOSE = {"action": "FREE_CLOSE", "symbol": "XAUUSD", "signal_no": None}
+FREE_CLOSE = {"action": "FREE_CLOSE", "symbol": "XAUUSD", "signal_no": None, "reply_only": False}
+CANCEL_IN_REPLY = {"action": "FREE_CLOSE", "symbol": "XAUUSD", "signal_no": None, "reply_only": True}
+
+# SIGNAL 6 con la riga "Con il 2%" (screen del canale)
+SIGNAL_6_SELL_2PCT = """🟤 SIGNAL 6 – XAUUSD SELL
+
+📥 Ingresso: 3954,23
+
+🎯 TP1: 3888,97
+
+🛑 SL: 3986,47
+
+💰 TP1 a 0.01 lot = +65,26$
+❌ SL a 0.01 lot = -32,24$
+
+📏 Rischio consigliato: 2% del conto per segnale, contando TUTTE le posizioni
+💼 Con il 2%: 0.01 lot ogni 1.620$ di conto
+
+⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
 
 TESTS = [
     (SIGNAL_5_INVERSIONE, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5, "direction": "BUY",
@@ -123,6 +141,15 @@ TESTS = [
     ("CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO... SE TORNA INDIETRO E PRENDE SL CON IL SEGNALE "
      "CHIUSO NON ABBIAMO PERSO NULLA", FREE_CLOSE),
     ("Chiudiamo quindi 1 trade su 4", FREE_CLOSE),
+    ("CHIUDO ORA✅\n+500 PIPS", FREE_CLOSE),
+    ("È un bug chiudiamo subito", FREE_CLOSE),
+    ("Non apriamo", CANCEL_IN_REPLY),
+    ("SE DOVVESSE ARRIVARE UN ALTRO SEGNALE 6 DI OGGI NON LO APRIAMO⚠️⚠️⚠️",
+     {"action": "BLOCK_SIGNAL", "symbol": "XAUUSD", "signal_no": 6}),
+    ("Chiudiamo il segnale 6", {**FREE_CLOSE, "signal_no": 6}),
+    ("Il segnale 6 di oggi è andato bene", None),
+    (SIGNAL_6_SELL_2PCT, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 6, "direction": "SELL",
+                          "entry": 3954.23, "sl": 3986.47, "tp": 3888.97, "targets_total": 1}),
     ("Chiudete tutto ragazzi", FREE_CLOSE),
     ("Non chiudiamo ancora, lasciamo correre", None),
     ("Chiudiamo domani", None),

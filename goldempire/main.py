@@ -122,6 +122,14 @@ async def handle_open(message, signal):
     if signal.get("signal_no") in REVERSAL_SIGNALS:
         await close_opposite_for_reversal(signal, source_id)
 
+    # "Se dovesse arrivare un altro segnale N di oggi non lo apriamo"
+    if signal.get("signal_no") is not None and db.was_sent(block_key(signal["signal_no"])):
+        logger.warning("🚫 SIGNAL %s BLOCCATO PER OGGI dal canale: #%s non aperto.",
+                       signal["signal_no"], source_id)
+        if db.insert_signal(source_id, signal):
+            db.set_status(source_id, "BLOCKED_BY_CHANNEL")
+        return
+
     age = (datetime.now(timezone.utc) - message.date).total_seconds()
     if age > MAX_SIGNAL_AGE_SECONDS:
         logger.warning("⏭️ SEGNALE #%s TROPPO VECCHIO (%.0fs): ignorato.", source_id, age)
@@ -433,11 +441,12 @@ async def handle_update(message, signal, row=None):
 _last_free_close = {"at": 0.0}
 
 
-async def handle_free_close(message):
+async def handle_free_close(message, reply_only=False, signal_no=None):
     """
+    Vale per tutti i SIGNAL (anche 5 e 6):
     - in reply a un segnale -> chiude quell'operazione
     - senza reply -> chiude l'operazione aperta piu' recente
-    I SIGNAL di inversione (5 e 6) non vengono mai chiusi cosi'.
+    - "Non apriamo" (reply_only) -> solo in reply: chiude quel segnale
     """
     key = f"freeclose:{message.id}"
     if db.was_sent(key):
@@ -448,18 +457,19 @@ async def handle_free_close(message):
     reply_to = getattr(message, "reply_to_msg_id", None)
     if reply_to:
         row = db.get_signal(reply_to)
-    if row is not None:
-        if row["signal_no"] in REVERSAL_SIGNALS:
-            logger.info("⏭️ CHIUSURA A PAROLE #%s ignorata: SIGNAL %s si chiude solo con i suoi messaggi.",
-                        message.id, row["signal_no"])
+    if row is None:
+        if reply_only:
+            logger.info("⏭️ 'NON APRIAMO' #%s ignorato: non e' in risposta a un segnale.", message.id)
             return
-    else:
         elapsed = time.monotonic() - _last_free_close["at"]
         if _last_free_close["at"] and elapsed < FREE_CLOSE_COOLDOWN_MINUTES * 60:
             logger.info("⏭️ CHIUSURA A PAROLE #%s ignorata: chiusura gia' fatta %.0f secondi fa.",
                         message.id, elapsed)
             return
-        candidates = [r for r in db.get_open_signals() if r["signal_no"] not in REVERSAL_SIGNALS]
+        candidates = db.get_open_signals()
+        if signal_no is not None:
+            # "Chiudiamo il segnale 6": solo le operazioni di quel SIGNAL.
+            candidates = [r for r in candidates if r["signal_no"] == signal_no]
         if not candidates:
             logger.info("⏭️ CHIUSURA A PAROLE #%s: nessuna operazione aperta da chiudere.", message.id)
             return
@@ -476,14 +486,27 @@ async def handle_free_close(message):
     )
 
 
+def block_key(signal_no):
+    return f"block:{int(signal_no)}:{reports.now_italy().date().isoformat()}"
+
+
+def handle_block(message, signal):
+    """Blocca le nuove aperture di quel SIGNAL fino a mezzanotte (ora italiana)."""
+    db.mark_sent(block_key(signal["signal_no"]))
+    logger.warning("🚫 SIGNAL %s: il canale ha detto di non aprirlo piu' oggi (#%s). Bloccato fino a mezzanotte.",
+                   signal["signal_no"], message.id)
+
+
 async def source_edited_handler(event):
     """Messaggi modificati: si considerano solo le chiusure scritte a parole."""
     if BOT_STATE == "STOPPED":
         return
     signal = parse_signal(event.message.raw_text or "")
-    if signal is not None and signal["action"] == "FREE_CLOSE":
+    if signal is not None and signal["action"] == "BLOCK_SIGNAL":
+        handle_block(event.message, signal)
+    elif signal is not None and signal["action"] == "FREE_CLOSE":
         try:
-            await handle_free_close(event.message)
+            await handle_free_close(event.message, signal.get("reply_only", False), signal.get("signal_no"))
         except Exception:
             logger.exception("❌ ERRORE GESTIONE MESSAGGIO MODIFICATO #%s", event.message.id)
 
@@ -497,8 +520,10 @@ async def source_message_handler(event):
         logger.info("ℹ️ Messaggio #%s non operativo: ignorato.", message.id)
         return
     try:
-        if signal["action"] == "FREE_CLOSE":
-            await handle_free_close(message)
+        if signal["action"] == "BLOCK_SIGNAL":
+            handle_block(message, signal)
+        elif signal["action"] == "FREE_CLOSE":
+            await handle_free_close(message, signal.get("reply_only", False), signal.get("signal_no"))
         elif signal["action"] == "OPEN":
             await handle_open(message, signal)
         else:

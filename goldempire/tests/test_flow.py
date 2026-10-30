@@ -464,28 +464,32 @@ async def scenario(trading):
         await asyncio.wait_for(_one_monitor_pass(main), 5)
         assert len(tg.sent) == m and db.get_signal(141)["be_applied"] == 1
 
-    # 21) Chiusure scritte a parole ("Chiudiamo...")
+    # 21) Chiusure scritte a parole ("Chiudiamo...") - valgono per tutti i SIGNAL, anche 5 e 6
     mt5.bid, mt5.ask = 4155.00, 4155.30
     await main.source_message_handler(event(msg(150, T.SIGNAL_4_BUY)))                # SIGNAL 4
-    await main.source_message_handler(event(msg(151, T.SIGNAL_3_BUY.replace("4160,08", "4155,30"))))  # SIGNAL 3, piu' recente
-    await main.source_message_handler(event(msg(152, strat(5, "BUY", "4155,30", "3900,00"))))  # SIGNAL 5, ignorato
+    await main.source_message_handler(event(msg(151, T.SIGNAL_3_BUY.replace("4160,08", "4155,30"))))  # SIGNAL 3
+    await main.source_message_handler(event(msg(152, strat(5, "BUY", "4155,30", "3900,00"))))  # SIGNAL 5, piu' recente
     main._last_free_close["at"] = 0.0
     mt5.bid, mt5.ask = 4158.00, 4158.30
     n = len(tg.sent)
     await main.source_message_handler(event(msg(153, "CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO...")))
-    assert db.get_signal(151)["status"] == "CLOSED_MANUAL"          # la piu' recente (non 5/6)
-    assert db.get_signal(150)["status"] == "OPENED" and db.get_signal(152)["status"] == "OPENED"
-    assert len(tg.sent) == n + 1 and tg.sent[-1].reply_to == db.get_signal(151)["destination_message_id"]
+    assert db.get_signal(152)["status"] == "CLOSED_MANUAL"          # la piu' recente (anche se e' un 5)
+    assert db.get_signal(150)["status"] == "OPENED" and db.get_signal(151)["status"] == "OPENED"
+    assert len(tg.sent) == n + 1 and tg.sent[-1].reply_to == db.get_signal(152)["destination_message_id"]
     print("   Chiusura a parole ->", tg.sent[-1].text.replace("\n", " | "))
     # Secondo messaggio subito dopo ("Chiudiamo quindi 1 trade su 4"): stessa chiusura, ignorato
     await main.source_message_handler(event(msg(154, "Chiudiamo quindi 1 trade su 4")))
-    assert db.get_signal(150)["status"] == "OPENED" and len(tg.sent) == n + 1
+    assert db.get_signal(151)["status"] == "OPENED" and len(tg.sent) == n + 1
     # Il primo messaggio viene poi modificato: gia' gestito, ignorato
     await main.source_edited_handler(event(msg(153, "CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO... (modificato)")))
-    assert db.get_signal(150)["status"] == "OPENED"
-    # In reply a un SIGNAL 5: non viene toccato
-    await main.source_message_handler(event(msg(155, "Chiudiamo", reply_to=152)))
-    assert db.get_signal(152)["status"] == "OPENED"
+    assert db.get_signal(151)["status"] == "OPENED"
+    # "CHIUDO ORA ✅ +500 PIPS" in reply a un SIGNAL 6: chiude esattamente quello
+    await main.source_message_handler(event(msg(158, strat(6, "SELL", "4158,00", "4400,00"))))
+    mt5.bid, mt5.ask = 4108.00, 4108.30
+    await main.source_message_handler(event(msg(159, "CHIUDO ORA✅\n+500 PIPS", reply_to=158)))
+    assert db.get_signal(158)["status"] == "CLOSED_MANUAL"
+    if trading:
+        assert db.get_signal(158)["pips"] > 400
     # In reply a un segnale preciso: chiude quello, anche subito dopo un'altra chiusura
     await main.source_message_handler(event(msg(156, "Chiudete questo", reply_to=150)))
     assert db.get_signal(150)["status"] == "CLOSED_MANUAL"
@@ -494,6 +498,41 @@ async def scenario(trading):
     main._last_free_close["at"] = 0.0
     await main.source_message_handler(event(msg(157, "Non chiudiamo ancora, lasciamo correre")))
     assert len(tg.sent) == m
+
+    # 21b) Segnale mandato per errore: "Non apriamo" in reply lo chiude subito,
+    #      poi "È un bug chiudiamo subito" (senza reply) non chiude altre operazioni
+    await main.source_message_handler(event(msg(165, T.SIGNAL_2_BUY_NEW.replace("SIGNAL 2", "SIGNAL 6")
+                                                .replace("4137,44", "4108,30").replace("4163,40", "4150,00")
+                                                .replace("4131,13", "4090,00"))))
+    assert db.get_signal(165)["status"] == "OPENED"
+    main._last_free_close["at"] = 0.0
+    await main.source_message_handler(event(msg(166, "Non apriamo", reply_to=165)))
+    assert db.get_signal(165)["status"] == "CLOSED_MANUAL", db.get_signal(165)
+    m = len(tg.sent)
+    await main.source_message_handler(event(msg(167, "È un bug chiudiamo subito")))
+    assert db.get_signal(151)["status"] == "OPENED" and len(tg.sent) == m
+    # "Non apriamo" senza reply: ignorato
+    main._last_free_close["at"] = 0.0
+    await main.source_message_handler(event(msg(168, "Non apriamo")))
+    assert db.get_signal(151)["status"] == "OPENED" and len(tg.sent) == m
+
+    # 21c) "Se dovesse arrivare un altro segnale 6 di oggi non lo apriamo": SIGNAL 6 bloccato, il 5 no
+    await main.source_message_handler(event(msg(170, "SE DOVVESSE ARRIVARE UN ALTRO SEGNALE 6 DI OGGI NON LO APRIAMO⚠️⚠️⚠️")))
+    m = len(tg.sent)
+    await main.source_message_handler(event(msg(171, strat(6, "SELL", "4108,00", "4400,00"))))
+    assert db.get_signal(171)["status"] == "BLOCKED_BY_CHANNEL" and len(tg.sent) == m
+    await main.source_message_handler(event(msg(172, strat(5, "SELL", "4108,00", "4400,00"))))
+    assert db.get_signal(172)["status"] == "OPENED"
+    # "Chiudiamo il segnale 5" senza reply: chiude il SIGNAL 5, non la piu' recente in assoluto
+    await main.source_message_handler(event(msg(173, T.SIGNAL_4_BUY.replace("4155,08", "4108,30"))))
+    main._last_free_close["at"] = 0.0
+    await main.source_message_handler(event(msg(174, "Chiudiamo il segnale 5")))
+    assert db.get_signal(172)["status"] == "CLOSED_MANUAL" and db.get_signal(173)["status"] == "OPENED"
+    # Il blocco vale solo per oggi
+    with db.get_connection() as conn:
+        conn.execute("DELETE FROM sent_messages WHERE key LIKE 'block:%'")
+    await main.source_message_handler(event(msg(175, strat(6, "SELL", "4108,00", "4400,00"))))
+    assert db.get_signal(175)["status"] == "OPENED"
 
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY
     mt5.bid, mt5.ask = 4100.00, 4100.30
