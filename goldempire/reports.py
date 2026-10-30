@@ -64,7 +64,7 @@ def _open_list():
     lines = []
     total = 0.0
     for r in rows:
-        line = f"• SIGNAL {r['signal_no']} {r['direction']} @ {r['open_price']:.2f}"
+        line = f"• XAUUSD {r['direction']} @ {r['open_price']:.2f}"
         info = positions.get(int(r["position_ticket"] or 0))
         if info:
             profit, volume = info
