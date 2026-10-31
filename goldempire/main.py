@@ -36,6 +36,7 @@ from config import (
     MONITOR_INTERVAL_SECONDS,
     FREE_CLOSE_COOLDOWN_MINUTES,
     PENDING_EXPIRY_MINUTES,
+    PUBLISH_TO_CHANNEL,
     REVERSAL_SIGNALS,
     MT5_SYMBOL,
     PIP_SIZE,
@@ -246,6 +247,8 @@ async def close_opposite_for_reversal(signal, source_id):
 async def publish_open(source_id, direction, open_price, sl, tp):
     try:
         sent = await send_open_message(direction, open_price, sl, tp)
+        if sent is None:
+            return  # PUBLISH_TO_CHANNEL=false: nessun messaggio nel canale
         db.set_destination_message(source_id, sent.id)
         logger.info("📤 SEGNALE PUBBLICATO | Destination #%s", sent.id)
     except Exception:
@@ -647,7 +650,7 @@ async def scheduler():
     10:00, mensile ultimo giorno del mese 23:00 (ora italiana)."""
     while True:
         try:
-            if BOT_STATE != "STOPPED":
+            if BOT_STATE != "STOPPED" and PUBLISH_TO_CHANNEL:
                 for key, kind, day in reports.due_messages(reports.now_italy()):
                     if db.was_sent(key):
                         continue
@@ -762,8 +765,13 @@ async def saved_messages_handler(event):
             await event.reply(restart_message(COMMAND_PREFIX, closed, errors), parse_mode="html")
         elif command in {"report", "reportw", "reportm"}:
             kind = {"report": "daily", "reportw": "weekly", "reportm": "monthly"}[command]
-            await send_text(scheduled_text(kind, reports.now_italy().date()))
-            await event.reply(f"✅ Report {kind} inviato nel canale.")
+            text = scheduled_text(kind, reports.now_italy().date())
+            if PUBLISH_TO_CHANNEL:
+                await send_text(text)
+                await event.reply(f"✅ Report {kind} inviato nel canale.")
+            else:
+                # Bot che non pubblica: il report arriva solo qui nei Messaggi salvati.
+                await event.reply(text, parse_mode="html")
         elif command == "status":
             await event.reply(status_text(), parse_mode="html")
         else:
@@ -777,7 +785,7 @@ async def saved_messages_handler(event):
 # ============================================================
 
 async def main():
-    if not SOURCE_CHAT or not DESTINATION_CHAT:
+    if not SOURCE_CHAT or (PUBLISH_TO_CHANNEL and not DESTINATION_CHAT):
         logger.error(
             "❌ Imposta TELEGRAM_SOURCE_CHAT e TELEGRAM_DESTINATION_CHAT nel file .env "
             "(usa get_chats.py per trovare gli ID)."
@@ -789,7 +797,8 @@ async def main():
     logger.info("=" * 60)
     logger.info("🚀 BOT GOLD EMPIRE -> MT5")
     logger.info("SOURCE      : %s", SOURCE_CHAT)
-    logger.info("DESTINATION : %s", DESTINATION_CHAT)
+    logger.info("DESTINATION : %s", DESTINATION_CHAT if PUBLISH_TO_CHANNEL
+                else "NESSUNA (PUBLISH_TO_CHANNEL=false: non scrive nel canale)")
     logger.info("TRADING     : %s", "ATTIVO" if TRADING_ENABLED else "DISATTIVATO (modalita TEST)")
     logger.info("SIMBOLO     : %s | Lotto %.2f | Magic %s", MT5_SYMBOL, LOT_SIZE, MAGIC_NUMBER)
     logger.info("INVERSIONE  : SIGNAL %s (il segnale opposto chiude quelli dello stesso numero)",
@@ -807,7 +816,10 @@ async def main():
 
     # Carica i dialoghi cosi' Telethon conosce gli ID dei canali.
     await client.get_dialogs()
-    for label, chat_id in (("SOURCE", SOURCE_CHAT), ("DESTINATION", DESTINATION_CHAT)):
+    chats = [("SOURCE", SOURCE_CHAT)]
+    if PUBLISH_TO_CHANNEL:
+        chats.append(("DESTINATION", DESTINATION_CHAT))
+    for label, chat_id in chats:
         try:
             entity = await client.get_entity(chat_id)
             logger.info("✅ %s: %s", label, getattr(entity, "title", chat_id))

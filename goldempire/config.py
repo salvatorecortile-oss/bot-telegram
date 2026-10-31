@@ -39,6 +39,11 @@ SESSION_NAME = os.getenv("TELEGRAM_SESSION_NAME", "goldempire_session")
 SOURCE_CHAT = int(os.getenv("TELEGRAM_SOURCE_CHAT", "0") or 0)
 DESTINATION_CHAT = int(os.getenv("TELEGRAM_DESTINATION_CHAT", "0") or 0)
 
+# false = il bot legge il canale sorgente e opera su MT5, ma NON scrive niente
+# nel canale di destinazione (niente segnali, chiusure, report, buongiorno).
+# Utile per una seconda copia del bot su un altro conto.
+PUBLISH_TO_CHANNEL = _bool("PUBLISH_TO_CHANNEL", "true")
+
 # Comandi da "Messaggi salvati" (es. bot3_status, bot3_pausa ...). Non usare bot2_ (e' dell'altro bot).
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "bot3_").strip().lower()
 

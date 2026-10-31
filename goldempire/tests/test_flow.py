@@ -565,9 +565,36 @@ async def _one_monitor_pass(main):
         pass
 
 
+async def scenario_silent():
+    """PUBLISH_TO_CHANNEL=false: opera su MT5 ma non scrive niente nel canale."""
+    import test_parser as T
+    os.environ["PUBLISH_TO_CHANNEL"] = "false"
+    tg, mt5 = install_fakes(True)
+    import database as db
+    db.set_db_path(os.path.join(tempfile.mkdtemp(), "s.db"))
+    import main
+    db.init_database()
+    main.MT5_READY = True
+
+    mt5.bid, mt5.ask = 4204.00, 4204.30
+    await main.source_message_handler(event(msg(10, T.SIGNAL_2_SELL)))
+    r = db.get_signal(10)
+    assert r["status"] == "OPENED" and r["position_ticket"] in mt5.positions and r["destination_message_id"] is None
+    mt5.positions[r["position_ticket"]].sl = 4204.00                 # BE a mano
+    await asyncio.wait_for(_one_monitor_pass(main), 5)
+    assert db.get_signal(10)["be_applied"] == 1
+    await main.source_message_handler(event(msg(11, T.SIGNAL_2_TP, reply_to=10)))
+    assert db.get_signal(10)["status"] == "CLOSED_TP" and not mt5.positions
+    assert tg.sent == [], [m.text for m in tg.sent]
+    print("OK - modalita' senza pubblicazione: operazioni aperte/chiuse su MT5, 0 messaggi nel canale.")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        asyncio.run(scenario(sys.argv[1] == "live"))
+        if sys.argv[1] == "silent":
+            asyncio.run(scenario_silent())
+        else:
+            asyncio.run(scenario(sys.argv[1] == "live"))
     else:
-        for mode in ("test", "live"):
+        for mode in ("test", "live", "silent"):
             subprocess.run([sys.executable, __file__, mode], check=True)
