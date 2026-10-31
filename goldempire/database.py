@@ -123,7 +123,7 @@ def get_latest_open_by_signal_no(signal_no):
             WHERE signal_no = ? AND status IN (?, ?)
             ORDER BY source_message_id DESC LIMIT 1
             """,
-            (int(signal_no), OPEN_STATUS, PENDING_STATUS),
+            (signal_no, OPEN_STATUS, PENDING_STATUS),
         ).fetchone()
         return _row(row)
 
@@ -146,7 +146,7 @@ def get_active_by_signal_no(signal_no, direction):
             WHERE signal_no = ? AND direction = ? AND status IN (?, ?)
             ORDER BY source_message_id
             """,
-            (int(signal_no), direction, OPEN_STATUS, PENDING_STATUS),
+            (signal_no, direction, OPEN_STATUS, PENDING_STATUS),
         ).fetchall()
         return [dict(r) for r in rows]
 
@@ -259,7 +259,9 @@ def claim_close(source_message_id, close_status, close_price, pips):
         return cur.rowcount == 1
 
 
-CLOSED_STATUSES = ("CLOSED_TP", "CLOSED_SL", "CLOSED_BE", "CLOSED_MANUAL", "CLOSED_EXTERNAL")
+CLOSED_STATUSES = (
+    "CLOSED_TP", "CLOSED_SL", "CLOSED_BE", "CLOSED_MANUAL", "CLOSED_EXTERNAL", "CLOSED_STOP_PROFIT",
+)
 
 
 def get_closed_between(start_utc, end_utc):

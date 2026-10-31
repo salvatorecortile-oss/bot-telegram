@@ -130,7 +130,37 @@ SIGNAL_6_SELL_2PCT = """🟤 SIGNAL 6 – XAUUSD SELL
 
 ⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
 
+# Formato "Regole della Sala" (ENTRA ORA / CHIUDI ORA / SPOSTA LO STOP)
+ENTRA_53_SELL = """🟢 ENTRA ORA · SIGNAL 5.3
+XAUUSD SELL
+Ingresso: 4100,50
+Stop: 4350,00 (rete di sicurezza)
+TP: nessuno, chiusura con CHIUDI ORA
+Stop a 0,01: −249,50 $"""
+
 TESTS = [
+    (ENTRA_53_SELL, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5.3, "direction": "SELL",
+                     "entry": 4100.50, "sl": 4350.0, "tp": None, "targets_total": 1}),
+    ("🟢 ENTRA ORA · SIGNAL 4\nBUY\nIngresso 4100,50\nStop 4060,00\nObiettivo 4180,00",
+     {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 4, "direction": "BUY",
+      "entry": 4100.50, "sl": 4060.0, "tp": 4180.0, "targets_total": 1}),
+    ("🟢 ENTRA ORA · SIGNAL 4\nEURUSD BUY\nIngresso 1,0850\nStop 1,0800\nObiettivo 1,0950", None),
+    ("🔴 CHIUDI ORA · SIGNAL 5.3\nUscita: 4080,10\nRisultato +204 pips",
+     {"action": "CLOSE", "symbol": "XAUUSD", "signal_no": 5.3, "exit_price": 4080.10, "pips": 204.0}),
+    ("🔴 CHIUDI ORA · SIGNAL 5.3 SELL\nUscita: 4080,10",
+     {"action": "CLOSE", "symbol": "XAUUSD", "signal_no": 5.3, "exit_price": 4080.10, "pips": None}),
+    ("🔴 CHIUDI ORA · SIGNAL 4", {"action": "CLOSE", "symbol": "XAUUSD", "signal_no": 4,
+                                  "exit_price": None, "pips": None}),
+    ("🟡 SPOSTA LO STOP · SIGNAL 6\nNuovo stop: 4120,00\nStop a 0,01: −10 $",
+     {"action": "MOVE_SL", "symbol": "XAUUSD", "signal_no": 6, "new_sl": 4120.0}),
+    ("🟡 SPOSTA LO STOP · SIGNAL 6\nStop a 0,01: −10 $\nStop: 4120,00",
+     {"action": "MOVE_SL", "symbol": "XAUUSD", "signal_no": 6, "new_sl": 4120.0}),
+    ("🛑 STOP COLPITO · SIGNAL 6\nUscita 4150,00",
+     {"action": "SL_HIT", "symbol": "XAUUSD", "signal_no": 6, "exit_price": 4150.0, "pips": None}),
+    ("✅ OBIETTIVO RAGGIUNTO · SIGNAL 4\nUscita 4180,00",
+     {"action": "TP_HIT", "symbol": "XAUUSD", "signal_no": 4, "exit_price": 4180.0, "pips": None}),
+    ("Se arriva un altro SIGNAL 5.3 oggi non lo apriamo",
+     {"action": "BLOCK_SIGNAL", "symbol": "XAUUSD", "signal_no": 5.3}),
     (SIGNAL_5_INVERSIONE, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5, "direction": "BUY",
                            "entry": 4059.60, "sl": 3816.02, "tp": None, "targets_total": 1}),
     (SIGNAL_5_INVERSIONE.replace("CHIUDI ⬇️ VENDI", "CHIUDI ⬆️ COMPRA").replace("APRI ⬆️ COMPRA", "APRI ⬇️ VENDI")

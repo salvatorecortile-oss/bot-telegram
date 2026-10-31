@@ -534,6 +534,52 @@ async def scenario(trading):
     await main.source_message_handler(event(msg(175, strat(6, "SELL", "4108,00", "4400,00"))))
     assert db.get_signal(175)["status"] == "OPENED"
 
+    # 23) Formato "Regole della Sala": SIGNAL 5.x, CHIUDI ORA, SPOSTA LO STOP
+    def entra(no, direction, entry, sl, tp=None):
+        return (f"🟢 ENTRA ORA · SIGNAL {no}\nXAUUSD {direction}\nIngresso: {entry}\nStop: {sl}"
+                + (f"\nObiettivo: {tp}" if tp else "\nTP: nessuno"))
+    mt5.bid, mt5.ask = 4100.00, 4100.30
+    await main.source_message_handler(event(msg(180, entra("5.3", "SELL", "4100,00", "4350,00"))))
+    await main.source_message_handler(event(msg(181, entra("5.6", "BUY", "4100,30", "3850,00"))))
+    assert db.get_signal(180)["signal_no"] == 5.3 and db.get_signal(180)["status"] == "OPENED"
+    # Un SELL 5.2 NON chiude il BUY 5.6
+    await main.source_message_handler(event(msg(182, entra("5.2", "SELL", "4100,00", "4350,00"))))
+    assert db.get_signal(181)["status"] == "OPENED" and db.get_signal(182)["status"] == "OPENED"
+    # CHIUDI ORA · SIGNAL 5.3 (anche senza reply) chiude solo il 5.3
+    mt5.bid, mt5.ask = 4080.00, 4080.30
+    await main.source_message_handler(event(msg(183, "🔴 CHIUDI ORA · SIGNAL 5.3\nUscita: 4080,30")))
+    assert db.get_signal(180)["status"] == "CLOSED_MANUAL"
+    assert db.get_signal(181)["status"] == "OPENED" and db.get_signal(182)["status"] == "OPENED"
+    # Inversione di riserva: ENTRA ORA 5.2 BUY chiude il SELL 5.2 (stesso numero esatto)
+    await main.source_message_handler(event(msg(184, entra("5.2", "BUY", "4080,30", "3850,00"))))
+    assert db.get_signal(182)["status"] == "CLOSED_MANUAL" and db.get_signal(181)["status"] == "OPENED"
+    # SIGNAL 6 con TP: un SIGNAL 6 opposto NON lo chiude
+    await main.source_message_handler(event(msg(185, entra(6, "SELL", "4080,00", "4130,00", "3980,00"))))
+    await main.source_message_handler(event(msg(186, entra(6, "BUY", "4080,30", "4030,00", "4180,00"))))
+    assert db.get_signal(185)["status"] == "OPENED" and db.get_signal(186)["status"] == "OPENED"
+    # SPOSTA LO STOP: lo SL va al nuovo prezzo, l'operazione resta aperta
+    n = len(tg.sent)
+    await main.source_message_handler(event(msg(187, "🟡 SPOSTA LO STOP · SIGNAL 6\nNuovo stop: 4110,00\n"
+                                                      "Stop a 0,01: −30 $", reply_to=185)))
+    r = db.get_signal(185)
+    assert r["status"] == "OPENED" and r["sl"] == 4110.00, r
+    assert len(tg.sent) == n + 1 and "STOP LOSS IMPOSTATO A 4110.00" in tg.sent[-1].text
+    if trading:
+        assert mt5.positions[r["position_ticket"]].sl == 4110.00
+    # SPOSTA LO STOP in profitto (sotto l'ingresso per un SELL) -> BE ATTIVATO
+    mt5.bid, mt5.ask = 4050.00, 4050.30
+    await main.source_message_handler(event(msg(188, "🟡 SPOSTA LO STOP · SIGNAL 6\nNuovo stop: 4075,00",
+                                                reply_to=185)))
+    assert db.get_signal(185)["be_applied"] == 1 and "BE ATTIVATO" in tg.sent[-1].text
+    # Prezzo assurdo (es. 0,01) ignorato: niente modifiche
+    m = len(tg.sent)
+    await main.source_message_handler(event(msg(189, "🟡 SPOSTA LO STOP · SIGNAL 6\nStop a 0,01", reply_to=185)))
+    assert db.get_signal(185)["sl"] == 4075.00 and len(tg.sent) == m
+    # STOP COLPITO e OBIETTIVO RAGGIUNTO
+    await main.source_message_handler(event(msg(190, "🛑 STOP COLPITO · SIGNAL 6\nUscita 4075,00", reply_to=185)))
+    assert db.get_signal(185)["status"] == "CLOSED_STOP_PROFIT" and "IN PROFITTO" in tg.sent[-1].text
+    print("   Formato Regole della Sala ->", tg.sent[-1].text.replace("\n", " | "))
+
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY
     mt5.bid, mt5.ask = 4100.00, 4100.30
     await main.source_message_handler(event(msg(160, strat(5, "SELL", "4100,00", "4350,00"))))

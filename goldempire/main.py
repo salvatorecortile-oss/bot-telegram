@@ -120,7 +120,7 @@ async def handle_open(message, signal):
 
     # SIGNAL 5 / 6 (stop and reverse): prima si chiudono le operazioni dello
     # stesso SIGNAL nella direzione opposta, anche se il segnale e' in ritardo.
-    if signal.get("signal_no") in REVERSAL_SIGNALS:
+    if is_reversal_signal(signal):
         await close_opposite_for_reversal(signal, source_id)
 
     # "Se dovesse arrivare un altro segnale N di oggi non lo apriamo"
@@ -196,6 +196,19 @@ async def handle_open(message, signal):
 
         db.mark_opened(source_id, position_ticket, open_price, volume, sl, tp)
         await publish_open(source_id, signal["direction"], open_price, sl, tp)
+
+
+def is_reversal_signal(signal):
+    """
+    Inversione automatica solo per le strategie senza TP del SIGNAL 5
+    (5.1 ... 5.8, o "SIGNAL 5" del vecchio formato), sempre sul numero esatto:
+    un 5.3 chiude solo un 5.3. I segnali con TP (es. SIGNAL 4 e 6) non si
+    chiudono mai con un segnale nuovo: solo con TP/SL o "CHIUDI ORA".
+    """
+    signal_no = signal.get("signal_no")
+    if signal_no is None or signal.get("tp"):
+        return False
+    return int(signal_no) in REVERSAL_SIGNALS
 
 
 async def close_opposite_for_reversal(signal, source_id):
@@ -310,6 +323,10 @@ async def finalize_close(row, close_status, close_price):
     pips = calculate_pips(row["open_price"], close_price, row["direction"], current_pip_size())
     if close_status == "CLOSED_SL":
         close_status = classify_stop_close(pips, bool(row["be_applied"]))
+        if close_status == "CLOSED_SL" and pips > 0:
+            # Stop spostato in profitto e poi colpito: e' una chiusura in
+            # profitto, non uno "STOP LOSS PRESO".
+            close_status = "CLOSED_STOP_PROFIT"
 
     if not db.claim_close(row["source_message_id"], close_status, close_price, pips):
         return
@@ -366,8 +383,8 @@ async def handle_update(message, signal, row=None):
             if not MT5_READY:
                 logger.error("❌ MT5 NON PRONTO: %s non eseguito | #%s", action, source_id)
                 return
-            if action == "BREAKEVEN":
-                logger.info("⏭️ BE ignorato: ordine #%s ancora pendente.", source_id)
+            if action in ("BREAKEVEN", "MOVE_SL"):
+                logger.info("⏭️ %s ignorato: ordine #%s ancora pendente.", action, source_id)
                 return
             try:
                 cancelled = await asyncio.to_thread(mt5x.cancel_pending_order, row["order_ticket"])
@@ -395,6 +412,27 @@ async def handle_update(message, signal, row=None):
                 # Gia' chiusa da MT5 (TP/SL broker): comunica la chiusura reale.
                 await finalize_if_closed_on_mt5(row)
                 return
+
+        if action == "MOVE_SL":
+            # "🟡 SPOSTA LO STOP": lo SL va al nuovo prezzo, l'operazione resta aperta.
+            new_sl = signal.get("new_sl")
+            open_price = float(row["open_price"])
+            if not new_sl or abs(float(new_sl) - open_price) > open_price * 0.2:
+                logger.warning("⚠️ SPOSTA LO STOP ignorato | #%s | prezzo non valido: %s", source_id, new_sl)
+                return
+            if live:
+                try:
+                    new_sl = await asyncio.to_thread(mt5x.move_stop_loss, row["position_ticket"], new_sl)
+                except ValueError as exc:
+                    logger.warning("⚠️ SPOSTA LO STOP NON APPLICABILE | #%s | %s", source_id, exc)
+                    return
+                except Exception:
+                    logger.exception("❌ ERRORE SPOSTA LO STOP | #%s", source_id)
+                    return
+            logger.info("🟡 STOP SPOSTATO | SIGNAL %s | Nuovo SL %.2f", row["signal_no"], float(new_sl))
+            # Registra il nuovo SL e manda il messaggio (BE ATTIVATO se in profitto).
+            await check_sl_change(row, float(new_sl))
+            return
 
         if action == "BREAKEVEN":
             # BE = prezzo d'ingresso REALE della nostra posizione.
@@ -490,7 +528,7 @@ async def handle_free_close(message, reply_only=False, signal_no=None):
 
 
 def block_key(signal_no):
-    return f"block:{int(signal_no)}:{reports.now_italy().date().isoformat()}"
+    return f"block:{signal_no}:{reports.now_italy().date().isoformat()}"
 
 
 def handle_block(message, signal):

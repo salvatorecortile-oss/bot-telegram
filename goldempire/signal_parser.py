@@ -54,9 +54,15 @@ def _number_after(label_regex, text):
     return _to_float(match.group(1))
 
 
+def _to_signal_no(value):
+    """'5.3' -> 5.3 (strategie SIGNAL 5.1 ... 5.8), '6' -> 6."""
+    value = value.replace(",", ".")
+    return float(value) if "." in value else int(value)
+
+
 def _signal_number(text):
-    match = re.search(r"\bSIGNAL\s*#?\s*(\d+)", text, re.IGNORECASE)
-    return int(match.group(1)) if match else None
+    match = re.search(r"\bSIGNAL\s*#?\s*(\d+(?:[.,]\d+)?)", text, re.IGNORECASE)
+    return _to_signal_no(match.group(1)) if match else None
 
 
 def _header(text):
@@ -79,7 +85,7 @@ def _exit_and_pips(text):
 
 
 # Numero del segnale citato nel testo ("segnale 6", "signal 6").
-_BLOCK_NUMBER = r"\b(?:SEGNALE|SIGNAL)\s*#?\s*(\d+)\b"
+_BLOCK_NUMBER = r"\b(?:SEGNALE|SIGNAL)\s*#?\s*(\d+(?:[.,]\d+)?)\b"
 
 # Chiusura scritta a parole, senza "SIGNAL N" (es. "Chiudiamo quindi 1 trade su 4").
 _FREE_CLOSE_VERB = r"\b(?:CHIUDIAMO|CHIUDETE|CHIUDERE|CHIUDO|CHIUDI|USCIAMO|USCITE)\b"
@@ -112,7 +118,7 @@ def _parse_free_close(clean):
     # "Chiudiamo il segnale 6": se nomina il numero, si chiude quel SIGNAL.
     number = re.search(_BLOCK_NUMBER, upper)
     return {"action": "FREE_CLOSE", "symbol": SYMBOL,
-            "signal_no": int(number.group(1)) if number else None, "reply_only": False}
+            "signal_no": _to_signal_no(number.group(1)) if number else None, "reply_only": False}
 
 
 # "Se dovesse arrivare un altro segnale 6 di oggi non lo apriamo":
@@ -130,7 +136,35 @@ def _parse_block(clean):
     if not re.search(r"\b(?:SE|ALTRO|ALTRI|PROSSIMO|PROSSIMI|NUOVO|NUOVI|ARRIVA|ARRIVASSE|DOVESSE|DOVVESSE|"
                      r"OGGI|PIU|PIÙ)\b", upper):
         return None
-    return {"action": "BLOCK_SIGNAL", "symbol": SYMBOL, "signal_no": int(number.group(1))}
+    return {"action": "BLOCK_SIGNAL", "symbol": SYMBOL, "signal_no": _to_signal_no(number.group(1))}
+
+
+# Prima riga dei messaggi del formato "ENTRA ORA / CHIUDI ORA / SPOSTA LO STOP".
+_ENTER_NOW = r"\bENTRA(?:TE)?\s+ORA\b|\bENTRIAMO\s+ORA\b"
+_UPDATE_HEADER = (
+    r"\bCHIUD[IO]\b|\bCHIUDIAMO\b|\bCHIUS[AO]\b|\bSPOSTA\b|\bSPOSTIAMO\b|\bCOLPITO\b|"
+    r"\bRAGGIUNTO\b|\bPAREGGIO\b"
+)
+# Altri strumenti (Forex, cripto): i loro "ENTRA ORA" vengono ignorati.
+_OTHER_SYMBOL = (
+    r"\b(?:EUR|GBP|USD|JPY|AUD|NZD|CAD|CHF)\s*/?\s*(?:USD|JPY|GBP|EUR|CHF|CAD|AUD|NZD)\b|"
+    r"\b(?:BTC|ETH|XRP|SOL|BNB|DOGE|CRYPTO|CRIPTO)\w*"
+)
+
+
+def _new_stop_price(clean):
+    """Prezzo del nuovo stop in "SPOSTA LO STOP" (None se non c'e' un prezzo)."""
+    for label in (
+        r"\bNUOVO\s+(?:STOP\s*LOSS|STOP|SL)\b",
+        r"\bSTOP\s*(?:LOSS)?\s+A\b",
+        r"\b(?:STOP\s*LOSS|STOP|SL)\b",
+    ):
+        for match in re.finditer(label + r"\s*[:=]?\s*(" + _NUMBER + r")", clean, re.IGNORECASE):
+            value = _to_float(match.group(1))
+            # "Stop a 0,01: -40 $" e' il lotto, non un prezzo.
+            if value >= 1:
+                return value
+    return None
 
 
 def parse_signal(text):
@@ -164,19 +198,32 @@ def parse_signal(text):
             exit_price, pips = _exit_and_pips(clean)
             return {"action": "CLOSE", "symbol": SYMBOL, "signal_no": signal_no,
                     "exit_price": exit_price, "pips": pips}
+    elif re.search(_UPDATE_HEADER, upper_header):
+        # "🔴 CHIUDI ORA · SIGNAL 5.3 BUY", "🟡 SPOSTA LO STOP"...: mai un'apertura.
+        direction_match = None
     else:
         direction_match = re.search(r"\b(VENDI|COMPRA|SELL|BUY)\b", upper_header)
+        if direction_match is None and _ENTER_NOW and re.search(_ENTER_NOW, upper_header):
+            # "🟢 ENTRA ORA · SIGNAL 5.3": la direzione puo' stare in un'altra riga.
+            direction_match = re.search(r"\b(VENDI|COMPRA|SELL|BUY)\b", clean.upper())
     if direction_match:
-        # Solo XAUUSD: qualunque altro strumento viene ignorato.
+        # Solo XAUUSD: qualunque altro strumento viene ignorato. Nei messaggi
+        # "ENTRA ORA" senza simbolo si assume l'oro (la Sala lavora solo sull'oro),
+        # ma se compare un altro strumento il segnale viene scartato.
         if not re.search(r"\bXAU\s*/?\s*USD\b", clean, re.IGNORECASE):
-            return None
+            if not re.search(_ENTER_NOW, upper_header) or re.search(_OTHER_SYMBOL, clean.upper()):
+                return None
 
         direction = "SELL" if direction_match.group(1) in {"VENDI", "SELL"} else "BUY"
         # "BUY LIMIT" / "SELL LIMIT" / "BUY STOP" / "SELL STOP" -> ordine pendente
         # al prezzo di Ingresso; altrimenti apertura a mercato.
-        if re.search(r"\bLIMIT\b", upper_header):
+        direction_line = next(
+            (line.upper() for line in clean.splitlines() if direction_match.group(1) in line.upper()),
+            upper_header,
+        )
+        if re.search(r"\bLIMIT\b", upper_header) or re.search(r"\bLIMIT\b", direction_line):
             order_type = "LIMIT"
-        elif re.search(r"\b(?:BUY|SELL|COMPRA|VENDI)\s+STOP\b", upper_header):
+        elif re.search(r"\b(?:BUY|SELL|COMPRA|VENDI)\s+STOP\b", direction_line):
             order_type = "STOP"
         else:
             order_type = "MARKET"
@@ -203,7 +250,9 @@ def parse_signal(text):
         # il solo SL: la chiusura arrivera' con il messaggio del canale.
         if entry is None or sl is None:
             return None
-        if tp is None and not re.search(r"\bUSCITA\b", clean, re.IGNORECASE):
+        # SIGNAL 5.x ("ENTRA ORA" senza TP) o "Uscita: al segnale della strategia".
+        if tp is None and not re.search(r"\bUSCITA\b", clean, re.IGNORECASE) \
+                and not re.search(_ENTER_NOW, upper_header):
             return None
 
         # Coerenza dei livelli: evita di aprire con un numero letto male.
@@ -253,7 +302,17 @@ def parse_signal(text):
             "new_sl": _number_after(r"\bNUOVO\s+(?:STOP|SL)\b", clean),
         }
 
-    if re.search(r"\bCHIUS[AO]\b|\bCLOSED?\b", upper_header):
+    # "🟡 SPOSTA LO STOP" al nuovo prezzo (prima del semplice "STOP", che
+    # altrimenti verrebbe letto come stop colpito e chiuderebbe l'operazione).
+    if re.search(r"\bSPOSTA\b|\bSPOSTIAMO\b|\bSPOSTATE\b|\bNUOVO\s+(?:STOP|SL)\b", upper_header):
+        return {
+            "action": "MOVE_SL",
+            "symbol": SYMBOL,
+            "signal_no": signal_no,
+            "new_sl": _new_stop_price(clean),
+        }
+
+    if re.search(r"\bCHIUS[AO]\b|\bCHIUD[IO]\b|\bCHIUDIAMO\b|\bCLOSED?\b", upper_header):
         exit_price, pips = _exit_and_pips(clean)
         return {
             "action": "CLOSE",
