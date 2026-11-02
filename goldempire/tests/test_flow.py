@@ -660,6 +660,15 @@ async def scenario(trading):
         tg.dest_history = [msg(960, "👑 XAUUSD — BUY\n\n🟢 ENTRY: 3995.00\n🛑 STOP LOSS: 3940.00")]
         await main.adopt_manual_positions()          # "riavvio": nessuna posizione nuova, ma cerca il post
         assert db.get_signal(220)["destination_message_id"] == 960, db.get_signal(220)
+        # Operazione collegata da una versione precedente (senza segno "adopted"): il post si collega lo stesso
+        with db.get_connection() as conn:
+            conn.execute("UPDATE signals SET destination_message_id = NULL, opened_at = '2026-01-01T00:00:00+00:00' "
+                         "WHERE source_message_id = 220")
+            conn.execute("DELETE FROM sent_messages WHERE key = 'adopted:220'")
+        tg.dest_history = [msg(970, "🟢 ENTRA ORA · SIGNAL 5.6 · XAUUSD BUY\nIngresso: 3970,00\n"
+                                    "🛡️ SL da mettere nell'ordine: 3940,00")]
+        await main.adopt_manual_positions()
+        assert db.get_signal(220)["destination_message_id"] == 970, db.get_signal(220)
         assert foreign in mt5.positions
 
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY

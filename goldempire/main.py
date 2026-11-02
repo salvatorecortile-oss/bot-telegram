@@ -772,12 +772,24 @@ async def adopt_manual_positions():
 # ---- Messaggio di apertura pubblicato A MANO nel canale di destinazione ----
 
 def _adopted_without_post(direction=None):
-    return [
-        r for r in db.get_open_signals()
-        if r["destination_message_id"] is None
-        and db.was_sent(f"adopted:{r['source_message_id']}")
-        and (direction is None or r["direction"] == direction)
-    ]
+    """
+    Operazioni aperte che non hanno ancora un messaggio nel canale: aperte a
+    mano (anche collegate da una versione precedente del bot) o con l'invio
+    fallito. Quelle appena aperte dal bot (meno di 2 minuti) si escludono:
+    il loro messaggio lo sta pubblicando il bot stesso.
+    """
+    limit = datetime.now(timezone.utc).timestamp() - 120
+    rows = []
+    for r in db.get_open_signals():
+        if r["destination_message_id"] is not None:
+            continue
+        if direction is not None and r["direction"] != direction:
+            continue
+        adopted = db.was_sent(f"adopted:{r['source_message_id']}")
+        opened = datetime.fromisoformat(r["opened_at"]).timestamp() if r["opened_at"] else 0
+        if adopted or opened < limit:
+            rows.append(r)
+    return rows
 
 
 def _read_destination_post(text):
