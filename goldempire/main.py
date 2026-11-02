@@ -695,15 +695,19 @@ def _match_score(position, signal):
     if signal["direction"] != ("BUY" if is_buy else "SELL"):
         return None
     entry_gap = abs(float(position.price_open) - float(signal["entry"]))
-    if entry_gap > ADOPT_ENTRY_TOLERANCE:
-        return None
     pos_sl, pos_tp = float(position.sl or 0.0), float(position.tp or 0.0)
     sl_match = pos_sl and abs(pos_sl - float(signal["sl"])) <= ADOPT_PRICE_TOLERANCE
     tp_match = pos_tp and signal.get("tp") and abs(pos_tp - float(signal["tp"])) <= ADOPT_PRICE_TOLERANCE
+    # Ingresso lontano (aperta a mano piu' tardi): va bene solo se SL o TP coincidono.
+    if entry_gap > ADOPT_ENTRY_TOLERANCE and not (sl_match or tp_match):
+        return None
     # Senza SL/TP impostati: solo se l'ingresso e' praticamente lo stesso.
     if not (sl_match or tp_match or (not pos_sl and not pos_tp and entry_gap <= 3.0)):
         return None
     return entry_gap
+
+
+_unmatched_logged = set()
 
 
 async def adopt_manual_positions():
@@ -717,6 +721,9 @@ async def adopt_manual_positions():
         if int(p.ticket) not in known and int(p.magic) != int(MAGIC_NUMBER)
     ]
     if not candidates:
+        # Operazioni manuali gia' collegate in un avvio precedente: cerca comunque
+        # il post di apertura scritto a mano nel canale.
+        await link_recent_destination_posts()
         return
 
     signals = await recent_open_signals()
@@ -734,6 +741,15 @@ async def adopt_manual_positions():
             if score is not None and (best is None or score < best[0]):
                 best = (score, message, signal)
         if best is None:
+            if int(position.ticket) not in _unmatched_logged:
+                _unmatched_logged.add(int(position.ticket))
+                logger.info(
+                    "ℹ️ Posizione %s %s @ %.2f (SL %.2f, TP %.2f) non collegata: nessun segnale con "
+                    "stessa direzione e stesso SL/TP nelle ultime %s ore.",
+                    position.ticket, "BUY" if int(position.type) == 0 else "SELL",
+                    float(position.price_open), float(position.sl or 0.0), float(position.tp or 0.0),
+                    ADOPT_LOOKBACK_HOURS,
+                )
             continue
         _, message, signal = best
         used.add(message.id)
@@ -810,6 +826,17 @@ async def link_recent_destination_posts():
         if not _adopted_without_post():
             break
         link_destination_post(message)
+    for row in _adopted_without_post():
+        if row["source_message_id"] not in _post_missing_logged:
+            _post_missing_logged.add(row["source_message_id"])
+            logger.info(
+                "ℹ️ SIGNAL %s %s @ %.2f aperta a mano: in attesa del tuo post di apertura nel canale "
+                "(serve BUY/SELL e ENTRY o STOP LOSS con il prezzo).",
+                row["signal_no"], row["direction"], float(row["open_price"]),
+            )
+
+
+_post_missing_logged = set()
 
 
 async def destination_message_handler(event):

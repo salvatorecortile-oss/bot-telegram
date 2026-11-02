@@ -645,6 +645,21 @@ async def scenario(trading):
         tg.dest_history = [msg(950, "👑 XAUUSD — SELL\n\n🟢 ENTRY: 3962.00\n🛑 STOP LOSS: 3993.79")]
         await main.adopt_manual_positions()
         assert db.get_signal(210)["destination_message_id"] == 950, db.get_signal(210)
+        # Riavvio con operazione GIA' collegata e post inviato dopo: il post viene trovato lo stesso
+        mt5.next_ticket += 1
+        manual3 = mt5.next_ticket
+        old3 = msg(220, T.ENTRA_56_BUY_REAL.replace("3963,79", "3970,00").replace("3933,79", "3940,00"))
+        old3.date = old.date
+        tg.history = [old3]
+        mt5.positions[manual3] = SimpleNamespace(ticket=manual3, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_BUY,
+                                                 volume=0.01, price_open=3995.00, price_current=3995.00,
+                                                 sl=3940.00, tp=0.0, profit=0.0, time=manual3, time_msc=manual3)
+        tg.dest_history = []
+        await main.adopt_manual_positions()          # ingresso lontano 25 $ ma SL uguale: collegata
+        assert db.get_signal(220)["position_ticket"] == manual3 and db.get_signal(220)["destination_message_id"] is None
+        tg.dest_history = [msg(960, "👑 XAUUSD — BUY\n\n🟢 ENTRY: 3995.00\n🛑 STOP LOSS: 3940.00")]
+        await main.adopt_manual_positions()          # "riavvio": nessuna posizione nuova, ma cerca il post
+        assert db.get_signal(220)["destination_message_id"] == 960, db.get_signal(220)
         assert foreign in mt5.positions
 
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY
