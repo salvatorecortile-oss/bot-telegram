@@ -129,10 +129,12 @@ class FakeMT5(types.ModuleType):
 class FakeClient:
     def __init__(self):
         self.sent = []
-        self.history = []  # messaggi del canale sorgente per iter_messages
+        self.history = []       # messaggi del canale sorgente per iter_messages
+        self.dest_history = []  # messaggi del canale di destinazione
 
     async def iter_messages(self, chat, limit=100):
-        for m in sorted(self.history, key=lambda m: m.id, reverse=True)[:limit]:
+        source = self.dest_history if int(chat) == -200 else self.history
+        for m in sorted(source, key=lambda m: m.id, reverse=True)[:limit]:
             yield m
 
     async def send_message(self, chat, text, parse_mode=None, silent=None, reply_to=None):
@@ -606,9 +608,21 @@ async def scenario(trading):
                                                  type=mt5.POSITION_TYPE_BUY, volume=0.01, price_open=3964.00,
                                                  price_current=3964.00, sl=3900.00, tp=4100.00, profit=0.0,
                                                  time=foreign, time_msc=foreign)
+        n_before = len(tg.sent)
         await main.adopt_manual_positions()
         r = db.get_signal(200)
         assert r and r["status"] == "OPENED" and r["position_ticket"] == manual and r["signal_no"] == 5.6, r
+        # Il bot NON pubblica l'apertura: la scrive l'utente a mano nel canale
+        assert len(tg.sent) == n_before and r["destination_message_id"] is None
+        # Un post qualsiasi nel canale non viene collegato
+        await main.destination_message_handler(event(msg(900, "Buongiorno ragazzi")))
+        assert db.get_signal(200)["destination_message_id"] is None
+        # Il post di apertura scritto a mano viene riconosciuto e collegato
+        await main.destination_message_handler(event(msg(901, "👑 XAUUSD — BUY\n\n🟢 ENTRY: 3965.10\n"
+                                                              "🛑 STOP LOSS: 3933.79\n🎯 TAKE PROFIT: chiusura a segnale")))
+        r = db.get_signal(200)
+        assert r["destination_message_id"] == 901, r
+        print("   Post manuale collegato -> destination #", r["destination_message_id"])
         assert all(x["position_ticket"] != foreign for x in db.get_open_signals())
         print("   Operazione manuale collegata -> SIGNAL", r["signal_no"], "position", r["position_ticket"])
         await main.adopt_manual_positions()                          # seconda volta: niente doppioni
@@ -618,6 +632,19 @@ async def scenario(trading):
         await main.source_message_handler(event(msg(202, "🔴 CHIUDI ORA · SIGNAL 5.6\nUscita: 3980,00",
                                                     reply_to=200)))
         assert db.get_signal(200)["status"] == "CLOSED_MANUAL" and manual not in mt5.positions
+        assert tg.sent[-1].reply_to == 901  # chiusura in risposta al post scritto a mano
+        # Post gia' pubblicato a mano PRIMA dell'avvio: trovato tra gli ultimi messaggi del canale
+        old2 = msg(210, T.ENTRA_56_BUY_REAL.replace("XAUUSD BUY", "XAUUSD SELL").replace("3933,79", "3993,79"))
+        old2.date = old.date
+        tg.history = [old2]
+        mt5.next_ticket += 1
+        manual2 = mt5.next_ticket
+        mt5.positions[manual2] = SimpleNamespace(ticket=manual2, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_SELL,
+                                                 volume=0.01, price_open=3962.00, price_current=3962.00,
+                                                 sl=3993.79, tp=0.0, profit=0.0, time=manual2, time_msc=manual2)
+        tg.dest_history = [msg(950, "👑 XAUUSD — SELL\n\n🟢 ENTRY: 3962.00\n🛑 STOP LOSS: 3993.79")]
+        await main.adopt_manual_positions()
+        assert db.get_signal(210)["destination_message_id"] == 950, db.get_signal(210)
         assert foreign in mt5.positions
 
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY

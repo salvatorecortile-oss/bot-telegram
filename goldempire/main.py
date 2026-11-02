@@ -17,6 +17,7 @@ aperti contemporaneamente: ogni segnale e' una posizione a se'.
 Avvio:  python main.py
 """
 import asyncio
+import re
 import logging
 import sys
 import time
@@ -52,6 +53,7 @@ from messages import (
     restart_message,
     stopped_message,
 )
+import signal_parser as sp
 from signal_parser import parse_signal
 
 
@@ -744,6 +746,78 @@ async def adopt_manual_positions():
             "🤝 OPERAZIONE APERTA A MANO COLLEGATA | Position %s %s @ %.2f -> SIGNAL %s (#%s)",
             position.ticket, signal["direction"], float(position.price_open), signal["signal_no"], message.id,
         )
+        # L'apertura nel canale la pubblica l'utente a mano: il bot la riconosce
+        # (link_destination_post) e risponde a quel messaggio con TP/SL/chiusure.
+        db.mark_sent(f"adopted:{message.id}")
+
+    await link_recent_destination_posts()
+
+
+# ---- Messaggio di apertura pubblicato A MANO nel canale di destinazione ----
+
+def _adopted_without_post(direction=None):
+    return [
+        r for r in db.get_open_signals()
+        if r["destination_message_id"] is None
+        and db.was_sent(f"adopted:{r['source_message_id']}")
+        and (direction is None or r["direction"] == direction)
+    ]
+
+
+def _read_destination_post(text):
+    """Direzione, ingresso e SL di un messaggio di apertura scritto a mano nel canale."""
+    clean = sp._clean(text)
+    direction = re.search(r"\b(BUY|SELL|COMPRA|VENDI)\b", clean.upper())
+    if not direction:
+        return None
+    entry = sp._number_after(r"\b(?:ENTRY|INGRESSO|ENTRATA|PREZZO)\b", clean)
+    sl = sp._labeled_sl(clean) or sp._number_after(r"\b(?:STOP\s*LOSS|STOP|SL)\b", clean)
+    if entry is None and sl is None:
+        return None
+    return {"direction": "SELL" if direction.group(1) in ("SELL", "VENDI") else "BUY", "entry": entry, "sl": sl}
+
+
+def link_destination_post(message):
+    """Collega il post scritto a mano all'operazione aperta a mano corrispondente."""
+    post = _read_destination_post(message.raw_text or "")
+    if post is None:
+        return False
+    best = None
+    for row in _adopted_without_post(post["direction"]):
+        gaps = []
+        if post["entry"] is not None:
+            gaps.append(abs(float(row["open_price"]) - post["entry"]))
+        if post["sl"] is not None and row["sl"]:
+            gaps.append(abs(float(row["sl"]) - post["sl"]))
+        if not gaps or min(gaps) > ADOPT_ENTRY_TOLERANCE:
+            continue
+        if best is None or min(gaps) < best[0]:
+            best = (min(gaps), row)
+    if best is None:
+        return False
+    row = best[1]
+    db.set_destination_message(row["source_message_id"], message.id)
+    logger.info("🔗 POST MANUALE NEL CANALE COLLEGATO | Destination #%s -> SIGNAL %s %s",
+                message.id, row["signal_no"], row["direction"])
+    return True
+
+
+async def link_recent_destination_posts():
+    """Cerca tra gli ultimi messaggi del canale il post scritto a mano (anche se gia' inviato)."""
+    if not PUBLISH_TO_CHANNEL or not _adopted_without_post():
+        return
+    async for message in client.iter_messages(DESTINATION_CHAT, limit=30):
+        if not _adopted_without_post():
+            break
+        link_destination_post(message)
+
+
+async def destination_message_handler(event):
+    if PUBLISH_TO_CHANNEL and _adopted_without_post():
+        try:
+            link_destination_post(event.message)
+        except Exception:
+            logger.exception("❌ ERRORE COLLEGAMENTO POST MANUALE #%s", event.message.id)
 
 
 async def adopt_loop():
@@ -970,6 +1044,8 @@ async def main():
 
     client.add_event_handler(source_message_handler, events.NewMessage(chats=SOURCE_CHAT))
     client.add_event_handler(source_edited_handler, events.MessageEdited(chats=SOURCE_CHAT))
+    if PUBLISH_TO_CHANNEL:
+        client.add_event_handler(destination_message_handler, events.NewMessage(chats=DESTINATION_CHAT))
     client.add_event_handler(saved_messages_handler, events.NewMessage(chats="me"))
 
     tasks = [asyncio.create_task(monitor_closures()), asyncio.create_task(scheduler())]
