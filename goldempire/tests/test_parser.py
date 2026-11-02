@@ -138,7 +138,30 @@ Stop: 4350,00 (rete di sicurezza)
 TP: nessuno, chiusura con CHIUDI ORA
 Stop a 0,01: −249,50 $"""
 
+# Screen reale del canale (SIGNAL 5.6, SL "da mettere nell'ordine")
+ENTRA_56_BUY_REAL = """🟢 ENTRA ORA · SIGNAL 5.6 · XAUUSD BUY
+
+📥 Ingresso: 3963,79
+
+🎯 TP: NON metterlo (lascia vuoto)
+🚪 Chiusura: te la comunichiamo noi con CHIUDI ORA · SIGNAL 5.6
+
+🛑 Stop a 0,01 lotti: -30 $ circa
+🛡️ SL da mettere nell'ordine: 3933,79
+
+📉 Quando chiude in perdita: in media -10,26$ a 0,01, peggiore storica -34,65$ (backtest)
+
+🛑 Lo stop della Sala è più vicino di quello del nostro conto: è la regola della Sala per proteggere il tuo. Quando il prezzo lo tocca ti scriviamo STOP COLPITO e per la Sala l'operazione è chiusa, anche se sul nostro conto resta aperta. Per questo i risultati della Sala possono essere diversi da quelli del nostro conto.
+Lo stop è sul prezzo: se l'operazione resta aperta molti giorni, si aggiunge il costo di mantenimento (swap).
+
+⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
+
 TESTS = [
+    (ENTRA_56_BUY_REAL, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5.6, "direction": "BUY",
+                         "entry": 3963.79, "sl": 3933.79, "tp": None, "targets_total": 1}),
+    (ENTRA_56_BUY_REAL.replace("XAUUSD BUY", "XAUUSD SELL").replace("3933,79", "3993,79"),
+     {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5.6, "direction": "SELL",
+      "entry": 3963.79, "sl": 3993.79, "tp": None, "targets_total": 1}),
     (ENTRA_53_SELL, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5.3, "direction": "SELL",
                      "entry": 4100.50, "sl": 4350.0, "tp": None, "targets_total": 1}),
     ("🟢 ENTRA ORA · SIGNAL 4\nBUY\nIngresso 4100,50\nStop 4060,00\nObiettivo 4180,00",

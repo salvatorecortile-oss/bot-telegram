@@ -152,8 +152,26 @@ _OTHER_SYMBOL = (
 )
 
 
+def _labeled_sl(clean):
+    """
+    "SL da mettere nell'ordine: 3933,79" / "Stop loss da impostare: ...":
+    parole tra l'etichetta e i due punti. Si scartano le righe di rischio
+    ("Stop a 0,01 lotti: -30 $"): il prezzo deve essere positivo e >= 1.
+    """
+    for match in re.finditer(
+        r"\b(?:STOP\s*LOSS|SL)\b[^\n:]{1,40}:\s*(" + _NUMBER + r")", clean, re.IGNORECASE
+    ):
+        value = _to_float(match.group(1))
+        if value >= 1:
+            return value
+    return None
+
+
 def _new_stop_price(clean):
     """Prezzo del nuovo stop in "SPOSTA LO STOP" (None se non c'e' un prezzo)."""
+    labeled = _labeled_sl(clean)
+    if labeled is not None:
+        return labeled
     for label in (
         r"\bNUOVO\s+(?:STOP\s*LOSS|STOP|SL)\b",
         r"\bSTOP\s*(?:LOSS)?\s+A\b",
@@ -230,7 +248,9 @@ def parse_signal(text):
         entry = _number_after(r"\b(?:INGRESSO|ENTRATA|ENTRY)\b", clean)
         # Il numero deve seguire subito l'etichetta: righe come
         # "SL a 0.01 lot = -6,31$" non vengono confuse con lo stop.
-        sl = _number_after(r"\b(?:STOP\s*LOSS|STOP|SL)\b", clean)
+        sl = _labeled_sl(clean)
+        if sl is None:
+            sl = _number_after(r"\b(?:STOP\s*LOSS|STOP|SL)\b", clean)
         # "Obiettivo 4486,04", "Obiettivo 1 4169,15", "TP1: 4163,40":
         # si usa sempre il primo obiettivo.
         tp_match = re.search(
