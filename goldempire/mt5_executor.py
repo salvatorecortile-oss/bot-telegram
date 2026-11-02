@@ -277,12 +277,27 @@ def open_market_order(signal):
         )
 
 
+# Posizioni gestite dal bot anche se aperte a mano (magic diverso): vedi
+# adopt_manual_positions in main.py.
+_ADOPTED_TICKETS = set()
+
+
+def register_ticket(position_ticket):
+    """Il bot gestisce questa posizione anche se non ha il suo MAGIC (aperta a mano)."""
+    if position_ticket:
+        _ADOPTED_TICKETS.add(int(position_ticket))
+
+
+def _is_managed(position):
+    return int(position.magic) == int(MAGIC_NUMBER) or int(position.ticket) in _ADOPTED_TICKETS
+
+
 def _own_position(position_ticket):
     positions = mt5.positions_get(ticket=int(position_ticket))
     if not positions:
         return None
     position = positions[0]
-    if int(position.magic) != int(MAGIC_NUMBER) or position.symbol != MT5_SYMBOL:
+    if not _is_managed(position) or position.symbol != MT5_SYMBOL:
         raise RuntimeError(f"La posizione {position_ticket} non appartiene a questo bot.")
     return position
 
@@ -396,10 +411,14 @@ def get_closed_position_info(position_ticket):
 def get_bot_positions():
     _require_mt5()
     with _MT5_LOCK:
-        return [
-            p for p in (mt5.positions_get(symbol=MT5_SYMBOL) or [])
-            if int(p.magic) == int(MAGIC_NUMBER)
-        ]
+        return [p for p in (mt5.positions_get(symbol=MT5_SYMBOL) or []) if _is_managed(p)]
+
+
+def get_symbol_positions():
+    """Tutte le posizioni aperte sul simbolo, di qualunque magic (anche manuali)."""
+    _require_mt5()
+    with _MT5_LOCK:
+        return list(mt5.positions_get(symbol=MT5_SYMBOL) or [])
 
 
 # ============================================================

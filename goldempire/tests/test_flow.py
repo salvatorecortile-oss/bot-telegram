@@ -129,6 +129,11 @@ class FakeMT5(types.ModuleType):
 class FakeClient:
     def __init__(self):
         self.sent = []
+        self.history = []  # messaggi del canale sorgente per iter_messages
+
+    async def iter_messages(self, chat, limit=100):
+        for m in sorted(self.history, key=lambda m: m.id, reverse=True)[:limit]:
+            yield m
 
     async def send_message(self, chat, text, parse_mode=None, silent=None, reply_to=None):
         msg = SimpleNamespace(id=500 + len(self.sent), text=text, reply_to=reply_to)
@@ -579,6 +584,41 @@ async def scenario(trading):
     await main.source_message_handler(event(msg(190, "🛑 STOP COLPITO · SIGNAL 6\nUscita 4075,00", reply_to=185)))
     assert db.get_signal(185)["status"] == "CLOSED_STOP_PROFIT" and "IN PROFITTO" in tg.sent[-1].text
     print("   Formato Regole della Sala ->", tg.sent[-1].text.replace("\n", " | "))
+
+    if trading:
+        # 24) Operazione aperta A MANO su MT5 (il bot aveva perso il segnale):
+        #     viene collegata al SIGNAL 5.6 del canale e poi gestita (CHIUDI ORA)
+        old = msg(200, T.ENTRA_56_BUY_REAL)
+        old.date = datetime.now(timezone.utc).replace(microsecond=0) - __import__("datetime").timedelta(hours=3)
+        await main.source_message_handler(event(old))               # troppo vecchio: non aperto
+        assert db.get_signal(200) is None
+        other = msg(201, "Buongiorno a tutti")
+        tg.history = [old, other]
+        mt5.next_ticket += 1
+        manual = mt5.next_ticket
+        mt5.positions[manual] = SimpleNamespace(ticket=manual, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_BUY,
+                                                volume=0.01, price_open=3965.10, price_current=3965.10,
+                                                sl=3933.79, tp=0.0, profit=0.0, time=manual, time_msc=manual)
+        # Posizione di un altro bot sullo stesso conto (SL diverso): NON va toccata
+        mt5.next_ticket += 1
+        foreign = mt5.next_ticket
+        mt5.positions[foreign] = SimpleNamespace(ticket=foreign, magic=26090102, symbol="XAUUSD",
+                                                 type=mt5.POSITION_TYPE_BUY, volume=0.01, price_open=3964.00,
+                                                 price_current=3964.00, sl=3900.00, tp=4100.00, profit=0.0,
+                                                 time=foreign, time_msc=foreign)
+        await main.adopt_manual_positions()
+        r = db.get_signal(200)
+        assert r and r["status"] == "OPENED" and r["position_ticket"] == manual and r["signal_no"] == 5.6, r
+        assert all(x["position_ticket"] != foreign for x in db.get_open_signals())
+        print("   Operazione manuale collegata -> SIGNAL", r["signal_no"], "position", r["position_ticket"])
+        await main.adopt_manual_positions()                          # seconda volta: niente doppioni
+        assert sum(1 for x in db.get_open_signals() if x["position_ticket"] == manual) == 1
+        # Ora la gestisce: CHIUDI ORA · SIGNAL 5.6 la chiude su MT5
+        mt5.bid, mt5.ask = 3980.00, 3980.30
+        await main.source_message_handler(event(msg(202, "🔴 CHIUDI ORA · SIGNAL 5.6\nUscita: 3980,00",
+                                                    reply_to=200)))
+        assert db.get_signal(200)["status"] == "CLOSED_MANUAL" and manual not in mt5.positions
+        assert foreign in mt5.positions
 
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY
     mt5.bid, mt5.ask = 4100.00, 4100.30

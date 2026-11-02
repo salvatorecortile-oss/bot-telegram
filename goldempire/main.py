@@ -404,6 +404,7 @@ async def handle_update(message, signal, row=None):
 
         live = TRADING_ENABLED and row["position_ticket"] is not None
         if live:
+            mt5x.register_ticket(row["position_ticket"])
             if not MT5_READY:
                 logger.error("❌ MT5 NON PRONTO: %s non eseguito | #%s", action, source_id)
                 return
@@ -589,6 +590,7 @@ async def monitor_closures():
                 for row in db.get_open_signals():
                     if row["position_ticket"] is None:
                         continue
+                    mt5x.register_ticket(row["position_ticket"])
                     async with get_lock(row["source_message_id"]):
                         current = db.get_signal(row["source_message_id"])
                         if current["status"] != db.OPEN_STATUS:
@@ -656,6 +658,107 @@ async def check_sl_change(row, mt5_sl):
             await send_sl_updated_message(mt5_sl, in_profit, reply_to=row["destination_message_id"])
     except Exception:
         logger.exception("❌ ERRORE INVIO MESSAGGIO SL | #%s", source_id)
+
+
+# ============================================================
+# ADOZIONE OPERAZIONI APERTE A MANO
+# ============================================================
+# Se un segnale e' stato aperto a mano su MT5 (es. il bot l'aveva perso), il
+# bot lo riconosce confrontando la posizione con i segnali di apertura degli
+# ultimi giorni del canale (stessa direzione + stesso SL, o stesso TP, e
+# ingresso vicino) e da quel momento lo gestisce come se l'avesse aperto lui:
+# CHIUDI ORA, SPOSTA LO STOP, inversione, TP/SL, report.
+
+ADOPT_LOOKBACK_HOURS = 72
+ADOPT_PRICE_TOLERANCE = 1.0     # $ di differenza ammessa su SL/TP
+ADOPT_ENTRY_TOLERANCE = 15.0    # $ di differenza ammessa sull'ingresso
+
+
+async def recent_open_signals():
+    """Segnali di apertura del canale delle ultime ADOPT_LOOKBACK_HOURS ore."""
+    since = datetime.now(timezone.utc).timestamp() - ADOPT_LOOKBACK_HOURS * 3600
+    found = []
+    async for message in client.iter_messages(SOURCE_CHAT, limit=400):
+        if message.date.timestamp() < since:
+            break
+        signal = parse_signal(message.raw_text or "")
+        if signal is not None and signal["action"] == "OPEN":
+            found.append((message, signal))
+    return found
+
+
+def _match_score(position, signal):
+    """None se la posizione non corrisponde al segnale, altrimenti la distanza dall'ingresso."""
+    is_buy = int(position.type) == 0  # POSITION_TYPE_BUY
+    if signal["direction"] != ("BUY" if is_buy else "SELL"):
+        return None
+    entry_gap = abs(float(position.price_open) - float(signal["entry"]))
+    if entry_gap > ADOPT_ENTRY_TOLERANCE:
+        return None
+    pos_sl, pos_tp = float(position.sl or 0.0), float(position.tp or 0.0)
+    sl_match = pos_sl and abs(pos_sl - float(signal["sl"])) <= ADOPT_PRICE_TOLERANCE
+    tp_match = pos_tp and signal.get("tp") and abs(pos_tp - float(signal["tp"])) <= ADOPT_PRICE_TOLERANCE
+    # Senza SL/TP impostati: solo se l'ingresso e' praticamente lo stesso.
+    if not (sl_match or tp_match or (not pos_sl and not pos_tp and entry_gap <= 3.0)):
+        return None
+    return entry_gap
+
+
+async def adopt_manual_positions():
+    open_rows = db.get_open_signals()
+    known = {int(r["position_ticket"]) for r in open_rows if r["position_ticket"]}
+    for ticket in known:
+        mt5x.register_ticket(ticket)
+
+    candidates = [
+        p for p in await asyncio.to_thread(mt5x.get_symbol_positions)
+        if int(p.ticket) not in known and int(p.magic) != int(MAGIC_NUMBER)
+    ]
+    if not candidates:
+        return
+
+    signals = await recent_open_signals()
+    used = set()
+    for position in candidates:
+        best = None
+        for message, signal in signals:
+            if message.id in used:
+                continue
+            row = db.get_signal(message.id)
+            if row is not None and row["status"] not in ("RECEIVED", "SKIPPED", "ERROR", "MT5_NOT_READY",
+                                                          "PAUSED_NO_NEW_TRADE", "BLOCKED_BY_CHANNEL"):
+                continue  # segnale gia' gestito (aperto o chiuso) dal bot
+            score = _match_score(position, signal)
+            if score is not None and (best is None or score < best[0]):
+                best = (score, message, signal)
+        if best is None:
+            continue
+        _, message, signal = best
+        used.add(message.id)
+        db.insert_signal(message.id, signal)
+        tp = float(position.tp or 0.0) or None
+        db.mark_opened(message.id, int(position.ticket), float(position.price_open),
+                       float(position.volume), float(position.sl or 0.0), tp)
+        mt5x.register_ticket(position.ticket)
+        logger.info(
+            "🤝 OPERAZIONE APERTA A MANO COLLEGATA | Position %s %s @ %.2f -> SIGNAL %s (#%s)",
+            position.ticket, signal["direction"], float(position.price_open), signal["signal_no"], message.id,
+        )
+
+
+async def adopt_loop():
+    """All'avvio (appena MT5 e' pronto) e poi ogni 10 minuti."""
+    while True:
+        try:
+            if TRADING_ENABLED and MT5_READY and BOT_STATE != "STOPPED":
+                await adopt_manual_positions()
+                await asyncio.sleep(600)
+                continue
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ ERRORE COLLEGAMENTO OPERAZIONI APERTE A MANO")
+        await asyncio.sleep(15)
 
 
 async def mt5_connection_keeper():
@@ -872,6 +975,7 @@ async def main():
     tasks = [asyncio.create_task(monitor_closures()), asyncio.create_task(scheduler())]
     if TRADING_ENABLED:
         tasks.append(asyncio.create_task(mt5_connection_keeper()))
+        tasks.append(asyncio.create_task(adopt_loop()))
 
     logger.info("👂 In ascolto del canale Gold Empire...")
     try:
