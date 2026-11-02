@@ -608,21 +608,16 @@ async def scenario(trading):
                                                  type=mt5.POSITION_TYPE_BUY, volume=0.01, price_open=3964.00,
                                                  price_current=3964.00, sl=3900.00, tp=4100.00, profit=0.0,
                                                  time=foreign, time_msc=foreign)
+        # Post di apertura gia' inviato a mano nel canale: il bot lo usa e NON pubblica niente
+        tg.dest_history = [msg(900, "Buongiorno ragazzi"),
+                           msg(901, "👑 XAUUSD — BUY\n\n🟢 ENTRY: 3965.10\n"
+                                    "🛑 STOP LOSS: 3933.79\n🎯 TAKE PROFIT: chiusura a segnale")]
         n_before = len(tg.sent)
         await main.adopt_manual_positions()
         r = db.get_signal(200)
         assert r and r["status"] == "OPENED" and r["position_ticket"] == manual and r["signal_no"] == 5.6, r
-        # Il bot NON pubblica l'apertura: la scrive l'utente a mano nel canale
-        assert len(tg.sent) == n_before and r["destination_message_id"] is None
-        # Un post qualsiasi nel canale non viene collegato
-        await main.destination_message_handler(event(msg(900, "Buongiorno ragazzi")))
-        assert db.get_signal(200)["destination_message_id"] is None
-        # Il post di apertura scritto a mano viene riconosciuto e collegato
-        await main.destination_message_handler(event(msg(901, "👑 XAUUSD — BUY\n\n🟢 ENTRY: 3965.10\n"
-                                                              "🛑 STOP LOSS: 3933.79\n🎯 TAKE PROFIT: chiusura a segnale")))
-        r = db.get_signal(200)
-        assert r["destination_message_id"] == 901, r
-        print("   Post manuale collegato -> destination #", r["destination_message_id"])
+        assert len(tg.sent) == n_before and r["destination_message_id"] == 901, r
+        print("   Post manuale gia' nel canale collegato -> destination #", r["destination_message_id"])
         assert all(x["position_ticket"] != foreign for x in db.get_open_signals())
         print("   Operazione manuale collegata -> SIGNAL", r["signal_no"], "position", r["position_ticket"])
         await main.adopt_manual_positions()                          # seconda volta: niente doppioni
@@ -655,11 +650,16 @@ async def scenario(trading):
                                                  volume=0.01, price_open=3995.00, price_current=3995.00,
                                                  sl=3940.00, tp=0.0, profit=0.0, time=manual3, time_msc=manual3)
         tg.dest_history = []
+        n_before = len(tg.sent)
         await main.adopt_manual_positions()          # ingresso lontano 25 $ ma SL uguale: collegata
-        assert db.get_signal(220)["position_ticket"] == manual3 and db.get_signal(220)["destination_message_id"] is None
-        tg.dest_history = [msg(960, "👑 XAUUSD — BUY\n\n🟢 ENTRY: 3995.00\n🛑 STOP LOSS: 3940.00")]
-        await main.adopt_manual_positions()          # "riavvio": nessuna posizione nuova, ma cerca il post
-        assert db.get_signal(220)["destination_message_id"] == 960, db.get_signal(220)
+        r = db.get_signal(220)
+        assert r["position_ticket"] == manual3
+        # Nessun post nel canale: il bot pubblica il segnale con entry/SL/TP reali di MT5
+        assert len(tg.sent) == n_before + 1 and r["destination_message_id"] == tg.sent[-1].id, r
+        assert "XAUUSD — BUY" in tg.sent[-1].text and "3995.00" in tg.sent[-1].text and "3940.00" in tg.sent[-1].text
+        print("   Nessun post nel canale -> pubblicato dal bot:", tg.sent[-1].text.replace("\n", " | "))
+        await main.adopt_manual_positions()          # niente doppioni
+        assert len(tg.sent) == n_before + 1
         # Operazione collegata da una versione precedente (senza segno "adopted"): il post si collega lo stesso
         with db.get_connection() as conn:
             conn.execute("UPDATE signals SET destination_message_id = NULL, opened_at = '2026-01-01T00:00:00+00:00' "

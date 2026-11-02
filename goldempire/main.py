@@ -834,21 +834,25 @@ async def link_recent_destination_posts():
     """Cerca tra gli ultimi messaggi del canale il post scritto a mano (anche se gia' inviato)."""
     if not PUBLISH_TO_CHANNEL or not _adopted_without_post():
         return
-    async for message in client.iter_messages(DESTINATION_CHAT, limit=30):
+    async for message in client.iter_messages(DESTINATION_CHAT, limit=100):
         if not _adopted_without_post():
             break
         link_destination_post(message)
+
+    # Nessun post nel canale per un'operazione aperta a mano: lo pubblica il bot,
+    # come un segnale normale, con entry/SL/TP reali della posizione su MT5.
     for row in _adopted_without_post():
-        if row["source_message_id"] not in _post_missing_logged:
-            _post_missing_logged.add(row["source_message_id"])
-            logger.info(
-                "ℹ️ SIGNAL %s %s @ %.2f aperta a mano: in attesa del tuo post di apertura nel canale "
-                "(serve BUY/SELL e ENTRY o STOP LOSS con il prezzo).",
-                row["signal_no"], row["direction"], float(row["open_price"]),
-            )
-
-
-_post_missing_logged = set()
+        levels = None
+        if TRADING_ENABLED and MT5_READY and row["position_ticket"]:
+            levels = await asyncio.to_thread(mt5x.get_position_levels, row["position_ticket"])
+        if levels is None and TRADING_ENABLED:
+            continue  # posizione gia' chiusa: ci pensa il monitor
+        sl, tp = levels if levels else (float(row["sl"] or 0.0), float(row["tp"] or 0.0))
+        logger.info(
+            "📤 OPERAZIONE APERTA A MANO SENZA POST NEL CANALE: pubblico il segnale | SIGNAL %s %s @ %.2f",
+            row["signal_no"], row["direction"], float(row["open_price"]),
+        )
+        await publish_open(row["source_message_id"], row["direction"], float(row["open_price"]), sl, tp or None)
 
 
 async def destination_message_handler(event):
