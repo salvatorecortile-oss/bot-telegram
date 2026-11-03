@@ -140,9 +140,10 @@ def _parse_block(clean):
 
 
 # Prima riga dei messaggi del formato "ENTRA ORA / CHIUDI ORA / SPOSTA LO STOP".
-_ENTER_NOW = r"\bENTRA(?:TE)?\s+ORA\b|\bENTRIAMO\s+ORA\b"
+# "🟢 ENTRA ORA · SIGNAL 5.3" e "⚪ SIGNAL 7 — OPEN ESEGUITO" (direzione nella riga sotto).
+_ENTER_NOW = r"\bENTRA(?:TE)?\s+ORA\b|\bENTRIAMO\s+ORA\b|\bOPEN\b|\bAPERTURA\b"
 _UPDATE_HEADER = (
-    r"\bCHIUD[IO]\b|\bCHIUDIAMO\b|\bCHIUS[AO]\b|\bSPOSTA\b|\bSPOSTIAMO\b|\bCOLPITO\b|"
+    r"\bCHIUD[IO]\b|\bCHIUDIAMO\b|\bCHIUS[AO]\b|\bCLOSED?\b|\bSPOSTA\b|\bSPOSTIAMO\b|\bCOLPITO\b|"
     r"\bRAGGIUNTO\b|\bPAREGGIO\b"
 )
 # Altri strumenti (Forex, cripto): i loro "ENTRA ORA" vengono ignorati.
@@ -259,6 +260,8 @@ def parse_signal(text):
             re.IGNORECASE,
         )
         tp = _to_float(tp_match.group(1)) if tp_match else None
+        if tp is not None and tp <= 0:
+            tp = None  # "TP 0.000" = nessun TP
         targets_match = re.search(r"\bDI\s+(\d+)\s+OBIETTIVI\b", clean, re.IGNORECASE)
         if targets_match:
             targets_total = int(targets_match.group(1))

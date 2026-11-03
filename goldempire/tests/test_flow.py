@@ -671,6 +671,32 @@ async def scenario(trading):
         assert db.get_signal(220)["destination_message_id"] == 970, db.get_signal(220)
         assert foreign in mt5.positions
 
+    if trading:
+        # 25) SIGNAL 7 "OPEN ESEGUITO" perso (era illeggibile), aperto a mano con lo stesso SL:
+        #     il bot lo collega e, senza post nel canale, pubblica il segnale con i livelli MT5
+        sig7 = msg(300, T.SIGNAL_7_OPEN)
+        sig7.date = datetime.now(timezone.utc) - __import__("datetime").timedelta(minutes=30)
+        tg.history = [sig7]
+        tg.dest_history = []
+        mt5.next_ticket += 1
+        manual7 = mt5.next_ticket
+        mt5.positions[manual7] = SimpleNamespace(ticket=manual7, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_BUY,
+                                                 volume=0.01, price_open=3907.81, price_current=3907.81,
+                                                 sl=3869.78, tp=0.0, profit=0.0, time=manual7, time_msc=manual7)
+        n_before = len(tg.sent)
+        await main.adopt_manual_positions()
+        r7 = db.get_signal(300)
+        assert r7 and r7["position_ticket"] == manual7 and r7["signal_no"] == 7, r7
+        assert len(tg.sent) == n_before + 1 and "3907.81" in tg.sent[-1].text and "3869.78" in tg.sent[-1].text
+        print("   SIGNAL 7 manuale collegato e pubblicato ->", tg.sent[-1].text.replace("\n", " | "))
+        # Messaggio modificato subito dopo l'invio: apertura letta anche dalla modifica (una volta sola)
+        mt5.bid, mt5.ask = 3909.50, 3909.80
+        edited = msg(301, T.SIGNAL_7_OPEN)
+        await main.source_edited_handler(event(edited))
+        await main.source_edited_handler(event(edited))
+        assert db.get_signal(301)["status"] == "OPENED"
+        assert sum(1 for x in db.get_open_signals() if x["source_message_id"] == 301) == 1
+
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY
     mt5.bid, mt5.ask = 4100.00, 4100.30
     await main.source_message_handler(event(msg(160, strat(5, "SELL", "4100,00", "4350,00"))))

@@ -542,11 +542,20 @@ def handle_block(message, signal):
 
 
 async def source_edited_handler(event):
-    """Messaggi modificati: si considerano solo le chiusure scritte a parole."""
+    """
+    Messaggi modificati: chiusure scritte a parole, blocchi e aperture. Un
+    segnale corretto subito dopo l'invio viene aperto se la prima versione non
+    era leggibile (mai due volte: ogni messaggio apre al massimo un'operazione).
+    """
     if BOT_STATE == "STOPPED":
         return
     signal = parse_signal(event.message.raw_text or "")
-    if signal is not None and signal["action"] == "BLOCK_SIGNAL":
+    if signal is not None and signal["action"] == "OPEN":
+        try:
+            await handle_open(event.message, signal)
+        except Exception:
+            logger.exception("❌ ERRORE APERTURA DA MESSAGGIO MODIFICATO #%s", event.message.id)
+    elif signal is not None and signal["action"] == "BLOCK_SIGNAL":
         handle_block(event.message, signal)
     elif signal is not None and signal["action"] == "FREE_CLOSE":
         try:

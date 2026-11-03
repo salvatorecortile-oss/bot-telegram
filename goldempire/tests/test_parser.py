@@ -156,7 +156,17 @@ Lo stop è sul prezzo: se l'operazione resta aperta molti giorni, si aggiunge il
 
 ⚠️ Questo messaggio non costituisce un consiglio di investimento ed è esclusivamente a scopo didattico."""
 
+# Screen reale: SIGNAL 7 "OPEN ESEGUITO" (TP 0.000 = nessun TP)
+SIGNAL_7_OPEN = "⚪ SIGNAL 7 — OPEN ESEGUITO\nmotore h1 · BUY · 0.01 · entry 3909.760\nSL 3869.780 · TP 0.000"
+
 TESTS = [
+    (SIGNAL_7_OPEN, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 7, "direction": "BUY",
+                     "entry": 3909.76, "sl": 3869.78, "tp": None, "targets_total": 1}),
+    ("⚪ SIGNAL 7 — CLOSE ESEGUITO\nmotore h1 · BUY · 0.01 · exit 3930.000",
+     {"action": "CLOSE", "symbol": "XAUUSD", "signal_no": 7, "exit_price": 3930.0, "pips": None}),
+    ("Non è stato comunicato", None),
+    ("ABBIAMO LIMITATO LA PERDITA DEL SELL MOLTO PROBABILMENTE NON SCEND PIÙ", None),
+    ("Si entra come un segnale normale", None),
     (ENTRA_56_BUY_REAL, {"action": "OPEN", "symbol": "XAUUSD", "signal_no": 5.6, "direction": "BUY",
                          "entry": 3963.79, "sl": 3933.79, "tp": None, "targets_total": 1}),
     (ENTRA_56_BUY_REAL.replace("XAUUSD BUY", "XAUUSD SELL").replace("3933,79", "3993,79"),
