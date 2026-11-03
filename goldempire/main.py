@@ -817,19 +817,24 @@ def _read_destination_post(text):
 def link_destination_post(message):
     """Collega il post scritto a mano all'operazione aperta a mano corrispondente."""
     post = _read_destination_post(message.raw_text or "")
-    if post is None:
-        return False
+    if post is None or db.is_destination_used(message.id):
+        return False  # non e' un'apertura, o e' il messaggio di un'altra operazione
     best = None
     for row in _adopted_without_post(post["direction"]):
-        gaps = []
-        if post["entry"] is not None:
-            gaps.append(abs(float(row["open_price"]) - post["entry"]))
+        # Stesso SL (±1 $); se uno dei due non ha lo SL, ingresso quasi uguale (±3 $).
+        # Un post con SL diverso e' di un'altra operazione, anche se l'ingresso e' vicino.
         if post["sl"] is not None and row["sl"]:
-            gaps.append(abs(float(row["sl"]) - post["sl"]))
-        if not gaps or min(gaps) > ADOPT_ENTRY_TOLERANCE:
+            gap = abs(float(row["sl"]) - post["sl"])
+            if gap > ADOPT_PRICE_TOLERANCE:
+                continue
+        elif post["entry"] is not None:
+            gap = abs(float(row["open_price"]) - post["entry"])
+            if gap > 3.0:
+                continue
+        else:
             continue
-        if best is None or min(gaps) < best[0]:
-            best = (min(gaps), row)
+        if best is None or gap < best[0]:
+            best = (gap, row)
     if best is None:
         return False
     row = best[1]

@@ -677,7 +677,9 @@ async def scenario(trading):
         sig7 = msg(300, T.SIGNAL_7_OPEN)
         sig7.date = datetime.now(timezone.utc) - __import__("datetime").timedelta(minutes=30)
         tg.history = [sig7]
-        tg.dest_history = []
+        # Nel canale c'e' il post di un'ALTRA operazione BUY (SL 3880.88, 11 $ di differenza): non va usato
+        tg.dest_history = [msg(990, "👑 XAUUSD — BUY\n\n🟢 ENTRY: 3929.91\n🛑 STOP LOSS: 3880.88\n"
+                                    "🎯 TAKE PROFIT: 4244.96")]
         mt5.next_ticket += 1
         manual7 = mt5.next_ticket
         mt5.positions[manual7] = SimpleNamespace(ticket=manual7, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_BUY,

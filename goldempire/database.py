@@ -229,6 +229,15 @@ def update_sl(source_message_id, new_sl):
         )
 
 
+def is_destination_used(destination_message_id):
+    """True se quel messaggio del canale e' gia' collegato a un'operazione."""
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT 1 FROM signals WHERE destination_message_id = ? LIMIT 1",
+            (int(destination_message_id),),
+        ).fetchone() is not None
+
+
 def mark_breakeven(source_message_id, new_sl):
     with get_connection() as conn:
         conn.execute(
