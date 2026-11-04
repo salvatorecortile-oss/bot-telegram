@@ -95,7 +95,8 @@ Il guardiano funziona solo con un link che ha **"Richiedi approvazione admin"** 
 python guardiano.py
 ```
 
-Deve restare aperto (come gli altri bot). Cosa succede:
+Deve restare aperto (come gli altri bot). Su VPS/PC che resta acceso puoi usare invece
+`avvia_guardiano.bat` (doppio clic): se il guardiano si ferma, riparte da solo dopo 10 secondi. Cosa succede:
 - La persona clicca il link → *"Richiesta inviata"* → il bot le scrive in privato: *"Premi: MELA"* con 6 pulsanti emoji (testo in italiano e inglese).
 - **Pulsante giusto** → la richiesta viene **approvata** e la persona entra. Tu ricevi l'avviso con il punteggio di sospetto.
 - **Sbagliato** → può riprovare (`CAPTCHA_TENTATIVI`, default 2). Finiti i tentativi la richiesta viene **rifiutata**.
