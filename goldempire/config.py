@@ -44,6 +44,13 @@ DESTINATION_CHAT = int(os.getenv("TELEGRAM_DESTINATION_CHAT", "0") or 0)
 # Utile per una seconda copia del bot su un altro conto.
 PUBLISH_TO_CHANNEL = _bool("PUBLISH_TO_CHANNEL", "true")
 
+# Allineamento tra due conti sulla stessa macchina (es. Fortune Prime -> PU Prime).
+# SYNC_FILE = percorso del file condiviso (uguale nei due .env); vuoto = disattivato.
+# SYNC_ROLE = master (il conto principale: scrive cosa fa) oppure follower
+# (la copia: chiude / sposta SL / BE / TP come il master).
+SYNC_FILE = os.getenv("SYNC_FILE", "").strip()
+SYNC_ROLE = os.getenv("SYNC_ROLE", "").strip().lower()
+
 # Comandi da "Messaggi salvati" (es. bot3_status, bot3_pausa ...). Non usare bot2_ (e' dell'altro bot).
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "bot3_").strip().lower()
 

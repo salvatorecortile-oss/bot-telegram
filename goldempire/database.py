@@ -229,6 +229,19 @@ def update_sl(source_message_id, new_sl):
         )
 
 
+def get_setting(key, default=None):
+    with get_connection() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+
+def set_setting(key, value):
+    with get_connection() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
+
+
 def is_destination_used(destination_message_id):
     """True se quel messaggio del canale e' gia' collegato a un'operazione."""
     with get_connection() as conn:

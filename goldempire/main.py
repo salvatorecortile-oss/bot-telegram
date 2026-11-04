@@ -88,6 +88,7 @@ from telegram_sender import (  # noqa: E402
 import reports  # noqa: E402
 from messages import GOOD_MORNING_MESSAGE_TEMPLATE  # noqa: E402
 import mt5_executor as mt5x  # noqa: E402
+import sync  # noqa: E402
 
 
 # ============================================================
@@ -332,6 +333,7 @@ async def finalize_close(row, close_status, close_price):
 
     if not db.claim_close(row["source_message_id"], close_status, close_price, pips):
         return
+    sync.publish(row["source_message_id"], "CLOSE")
 
     logger.info(
         "🏁 %s | SIGNAL %s %s | Position %s | Chiusura %.2f | %+.1f pips",
@@ -450,6 +452,7 @@ async def handle_update(message, signal, row=None):
                     logger.exception("❌ ERRORE BE | #%s", source_id)
                     return
             db.mark_breakeven(source_id, new_sl)
+            sync.publish(source_id, "BE")
             logger.info("🛡️ BE ATTIVATO | SIGNAL %s | Nuovo SL %.2f", row["signal_no"], new_sl)
             try:
                 await send_be_applied_message(new_sl, reply_to=row["destination_message_id"])
@@ -626,6 +629,7 @@ async def check_tp_change(row, mt5_tp):
     if abs(mt5_tp - known_tp) < 0.005:
         return
     db.update_tp(row["source_message_id"], mt5_tp)
+    sync.publish(row["source_message_id"], "TP", mt5_tp)
     logger.info(
         "🎯 TP MODIFICATO SU MT5 | SIGNAL %s %s | Position %s | %s -> %s",
         row["signal_no"], row["direction"], row["position_ticket"],
@@ -654,6 +658,11 @@ async def check_sl_change(row, mt5_sl):
     else:
         in_profit = bool(mt5_sl) and mt5_sl <= open_price + 0.005
 
+    # Allineamento: SL all'ingresso (±0,30 $) = BE, l'altro conto lo mette al SUO ingresso.
+    if mt5_sl and abs(mt5_sl - open_price) <= 0.30:
+        sync.publish(source_id, "BE")
+    else:
+        sync.publish(source_id, "SL", mt5_sl)
     logger.info(
         "🛡️ SL MODIFICATO SU MT5 | SIGNAL %s %s | Position %s | %s -> %s%s",
         row["signal_no"], row["direction"], row["position_ticket"],
@@ -892,6 +901,71 @@ async def adopt_loop():
         await asyncio.sleep(15)
 
 
+# ============================================================
+# ALLINEAMENTO CON IL CONTO PRINCIPALE (bot follower)
+# ============================================================
+
+async def apply_sync_event(event):
+    """Fa sulla nostra operazione quello che il conto principale ha fatto sulla sua."""
+    row = db.get_signal(event["source_message_id"])
+    if row is None or row["status"] not in (db.OPEN_STATUS, db.PENDING_STATUS):
+        return  # su questo conto quell'operazione non c'e' (o e' gia' chiusa)
+    source_id = row["source_message_id"]
+    kind = event["kind"]
+    async with get_lock(source_id):
+        row = db.get_signal(source_id)
+        if row["status"] == db.PENDING_STATUS:
+            if kind == "CLOSE":
+                await asyncio.to_thread(mt5x.cancel_pending_order, row["order_ticket"])
+                db.finish_pending(source_id, "CANCELED")
+                logger.info("🔁 ALLINEATO: ordine pendente #%s annullato come sul conto principale", source_id)
+            return
+        if row["status"] != db.OPEN_STATUS or not row["position_ticket"]:
+            return
+        ticket = row["position_ticket"]
+        mt5x.register_ticket(ticket)
+        if not await asyncio.to_thread(mt5x.is_position_open, ticket):
+            await finalize_if_closed_on_mt5(row)
+            return
+        if kind == "CLOSE":
+            price = await asyncio.to_thread(mt5x.close_position, ticket)
+            logger.info("🔁 ALLINEATO: SIGNAL %s %s chiusa come sul conto principale",
+                        row["signal_no"], row["direction"])
+            await finalize_close(row, "CLOSED_MANUAL", price)
+        elif kind in ("SL", "BE"):
+            new_sl = float(row["open_price"]) if kind == "BE" else float(event["value"] or 0.0)
+            new_sl, _ = await asyncio.to_thread(mt5x.set_levels, ticket, new_sl, None)
+            logger.info("🔁 ALLINEATO: SIGNAL %s %s -> %s a %.2f",
+                        row["signal_no"], row["direction"], "BE" if kind == "BE" else "SL", new_sl)
+            await check_sl_change(row, new_sl)
+        elif kind == "TP":
+            new_tp = float(event["value"] or 0.0)
+            _, new_tp = await asyncio.to_thread(mt5x.set_levels, ticket, None, new_tp)
+            logger.info("🔁 ALLINEATO: SIGNAL %s %s -> TP %s",
+                        row["signal_no"], row["direction"], f"{new_tp:.2f}" if new_tp else "tolto")
+            await check_tp_change(row, new_tp)
+
+
+async def sync_follower_loop():
+    """Ogni 2 secondi applica le novita' del conto principale (file SYNC_FILE)."""
+    while True:
+        try:
+            if TRADING_ENABLED and MT5_READY and BOT_STATE != "STOPPED":
+                last_id = int(db.get_setting("sync_last_id", "0"))
+                for event in await asyncio.to_thread(sync.read_after, last_id):
+                    try:
+                        await apply_sync_event(event)
+                    except Exception:
+                        logger.exception("❌ ERRORE ALLINEAMENTO (%s su #%s)",
+                                         event["kind"], event["source_message_id"])
+                    db.set_setting("sync_last_id", event["id"])
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ ERRORE LETTURA FILE DI ALLINEAMENTO")
+        await asyncio.sleep(2)
+
+
 async def mt5_connection_keeper():
     """Connette MT5 all'avvio e riprova ogni 30s se non e' disponibile."""
     global MT5_READY
@@ -1078,6 +1152,10 @@ async def main():
     logger.info("ETA' MAX    : %.0fs | Distanza max ingresso: %s",
                 MAX_SIGNAL_AGE_SECONDS, f"{MAX_ENTRY_DISTANCE:.2f} $" if MAX_ENTRY_DISTANCE else "nessun limite")
     logger.info("COMANDI     : %scomandi (in Messaggi salvati)", COMMAND_PREFIX)
+    if sync.IS_MASTER:
+        logger.info("ALLINEAMENTO: CONTO PRINCIPALE (scrive in %s)", sync.SYNC_FILE)
+    elif sync.IS_FOLLOWER:
+        logger.info("ALLINEAMENTO: COPIA del conto principale (legge %s)", sync.SYNC_FILE)
     logger.info("PROGRAMMATI : buongiorno lun-ven 06:00 | report giornaliero lun-ven 23:00 | "
                 "settimanale sabato 10:00 | mensile ultimo giorno 23:00")
     logger.info("=" * 60)
@@ -1109,6 +1187,8 @@ async def main():
     if TRADING_ENABLED:
         tasks.append(asyncio.create_task(mt5_connection_keeper()))
         tasks.append(asyncio.create_task(adopt_loop()))
+        if sync.IS_FOLLOWER:
+            tasks.append(asyncio.create_task(sync_follower_loop()))
 
     logger.info("👂 In ascolto del canale Gold Empire...")
     try:

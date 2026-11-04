@@ -94,6 +94,7 @@ class FakeMT5(types.ModuleType):
             return SimpleNamespace(retcode=10009, order=o.ticket, deal=0, price=0, volume=0)
         if req["action"] == self.TRADE_ACTION_SLTP:
             self.positions[req["position"]].sl = req["sl"]
+            self.positions[req["position"]].tp = req["tp"]
             return SimpleNamespace(retcode=10009, order=0, deal=0, price=0, volume=0)
         if "position" in req:  # chiusura
             p = self.positions.pop(req["position"])

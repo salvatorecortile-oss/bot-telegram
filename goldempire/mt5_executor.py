@@ -354,6 +354,32 @@ def move_stop_loss(position_ticket, new_sl):
         return new_sl
 
 
+def set_levels(position_ticket, sl=None, tp=None):
+    """
+    Imposta SL e/o TP (None = lascia com'e', 0 = togli). Usato per copiare le
+    modifiche del conto principale: il controllo del prezzo lo fa il broker.
+    """
+    _require_mt5()
+    with _MT5_LOCK:
+        info = _symbol_info()
+        position = _own_position(position_ticket)
+        if position is None:
+            raise RuntimeError(f"Posizione {position_ticket} non trovata o gia' chiusa.")
+        digits = int(info.digits)
+        new_sl = float(position.sl or 0.0) if sl is None else round(float(sl), digits)
+        new_tp = float(position.tp or 0.0) if tp is None else round(float(tp), digits)
+        _send({
+            "action": mt5.TRADE_ACTION_SLTP,
+            "symbol": MT5_SYMBOL,
+            "position": int(position_ticket),
+            "sl": new_sl,
+            "tp": new_tp,
+            "magic": int(MAGIC_NUMBER),
+            "comment": ORDER_COMMENT,
+        })
+        return new_sl, new_tp
+
+
 def close_position(position_ticket):
     """Chiude a mercato la posizione. Restituisce il prezzo di chiusura."""
     _require_mt5()
