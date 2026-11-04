@@ -16,6 +16,7 @@ Leggi questo file all'inizio di ogni sessione. Contiene il contesto del progetto
 | `goldempire/` | **Bot Gold Empire** (indipendente: suo `.env`, sua sessione, suo DB `data/goldempire.db`, suo MAGIC NUMBER). Legge il canale "Gold empire signals room", apre/gestisce le operazioni su MT5 e pubblica nel mio canale. Testi dei messaggi in `messages.py`, report in `reports.py`. Regole in `goldempire/README.md`. |
 | `ea/` | Expert Advisor MT5 in MQL5 (`ScalperM1_XAU`, `StraddleM1`) e i loro file `.set`. |
 | `factmachine/` | Bot per alpha.factmachine.com (Playwright): vota e apre l'operazione. |
+| `sicurezza/` | **Bot Sicurezza** (indipendente, niente MT5): `scansione.py` fa il report degli iscritti sospetti di sala elite e canale (non elimina nessuno, i contatti/chat private sono "CONOSCIUTO"); `guardiano.py` fa il captcha a chi chiede di entrare con link ad approvazione. Regole in `sicurezza/README.md`. |
 
 ## Regole importanti
 
@@ -42,8 +43,16 @@ python tests/test_flow.py
 python tests/test_reports.py
 ```
 
+Sicurezza (dalla cartella `sicurezza`):
+
+```
+python tests/test_analisi.py
+python tests/test_captcha.py
+python tests/test_report.py
+```
+
 Lancia i test del bot che hai modificato prima di fare commit.
 
 ## Commit
 
-- Messaggi in italiano, con il nome del bot davanti, es.: `Gold Empire: chiude le operazioni opposte del SIGNAL 5`, `FactMachine: ...`.
+- Messaggi in italiano, con il nome del bot davanti, es.: `Gold Empire: chiude le operazioni opposte del SIGNAL 5`, `FactMachine: ...`, `Sicurezza: ...`.

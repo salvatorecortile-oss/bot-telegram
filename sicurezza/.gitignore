@@ -1,0 +1,10 @@
+# Dati sensibili: NON committare mai
+.env
+*.session
+*.session-journal
+# I report contengono dati personali degli iscritti
+report/*
+!report/.gitkeep
+logs/*
+!logs/.gitkeep
+__pycache__/
