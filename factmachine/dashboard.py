@@ -345,9 +345,9 @@ class Worker(threading.Thread):
 
     def run(self):
         with sync_playwright() as p:
-            if not USER_DATA_DIR.exists():
-                self.emit("log", text="Profilo non trovato. Esegui prima login.py")
-                return
+            # crea la cartella del profilo se non c'e' (prima apertura): il
+            # browser si apre comunque e fai il login li' dentro.
+            USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
             ctx = p.chromium.launch_persistent_context(
                 str(USER_DATA_DIR), headless=False,
                 args=["--disable-blink-features=AutomationControlled"])
@@ -360,7 +360,8 @@ class Worker(threading.Thread):
             if status == 200 and isinstance(me, dict):
                 self.emit("log", text=f"Sessione OK (userId: {me.get('id')})")
             else:
-                self.emit("log", text=f"ATTENZIONE: sessione non valida ({status}). Rifai login.py")
+                self.emit("log", text="Non sei loggato: fai il LOGIN nel browser "
+                                      "(numero + codice SMS). La sessione resta salvata.")
 
             last_price = 0.0
             while not self._stop:
