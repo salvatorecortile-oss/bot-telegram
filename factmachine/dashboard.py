@@ -1,31 +1,21 @@
 """
-FactMachine - DASHBOARD a bottoni (niente da scrivere, solo click).
+FactMachine - button dashboard.
 
-Per OGNI opzione (1 e 2) c'e' una riga per ogni importo:
-    [ importo fisso ]  [ campo percentuale ]  [ bottone Buy ]
-Scegli l'opzione, scrivi la percentuale su quella riga, clicchi il bottone:
-parte voto + percentuale + acquisto all'istante (una sola chiamata API,
-sparata dentro il browser gia' loggato -> cookie automatici).
+For EACH option (1 and 2) there is a row per amount:
+    [ fixed amount ]  [ percentage field ]  [ Buy button ]
+Pick the option, type the percentage on that row, click the button: it does
+vote + buy instantly (one API call fired inside the already-logged-in browser).
 
-Rilevamento mercato:
-- apri il mercato nel browser e la dashboard lo riconosce da sola; oppure
-- attiva "AUTO-apri nuovo mercato": quando la pagina (es. la home) mostra un
-  nuovo mercato, la dashboard ci entra automaticamente.
-
-Uso:
-    python factmachine/dashboard.py     (dopo aver fatto login.py almeno una volta)
-
-Serve Playwright (Tkinter e' gia' incluso in Python su Windows):
-    pip install playwright
-    playwright install chromium
+Market detection: AUTO stays on and listens; when the site refreshes and a new
+market appears, the dashboard grabs it by itself (no forced page reloads).
 
 ======================================================================
- CONFIG - MODIFICABILE DA TE
+ CONFIG - CHANGE HERE
 ======================================================================
 """
 import json
-import queue
 import os
+import queue
 import re
 import sys
 import threading
@@ -35,10 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import messagebox, simpledialog
 
-# --- Supporto .exe (PyInstaller): browser incluso + file salvati accanto
-#     all'exe (non nella cartella temporanea che viene cancellata). ---
+# --- .exe (PyInstaller) support: bundled browser + files saved next to the exe
+#     (not in the temp folder that gets wiped). ---
 if getattr(sys, "frozen", False):
-    # browser Chromium incluso nell'exe
     os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(sys._MEIPASS, "pw-browsers")
     APP_DIR = Path(sys.executable).resolve().parent
 else:
@@ -48,21 +37,122 @@ from playwright.sync_api import sync_playwright
 
 import license_client
 
-# ---- I TUOI DEFAULT (cambiali qui) ----
-IMPORTI = [25, 50, 100, 300, 500]   # importi (USDC) -> una riga di bottoni ciascuno
+# ---- YOUR DEFAULTS (change here) ----
+IMPORTI = [25, 50, 100, 300, 500]   # fixed-button amounts (USDC)
 DEFAULT_SLIPPAGE_BPS = 10000        # 100%
-BUY_MAX_PRICE_PCT = 100.0           # prezzo max per l'acquisto (100 = come fa il sito)
-PREZZO_REFRESH_SEC = 2.0            # ogni quanto aggiornare i prezzi mostrati
-AUTO_OPEN_DEFAULT = False           # auto-apri il nuovo mercato dalla pagina
-# ----------------------------------------
+BUY_MAX_PRICE_PCT = 100.0           # max buy price (100 = same as the site)
+PREZZO_REFRESH_SEC = 2.0            # how often to refresh shown prices
+AUTO_OPEN_DEFAULT = True            # AUTO on by default (listens for new market)
+DEFAULT_LANG = "en"                 # "en" or "it"
+# --------------------------------------
 
 BASE_DIR = APP_DIR
 USER_DATA_DIR = BASE_DIR / "browser_profile"
 
 ORIGIN = "https://alpha.factmachine.com"
-VOTE_PATH = "/api/v1/vote/market/cast"      # 1) il VOTO (rotellina = consensusGuess)
-BUY_PATH = "/api/v1/order/transactions/buy"  # 2) l'ACQUISTO
+VOTE_PATH = "/api/v1/vote/market/cast"       # 1) the VOTE (wheel = consensusGuess)
+BUY_PATH = "/api/v1/order/transactions/buy"  # 2) the BUY
 MARKET_PATH = "/api/v1/market/"
+
+
+# ======================================================================
+# TRANSLATIONS
+# ======================================================================
+LANG = DEFAULT_LANG
+
+TR = {
+    "en": {
+        "waiting": "Waiting... the market loads automatically (AUTO on)",
+        "lang": "Language:",
+        "auto_cb": "AUTO (grab the new market automatically)",
+        "btn_refresh": "Refresh prices",
+        "btn_find": "Find active market",
+        "col_amount": "amount",
+        "custom_hint": "^ custom amount (type it)",
+        "opt": "OPTION {n}",
+        "voted_tag": "  [ALREADY VOTED]",
+        "log_label": "Log:",
+        "err_amount": "ERROR: invalid custom amount (type a number, e.g. 150).",
+        "lic_title": "License",
+        "lic_valid": "License valid.\nDays left: {d}\nExpires: {e}",
+        "lic_prompt": "{msg}\n\nEnter your license key (FM-XXXX-XXXX-XXXX):",
+        "lic_toomany": "Too many attempts. Closing.",
+        "lic_no_key": "No key entered.",
+        "lic_invalid": "Invalid license key.",
+        "lic_revoked": "License revoked. Contact the seller.",
+        "lic_expired": "License expired. Renew to continue.",
+        "lic_wrong_machine": "This license is already active on another PC.",
+        "lic_offline": "Cannot reach the license server. Check your internet and try again.",
+        "lic_bad_sig": "Invalid server response (bad signature).",
+        "w_not_logged": "Not logged in: LOG IN in the browser (phone number + SMS code). The session is saved.",
+        "w_session_ok": "Session OK (userId: {id})",
+        "w_auto_on": "AUTO ON: listening. I'll grab the new market as soon as the page updates.",
+        "w_auto_off": "AUTO OFF.",
+        "w_no_market": "No market found. Turn on AUTO and wait for the new market.",
+        "w_voted_only": "Market already voted -> skipping vote, buying only.",
+        "w_need_pct": "Market NOT voted: enter the percentage to vote, then click Buy again.",
+        "w_bad_pct": "Invalid percentage (e.g. 77).",
+        "w_vote_line": ">>> VOTE: opt{n} '{name}'  guess {pct}%",
+        "w_vote_ok": "    VOTE ok ({ms} ms)",
+        "w_vote_err": "    VOTE status {s} ({ms} ms): {t}",
+        "w_buy_line": ">>> BUY: {usdc}$ on '{name}'",
+        "w_buy_ok": "    BUY ok ({ms} ms)  signature: {sig}",
+        "w_buy_err": "    BUY status {s} ({ms} ms): {t}",
+        "w_auto_new": "AUTO: new market detected -> entering",
+        "w_market_err": "market error (status {s})",
+        "w_find_searching": "Searching active market...",
+        "w_find_none": "No market found.",
+        "w_browser_closed": "Browser closed.",
+    },
+    "it": {
+        "waiting": "In attesa... il mercato si carica da solo (AUTO attivo)",
+        "lang": "Lingua:",
+        "auto_cb": "AUTO (aggancia il nuovo mercato da solo)",
+        "btn_refresh": "Aggiorna prezzi",
+        "btn_find": "Trova mercato attivo",
+        "col_amount": "importo",
+        "custom_hint": "^ importo libero (scrivi tu)",
+        "opt": "OPZIONE {n}",
+        "voted_tag": "  [GIÀ VOTATO]",
+        "log_label": "Log:",
+        "err_amount": "ERRORE: importo libero non valido (scrivi un numero, es. 150).",
+        "lic_title": "Licenza",
+        "lic_valid": "Licenza valida.\nGiorni rimasti: {d}\nScade: {e}",
+        "lic_prompt": "{msg}\n\nInserisci la tua chiave di licenza (FM-XXXX-XXXX-XXXX):",
+        "lic_toomany": "Troppi tentativi. Chiudo.",
+        "lic_no_key": "Nessuna chiave inserita.",
+        "lic_invalid": "Chiave di licenza non valida.",
+        "lic_revoked": "Licenza revocata. Contatta il venditore.",
+        "lic_expired": "Licenza scaduta. Rinnova per continuare.",
+        "lic_wrong_machine": "Questa licenza e' gia' attiva su un altro PC.",
+        "lic_offline": "Impossibile contattare il server licenze. Controlla internet e riprova.",
+        "lic_bad_sig": "Risposta del server non valida (firma errata).",
+        "w_not_logged": "Non sei loggato: fai il LOGIN nel browser (numero + codice SMS). La sessione resta salvata.",
+        "w_session_ok": "Sessione OK (userId: {id})",
+        "w_auto_on": "AUTO ON: in ascolto. Aggancio il nuovo mercato appena la pagina si aggiorna.",
+        "w_auto_off": "AUTO OFF.",
+        "w_no_market": "Nessun mercato trovato. Attiva AUTO e aspetta il nuovo mercato.",
+        "w_voted_only": "Mercato gia' votato -> salto il voto, solo acquisto.",
+        "w_need_pct": "Mercato NON votato: inserisci la percentuale per votare, poi riclicca Buy.",
+        "w_bad_pct": "Percentuale non valida (es. 77).",
+        "w_vote_line": ">>> VOTO: opz{n} '{name}'  consenso {pct}%",
+        "w_vote_ok": "    VOTO ok ({ms} ms)",
+        "w_vote_err": "    VOTO status {s} ({ms} ms): {t}",
+        "w_buy_line": ">>> ACQUISTO: {usdc}$ su '{name}'",
+        "w_buy_ok": "    ACQUISTO ok ({ms} ms)  signature: {sig}",
+        "w_buy_err": "    ACQUISTO status {s} ({ms} ms): {t}",
+        "w_auto_new": "AUTO: nuovo mercato rilevato -> entro",
+        "w_market_err": "errore mercato (status {s})",
+        "w_find_searching": "Cerco il mercato attivo...",
+        "w_find_none": "Nessun mercato trovato.",
+        "w_browser_closed": "Browser chiuso.",
+    },
+}
+
+
+def tr(key, **kw):
+    s = TR.get(LANG, TR["en"]).get(key) or TR["en"].get(key, key)
+    return s.format(**kw) if kw else s
 
 
 def pct_to_fraction(value: float) -> float:
@@ -75,7 +165,7 @@ def market_id_from_url(url: str):
 
 
 # ======================================================================
-# WORKER: thread separato, possiede Playwright e il browser.
+# WORKER: separate thread, owns Playwright and the browser.
 # ======================================================================
 class Worker(threading.Thread):
     def __init__(self, cmd_q, evt_q):
@@ -88,15 +178,16 @@ class Worker(threading.Thread):
         self.last_market_id = None
         self.auto_open = AUTO_OPEN_DEFAULT
         self.last_scan = 0.0
-        self.seen = {}          # id mercato visto nel traffico -> timestamp
-        self.api_urls = []      # url /api/v1 GET viste (debug)
+        self.seen = {}          # market id seen in traffic -> timestamp
+        self.evaluated = set()  # ids already evaluated by AUTO
+        self.api_urls = []      # /api/v1 GET urls seen (debug/support)
         self._stop = False
 
     def emit(self, kind, **data):
         self.evt_q.put({"kind": kind, **data})
 
     def _on_response(self, response):
-        """Ascolta il traffico: cattura gli id dei mercati che il browser carica."""
+        """Listen to traffic: capture market ids the browser loads."""
         try:
             url = response.url
             method = response.request.method
@@ -109,7 +200,6 @@ class Worker(threading.Thread):
             self.api_urls.append(base)
             if len(self.api_urls) > 300:
                 self.api_urls.pop(0)
-        # estrai id mercato da /market/<id> oppure da ?marketId=<id>
         for mid in re.findall(r"/market/([a-z0-9]{10,})", url):
             self.seen[mid] = time.time()
         m = re.search(r"marketId=([a-z0-9]{10,})", url)
@@ -117,8 +207,8 @@ class Worker(threading.Thread):
             self.seen[m.group(1)] = time.time()
 
     def pick_best(self, ids):
-        """Tra gli id dati, scegli il mercato attivo, non scaduto, NON votato,
-        piu' recente. Ritorna l'id o None."""
+        """Among the ids, pick the active, not-expired, NOT-voted, most recent
+        market. Returns the id or None."""
         best = None  # (when, mid)
         for mid in ids:
             status, mkt = self.api_get(MARKET_PATH + mid)
@@ -131,7 +221,7 @@ class Worker(threading.Thread):
             if bool((mkt.get("userVoteState") or {}).get("hasVoted")):
                 continue
             when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
-            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:30]} | aperto {str(when)[:16]}")
+            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:30]} | {str(when)[:16]}")
             if best is None or when > best[0]:
                 best = (when, mid)
         return best[1] if best else None
@@ -171,7 +261,7 @@ class Worker(threading.Thread):
             self.last_market_id = market_id
             self.emit("market", market=self._market_view(mkt))
         else:
-            self.emit("log", text=f"errore mercato (status {status})")
+            self.emit("log", text=tr("w_market_err", s=status))
 
     def refresh_price(self):
         if not self.market:
@@ -182,7 +272,7 @@ class Worker(threading.Thread):
             self.emit("market", market=self._market_view(mkt))
 
     def current_market_page(self):
-        """Cerca tra TUTTE le schede aperte una che sia su un mercato."""
+        """Look through ALL open tabs for one on a market."""
         pages = self.ctx.pages if self.ctx else [self.page]
         for pg in pages:
             try:
@@ -193,56 +283,61 @@ class Worker(threading.Thread):
                 return pg, mid
         return None, None
 
+    def auto_watch(self):
+        """No reload: if a NEW market id shows up in traffic (because the site
+        refreshed itself), active and not voted, grab it."""
+        new_ids = [mid for mid in self.seen if mid not in self.evaluated]
+        if not new_ids:
+            return
+        for mid in new_ids:
+            self.evaluated.add(mid)
+        best = self.pick_best(new_ids)
+        if best and best != self.last_market_id:
+            self.emit("log", text=tr("w_auto_new"))
+            self.load_market(best)
+
     def ensure_market(self):
-        """Trova il mercato da usare, in ordine di affidabilita':
-        1) una scheda aperta su un mercato;
-        2) gli id catturati dal traffico del browser (il piu' recente non votato);
-        3) scan dell'HTML della home."""
+        """Find a market to use: 1) an open tab on a market; 2) ids captured
+        from traffic (most recent not voted)."""
         pg, mid = self.current_market_page()
         if mid:
             self.page = pg
             if mid != self.last_market_id or not self.market:
                 self.load_market(mid)
             return bool(self.market)
-        # id visti nel traffico, dal piu' recente (max 12)
         seen_ids = sorted(self.seen, key=lambda k: self.seen[k], reverse=True)[:12]
-        if seen_ids:
-            self.emit("log", text=f"Controllo {len(seen_ids)} mercati visti nel traffico...")
         best = self.pick_best(seen_ids) if seen_ids else None
         if best:
             if best != self.last_market_id or not self.market:
                 self.load_market(best)
             return bool(self.market)
-        # ultima spiaggia: scan dell'HTML
-        self.scan_active_market()
         return bool(self.market)
 
     def do_buy(self, option_index, usdc, pct_raw):
-        """Un click fa tutto: trova il mercato -> (VOTO se non votato) -> ACQUISTO.
-        pct_raw e' la percentuale digitata (stringa, puo' essere vuota)."""
+        """One click does it all: find market -> (VOTE if not voted) -> BUY."""
         if not self.ensure_market():
-            self.emit("log", text="Nessun mercato trovato. Incolla l'URL del mercato e premi Carica.")
+            self.emit("log", text=tr("w_no_market"))
             return
 
         opt = self.market["optionOne"] if option_index == 1 else self.market["optionTwo"]
         market_id, option_id, oname = self.market["id"], opt["id"], opt.get("name")
         already_voted = bool((self.market.get("userVoteState") or {}).get("hasVoted"))
 
-        # --- 1) VOTO (solo se NON hai gia' votato) ---
+        # --- 1) VOTE (only if NOT already voted) ---
         if already_voted:
-            self.emit("log", text=f"Mercato gia' votato -> salto il voto, solo acquisto.")
+            self.emit("log", text=tr("w_voted_only"))
         else:
             praw = (pct_raw or "").strip().replace(",", ".")
             if praw == "":
-                self.emit("log", text="Mercato NON votato: inserisci la percentuale per votare, poi riclicca Buy.")
+                self.emit("log", text=tr("w_need_pct"))
                 return
             try:
                 pct = float(praw)
             except ValueError:
-                self.emit("log", text="Percentuale non valida (es. 77).")
+                self.emit("log", text=tr("w_bad_pct"))
                 return
             vb = {"marketId": market_id, "optionId": option_id, "consensusGuess": int(round(pct))}
-            self.emit("log", text=f">>> VOTO: opz{option_index} '{oname}'  consenso {int(round(pct))}%")
+            self.emit("log", text=tr("w_vote_line", n=option_index, name=oname, pct=int(round(pct))))
             vres = self.api_post(VOTE_PATH, vb)
             try:
                 vj = json.loads(vres["text"])
@@ -250,11 +345,11 @@ class Worker(threading.Thread):
             except Exception:
                 voted_ok = False
             if vres["status"] == 200 and voted_ok:
-                self.emit("log", text=f"    VOTO ok ({vres['ms']} ms)")
+                self.emit("log", text=tr("w_vote_ok", ms=vres["ms"]))
             else:
-                self.emit("log", text=f"    VOTO status {vres['status']} ({vres['ms']} ms): {vres['text'][:200]}")
+                self.emit("log", text=tr("w_vote_err", s=vres["status"], ms=vres["ms"], t=vres["text"][:200]))
 
-        # --- 2) ACQUISTO ---
+        # --- 2) BUY ---
         buy_body = {
             "marketId": market_id,
             "optionId": option_id,
@@ -262,7 +357,7 @@ class Worker(threading.Thread):
             "maxPriceD6String": str(int(round(pct_to_fraction(BUY_MAX_PRICE_PCT) * 1_000_000))),
             "maxSlippageBps": int(DEFAULT_SLIPPAGE_BPS),
         }
-        self.emit("log", text=f">>> ACQUISTO: {usdc}$ su '{oname}'")
+        self.emit("log", text=tr("w_buy_line", usdc=usdc, name=oname))
         bres = self.api_post(BUY_PATH, buy_body)
         try:
             bj = json.loads(bres["text"])
@@ -270,14 +365,13 @@ class Worker(threading.Thread):
         except Exception:
             sig = None
         if bres["status"] == 200 and sig:
-            self.emit("log", text=f"    ACQUISTO ok ({bres['ms']} ms)  signature: {sig}")
+            self.emit("log", text=tr("w_buy_ok", ms=bres["ms"], sig=sig))
         else:
-            self.emit("log", text=f"    ACQUISTO status {bres['status']} ({bres['ms']} ms): {bres['text'][:300]}")
+            self.emit("log", text=tr("w_buy_err", s=bres["status"], ms=bres["ms"], t=bres["text"][:300]))
         self.refresh_price()
 
     @staticmethod
     def _in_future(iso):
-        """True se la data ISO e' nel futuro (o se non e' leggibile)."""
         if not iso:
             return True
         try:
@@ -286,82 +380,22 @@ class Worker(threading.Thread):
         except Exception:
             return True
 
-    def scan_active_market(self, reload=True):
-        """Ricarica la home, trova il mercato ATTIVO piu' RECENTE (ultimo aperto)
-        NON ancora votato/tradato, e ci entra. Cerca gli id in TUTTO l'HTML
-        (non solo nei link <a>), cosi' becca anche il banner grande in alto."""
-        try:
-            if reload:
-                self.page.goto(ORIGIN + "/")
-                try:
-                    self.page.wait_for_load_state("networkidle", timeout=6000)
-                except Exception:
-                    pass
-                try:
-                    self.page.wait_for_timeout(1200)  # lascia caricare il contenuto
-                except Exception:
-                    pass
-            html = self.page.content()
-        except Exception:
-            return
-
-        # tutti gli id /market/<id> presenti nella pagina (anche non-link)
-        ids = []
-        for mid in re.findall(r"/market/([a-z0-9]{10,})", html or ""):
-            if mid not in ids:
-                ids.append(mid)
-            if len(ids) >= 20:
-                break
-        self.emit("log", text=f"Trovati {len(ids)} id nella pagina, controllo...")
-
-        best = None       # (when, mid)  tra i NON votati
-        for mid in ids:
-            status, mkt = self.api_get(MARKET_PATH + mid)
-            if status != 200 or not isinstance(mkt, dict):
-                self.emit("log", text=f"   - {mid[:10]} status {status}")
-                continue
-            comp = bool(mkt.get("isComplete"))
-            fut = self._in_future(mkt.get("endTime"))
-            voted = bool((mkt.get("userVoteState") or {}).get("hasVoted"))
-            when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
-            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:30]} | aperto {str(when)[:16]} | completo={comp} futuro={fut} votato={voted}")
-            if comp or not fut or voted:   # salta chiusi/scaduti/gia' votati
-                continue
-            if best is None or when > best[0]:   # il piu' recente tra i validi
-                best = (when, mid)
-
-        if not best:
-            self.emit("log", text="Nessun mercato nuovo da votare. Se 'Female President' non e' nella lista sopra, apri il mercato a mano nel browser.")
-            return
-        if best[1] != self.last_market_id:
-            self.emit("log", text=f"AUTO: entro nell'ultimo NON votato -> {best[1]}")
-            try:
-                self.page.goto(ORIGIN + "/market/" + best[1])
-            except Exception:
-                pass
-            self.load_market(best[1])
-        else:
-            self.emit("log", text="Gia' sul mercato giusto.")
-
     def run(self):
         with sync_playwright() as p:
-            # crea la cartella del profilo se non c'e' (prima apertura): il
-            # browser si apre comunque e fai il login li' dentro.
             USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
             ctx = p.chromium.launch_persistent_context(
                 str(USER_DATA_DIR), headless=False,
                 args=["--disable-blink-features=AutomationControlled"])
             self.ctx = ctx
-            ctx.on("response", self._on_response)  # ascolta il traffico
+            ctx.on("response", self._on_response)
             self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
             self.page.goto(ORIGIN + "/")
 
             status, me = self.api_get("/api/v1/user/current")
             if status == 200 and isinstance(me, dict):
-                self.emit("log", text=f"Sessione OK (userId: {me.get('id')})")
+                self.emit("log", text=tr("w_session_ok", id=me.get("id")))
             else:
-                self.emit("log", text="Non sei loggato: fai il LOGIN nel browser "
-                                      "(numero + codice SMS). La sessione resta salvata.")
+                self.emit("log", text=tr("w_not_logged"))
 
             last_price = 0.0
             while not self._stop:
@@ -373,54 +407,55 @@ class Worker(threading.Thread):
                     if cmd[0] == "buy":
                         _, idx, usdc, pct = cmd
                         self.do_buy(idx, usdc, pct)
-                    elif cmd[0] == "load":
-                        self.load_market(cmd[1])
                     elif cmd[0] == "refresh":
                         self.refresh_price()
                     elif cmd[0] == "auto":
                         self.auto_open = bool(cmd[1])
-                        self.emit("log", text=f"AUTO-apri: {'ON' if self.auto_open else 'OFF'}")
+                        if self.auto_open:
+                            self.evaluated.clear()
+                            self.emit("log", text=tr("w_auto_on"))
+                        else:
+                            self.emit("log", text=tr("w_auto_off"))
                     elif cmd[0] == "scan":
-                        self.emit("log", text="Cerco il mercato attivo...")
+                        self.emit("log", text=tr("w_find_searching"))
                         if not self.ensure_market():
-                            self.emit("log", text="Nessun mercato trovato.")
-                        self.last_scan = time.time()
+                            self.emit("log", text=tr("w_find_none"))
                     elif cmd[0] == "apis":
-                        self.emit("log", text=f"--- {len(self.api_urls)} endpoint API visti ---")
+                        self.emit("log", text=f"--- {len(self.api_urls)} API endpoints seen ---")
                         for u in self.api_urls[-50:]:
                             self.emit("log", text="  " + u.replace(ORIGIN, ""))
-                        self.emit("log", text=f"--- id mercati catturati: {list(self.seen.keys())} ---")
+                        self.emit("log", text=f"--- market ids captured: {list(self.seen.keys())} ---")
                     elif cmd[0] == "quit":
                         break
                     continue
 
-                # auto-trova il mercato attivo (se attivo) ogni ~6s, usando
-                # prima gli id catturati dal traffico
-                if self.auto_open and (time.time() - self.last_scan) >= 6.0:
-                    self.ensure_market()
+                # AUTO: no forced reloads. Watch traffic; when the site updates
+                # and a new market appears, grab it by itself.
+                if self.auto_open and (time.time() - self.last_scan) >= 2.0:
+                    self.auto_watch()
                     self.last_scan = time.time()
 
-                # rileva mercato da QUALSIASI scheda aperta sul mercato
+                # detect a market from ANY tab the user opened
                 pg, mid = self.current_market_page()
                 if mid and mid != self.last_market_id:
                     self.page = pg
                     self.load_market(mid)
 
-                # refresh periodico prezzi
+                # periodic price refresh
                 now = time.time()
                 if self.market and (now - last_price) >= PREZZO_REFRESH_SEC:
                     self.refresh_price()
                     last_price = now
 
             ctx.close()
-        self.emit("log", text="Browser chiuso.")
+        self.emit("log", text=tr("w_browser_closed"))
 
     def stop(self):
         self._stop = True
 
 
 # ======================================================================
-# GUI (thread principale)
+# GUI (main thread)
 # ======================================================================
 class App:
     def __init__(self, root):
@@ -428,69 +463,76 @@ class App:
         self.cmd_q = queue.Queue()
         self.evt_q = queue.Queue()
         self.worker = Worker(self.cmd_q, self.evt_q)
-        self.pct_vars = {}   # (option_index, amount) -> StringVar della percentuale
-        self.custom_amt = {}  # option_index -> StringVar importo libero
-        self.custom_pct = {}  # option_index -> StringVar % per importo libero
+        self.pct_vars = {}
+        self.custom_amt = {}
+        self.custom_pct = {}
+        self.last_market = None   # per ri-render su cambio lingua
 
-        root.title("FactMachine - Dashboard")
+        root.title("FactMachine")
         root.geometry("860x600")
+        self.lang_choice = tk.StringVar(value="English" if LANG == "en" else "Italiano")
 
-        # Titolo mercato
-        self.subject_var = tk.StringVar(value="In attesa... apri il mercato nel browser")
-        tk.Label(root, textvariable=self.subject_var, font=("Segoe UI", 11, "bold"),
-                 wraplength=820, justify="left").pack(pady=(10, 2), padx=10, anchor="w")
-        self.info_var = tk.StringVar(value="")
-        tk.Label(root, textvariable=self.info_var, fg="#555").pack(padx=10, anchor="w")
-
-        # Barra controlli
-        bar = tk.Frame(root)
-        bar.pack(fill="x", padx=10, pady=4)
-        self.auto_var = tk.BooleanVar(value=AUTO_OPEN_DEFAULT)
-        tk.Checkbutton(bar, text="AUTO-apri nuovo mercato dalla pagina",
-                       variable=self.auto_var, command=self._toggle_auto).pack(side="left")
-        tk.Button(bar, text="Aggiorna prezzi",
-                  command=lambda: self.cmd_q.put(("refresh",))).pack(side="right")
-        tk.Button(bar, text="Trova mercato attivo",
-                  command=lambda: self.cmd_q.put(("scan",))).pack(side="right", padx=6)
-        tk.Button(bar, text="debug API",
-                  command=lambda: self.cmd_q.put(("apis",))).pack(side="right")
-
-        # incolla URL/ID del mercato -> Carica (metodo sicuro)
-        load_bar = tk.Frame(root)
-        load_bar.pack(fill="x", padx=10, pady=(0, 4))
-        tk.Label(load_bar, text="URL/ID mercato:").pack(side="left")
-        self.url_var = tk.StringVar()
-        ent = tk.Entry(load_bar, textvariable=self.url_var)
-        ent.pack(side="left", fill="x", expand=True, padx=6)
-        ent.bind("<Return>", lambda e: self._load_url())
-        tk.Button(load_bar, text="Carica", command=self._load_url).pack(side="left")
-
-        # Due colonne: opzione 1 e opzione 2
-        cols = tk.Frame(root)
-        cols.pack(fill="x", padx=10, pady=6)
-
-        self.opt1_label = tk.LabelFrame(cols, text="OPZIONE 1", font=("Segoe UI", 10, "bold"),
-                                        fg="#1565c0", padx=8, pady=8)
-        self.opt1_label.grid(row=0, column=0, padx=(0, 6), sticky="n")
-        self._option_rows(self.opt1_label, 1, "#1565c0")
-
-        self.opt2_label = tk.LabelFrame(cols, text="OPZIONE 2", font=("Segoe UI", 10, "bold"),
-                                        fg="#c62828", padx=8, pady=8)
-        self.opt2_label.grid(row=0, column=1, padx=(6, 0), sticky="n")
-        self._option_rows(self.opt2_label, 2, "#c62828")
-
-        # Log
-        tk.Label(root, text="Log:").pack(anchor="w", padx=10)
-        self.log = tk.Text(root, height=8, font=("Consolas", 9))
-        self.log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        self._build_ui()
 
         self.worker.start()
         root.after(80, self._drain_events)
         root.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    # ---------- costruzione interfaccia (ricreabile su cambio lingua) ----------
+    def _build_ui(self):
+        root = self.root
+        for w in root.winfo_children():
+            w.destroy()
+        self.pct_vars.clear()
+        self.custom_amt.clear()
+        self.custom_pct.clear()
+
+        # market title
+        self.subject_var = tk.StringVar(value=tr("waiting"))
+        tk.Label(root, textvariable=self.subject_var, font=("Segoe UI", 11, "bold"),
+                 wraplength=820, justify="left").pack(pady=(10, 2), padx=10, anchor="w")
+        self.info_var = tk.StringVar(value="")
+        tk.Label(root, textvariable=self.info_var, fg="#555").pack(padx=10, anchor="w")
+
+        # control bar
+        bar = tk.Frame(root)
+        bar.pack(fill="x", padx=10, pady=4)
+        self.auto_var = tk.BooleanVar(value=self.worker.auto_open)
+        tk.Checkbutton(bar, text=tr("auto_cb"),
+                       variable=self.auto_var, command=self._toggle_auto).pack(side="left")
+        tk.Label(bar, text=tr("lang")).pack(side="left", padx=(16, 2))
+        tk.OptionMenu(bar, self.lang_choice, "English", "Italiano",
+                      command=self._change_lang).pack(side="left")
+        tk.Button(bar, text=tr("btn_refresh"),
+                  command=lambda: self.cmd_q.put(("refresh",))).pack(side="right")
+        tk.Button(bar, text=tr("btn_find"),
+                  command=lambda: self.cmd_q.put(("scan",))).pack(side="right", padx=6)
+        tk.Button(bar, text="debug API",
+                  command=lambda: self.cmd_q.put(("apis",))).pack(side="right")
+
+        # two columns: option 1 and option 2
+        cols = tk.Frame(root)
+        cols.pack(fill="x", padx=10, pady=6)
+        self.opt1_label = tk.LabelFrame(cols, text=tr("opt", n=1), font=("Segoe UI", 10, "bold"),
+                                        fg="#1565c0", padx=8, pady=8)
+        self.opt1_label.grid(row=0, column=0, padx=(0, 6), sticky="n")
+        self._option_rows(self.opt1_label, 1, "#1565c0")
+        self.opt2_label = tk.LabelFrame(cols, text=tr("opt", n=2), font=("Segoe UI", 10, "bold"),
+                                        fg="#c62828", padx=8, pady=8)
+        self.opt2_label.grid(row=0, column=1, padx=(6, 0), sticky="n")
+        self._option_rows(self.opt2_label, 2, "#c62828")
+
+        # log
+        tk.Label(root, text=tr("log_label")).pack(anchor="w", padx=10)
+        self.log = tk.Text(root, height=8, font=("Consolas", 9))
+        self.log.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        # re-render current market (after a language rebuild)
+        if self.last_market:
+            self._render_market(self.last_market)
+
     def _option_rows(self, parent, option_index, color):
-        # intestazione colonne
-        tk.Label(parent, text="importo", width=8, fg="#777").grid(row=0, column=0)
+        tk.Label(parent, text=tr("col_amount"), width=8, fg="#777").grid(row=0, column=0)
         tk.Label(parent, text="%", width=6, fg="#777").grid(row=0, column=1)
         tk.Label(parent, text="", width=8).grid(row=0, column=2)
         for i, amt in enumerate(IMPORTI, start=1):
@@ -505,7 +547,6 @@ class App:
                       activebackground=color,
                       command=lambda oi=option_index, a=amt: self._click_buy(oi, a)
                       ).grid(row=i, column=2, padx=4, pady=3)
-        # riga importo LIBERO
         r = len(IMPORTI) + 1
         amt_var = tk.StringVar(value="")
         self.custom_amt[option_index] = amt_var
@@ -520,11 +561,11 @@ class App:
                   activebackground=color,
                   command=lambda oi=option_index: self._click_buy_custom(oi)
                   ).grid(row=r, column=2, padx=4, pady=(10, 3))
-        tk.Label(parent, text="^ importo libero (scrivi tu)",
+        tk.Label(parent, text=tr("custom_hint"),
                  fg="#777").grid(row=r + 1, column=0, columnspan=3)
 
+    # ---------- azioni ----------
     def _click_buy(self, option_index, amount):
-        # la % puo' restare vuota: se il mercato e' gia' votato, non serve
         raw = self.pct_vars[(option_index, amount)].get().strip()
         self.cmd_q.put(("buy", option_index, float(amount), raw))
 
@@ -533,7 +574,7 @@ class App:
         try:
             usdc = float(araw)
         except ValueError:
-            self._log("ERRORE: importo libero non valido (scrivi un numero, es. 150).")
+            self._log(tr("err_amount"))
             return
         praw = self.custom_pct[option_index].get().strip()
         self.cmd_q.put(("buy", option_index, usdc, praw))
@@ -541,12 +582,10 @@ class App:
     def _toggle_auto(self):
         self.cmd_q.put(("auto", self.auto_var.get()))
 
-    def _load_url(self):
-        raw = self.url_var.get().strip()
-        if not raw:
-            return
-        mid = market_id_from_url(raw) or raw
-        self.cmd_q.put(("load", mid))
+    def _change_lang(self, _choice):
+        global LANG
+        LANG = "it" if self.lang_choice.get() == "Italiano" else "en"
+        self._build_ui()
 
     def _log(self, text):
         self.log.insert("end", text + "\n")
@@ -555,6 +594,15 @@ class App:
     def _fmt_price(self, p):
         return f"{p*100:.1f}%" if isinstance(p, (int, float)) else "?"
 
+    def _render_market(self, m):
+        self.subject_var.set(m.get("subject") or "-")
+        voted = tr("voted_tag") if m.get("voted") else ""
+        self.info_var.set(f"id: {m.get('id')}{voted}")
+        self.opt1_label.config(
+            text=f"{tr('opt', n=1)}: {m.get('name1')}  —  {self._fmt_price(m.get('price1'))}")
+        self.opt2_label.config(
+            text=f"{tr('opt', n=2)}: {m.get('name2')}  —  {self._fmt_price(m.get('price2'))}")
+
     def _drain_events(self):
         try:
             while True:
@@ -562,14 +610,8 @@ class App:
                 if evt["kind"] == "log":
                     self._log(evt["text"])
                 elif evt["kind"] == "market":
-                    m = evt["market"]
-                    self.subject_var.set(m.get("subject") or "(senza titolo)")
-                    voted = "  [GIA' VOTATO]" if m.get("voted") else ""
-                    self.info_var.set(f"id: {m.get('id')}{voted}")
-                    self.opt1_label.config(
-                        text=f"OPZIONE 1: {m.get('name1')}  —  {self._fmt_price(m.get('price1'))}")
-                    self.opt2_label.config(
-                        text=f"OPZIONE 2: {m.get('name2')}  —  {self._fmt_price(m.get('price2'))}")
+                    self.last_market = evt["market"]
+                    self._render_market(evt["market"])
         except queue.Empty:
             pass
         self.root.after(80, self._drain_events)
@@ -581,43 +623,32 @@ class App:
 
 
 def license_gate(root) -> bool:
-    """Verifica la licenza col server. Se manca/non valida chiede la chiave.
-    Ritorna True se si puo' procedere, False altrimenti."""
+    """Check the license with the server. If missing/invalid, ask for the key."""
     for _ in range(3):
         res = license_client.check()
         if res["ok"]:
-            gg = res.get("days_left")
-            scad = res.get("expires_at", "")
-            messagebox.showinfo("Licenza",
-                                f"Licenza valida.\nGiorni rimasti: {gg}\nScade: {scad}")
+            messagebox.showinfo(tr("lic_title"),
+                                tr("lic_valid", d=res.get("days_left"), e=res.get("expires_at", "")))
             return True
 
         status = res["status"]
-        # errori che NON si risolvono inserendo una chiave diversa
-        if status == "offline":
-            messagebox.showerror("Licenza", res["message"] +
-                                 "\n\nControlla la connessione a internet e riprova.")
+        msg = tr("lic_" + status) if ("lic_" + status) in TR[LANG] else res.get("message", status)
+        if status in ("offline", "bad_sig"):
+            messagebox.showerror(tr("lic_title"), msg)
             return False
-        if status == "bad_sig":
-            messagebox.showerror("Licenza", res["message"])
-            return False
-        if status in ("revoked", "expired", "wrong_machine"):
-            messagebox.showerror("Licenza", res["message"])
-            # per scaduta/revocata/altro-PC si puo' provare un'altra chiave
-        # chiedi (o ri-chiedi) la chiave
-        key = simpledialog.askstring(
-            "Attivazione licenza",
-            f"{res['message']}\n\nInserisci la tua chiave di licenza (FM-XXXX-XXXX-XXXX):")
+        if status in ("revoked", "expired", "wrong_machine", "invalid"):
+            messagebox.showerror(tr("lic_title"), msg)
+        key = simpledialog.askstring(tr("lic_title"), tr("lic_prompt", msg=msg))
         if not key:
             return False
         license_client.save_key(key)
-    messagebox.showerror("Licenza", "Troppi tentativi. Chiudo.")
+    messagebox.showerror(tr("lic_title"), tr("lic_toomany"))
     return False
 
 
 if __name__ == "__main__":
     root = tk.Tk()
-    root.withdraw()  # nascondi finestra durante il controllo licenza
+    root.withdraw()
     if not license_gate(root):
         root.destroy()
         raise SystemExit
