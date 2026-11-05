@@ -59,13 +59,13 @@ def _sig(fields: dict) -> str:
     return hmac.new(SIGNING_SECRET.encode(), canonical.encode(), hashlib.sha256).hexdigest()
 
 
-# messaggi leggibili per ogni stato
+# readable messages per status (English; the UI may override via its own labels)
 MESSAGGI = {
-    "ok": "Licenza valida.",
-    "invalid": "Chiave di licenza non valida.",
-    "revoked": "Licenza revocata. Contatta il venditore.",
-    "expired": "Licenza scaduta. Rinnova per continuare.",
-    "wrong_machine": "Questa licenza e' gia' attiva su un altro PC.",
+    "ok": "License valid.",
+    "invalid": "Invalid license key.",
+    "revoked": "License revoked. Contact the seller.",
+    "expired": "License expired. Renew to continue.",
+    "wrong_machine": "This license is already active on another PC.",
 }
 
 
@@ -74,7 +74,7 @@ def check(key: str = None) -> dict:
     Ritorna: {ok: bool, status: str, message: str, expires_at, days_left}."""
     key = (key if key is not None else read_key()).strip().upper()
     if not key:
-        return {"ok": False, "status": "no_key", "message": "Nessuna chiave inserita."}
+        return {"ok": False, "status": "no_key", "message": "No key entered."}
 
     nonce = secrets.token_hex(8)
     payload = {"key": key, "machine_id": machine_id(), "nonce": nonce}
@@ -88,12 +88,12 @@ def check(key: str = None) -> dict:
             res = json.loads(r.read())
     except Exception as e:
         return {"ok": False, "status": "offline",
-                "message": f"Impossibile contattare il server licenze: {e}"}
+                "message": f"Cannot reach the license server: {e}"}
 
-    # verifica firma e nonce (anti-manomissione / anti-replay)
+    # verify signature and nonce (anti-tamper / anti-replay)
     if res.get("nonce") != nonce or not hmac.compare_digest(res.get("sig", ""), _sig(res)):
         return {"ok": False, "status": "bad_sig",
-                "message": "Risposta del server non valida (firma errata)."}
+                "message": "Invalid server response (bad signature)."}
 
     status = res.get("status", "invalid")
     return {
