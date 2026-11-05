@@ -9,3 +9,4 @@ dist/
 build/
 pw-browsers/
 *.spec
+license_config.py

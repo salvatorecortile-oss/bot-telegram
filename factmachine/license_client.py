@@ -22,10 +22,14 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-# --- Indirizzo del TUO server di licenze (VPS). Esempio: http://123.45.67.89:8000
-SERVER_URL = "http://LA-TUA-VPS:8000"
-# --- Lo STESSO segreto di firma che hai messo nel server (server.py):
-SIGNING_SECRET = "CAMBIA-QUESTO-segreto-di-firma-lungo-a-caso"
+# --- Le impostazioni del server stanno nel file separato license_config.py,
+#     cosi' NON le perdi quando aggiorni questo file. Modifica license_config.py,
+#     non queste righe. ---
+try:
+    from license_config import SERVER_URL, SIGNING_SECRET
+except Exception:
+    SERVER_URL = "http://LA-TUA-VPS:8000"
+    SIGNING_SECRET = "CAMBIA-QUESTO-segreto-di-firma-lungo-a-caso"
 # ----------------------------------------------------------------------
 
 # license.key sta accanto al bot/exe (anche quando e' compilato con PyInstaller)
