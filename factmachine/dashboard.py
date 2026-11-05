@@ -220,8 +220,8 @@ class Worker(threading.Thread):
                 continue
             if not self._in_future(mkt.get("endTime")):
                 continue
-            if bool((mkt.get("userVoteState") or {}).get("hasVoted")):
-                continue
+            # NB: carichiamo anche i mercati gia' votati (cosi' puoi comunque
+            # comprare); si sceglie comunque il LIVE piu' recente.
             when = mkt.get("activatedAt")
             if best is None or when > best[0]:
                 best = (when, mid)
