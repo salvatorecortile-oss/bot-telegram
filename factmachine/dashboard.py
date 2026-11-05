@@ -221,7 +221,6 @@ class Worker(threading.Thread):
             if bool((mkt.get("userVoteState") or {}).get("hasVoted")):
                 continue
             when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
-            self.emit("log", text=f"   - {(mkt.get('subject') or '')[:30]} | {str(when)[:16]}")
             if best is None or when > best[0]:
                 best = (when, mid)
         return best[1] if best else None
@@ -284,14 +283,14 @@ class Worker(threading.Thread):
         return None, None
 
     def auto_watch(self):
-        """No reload: if a NEW market id shows up in traffic (because the site
-        refreshed itself), active and not voted, grab it."""
-        new_ids = [mid for mid in self.seen if mid not in self.evaluated]
-        if not new_ids:
+        """No page reload: re-check the markets seen recently in traffic and,
+        if the most recent active & not-voted one differs from the current,
+        switch to it. Re-checks continuously so it catches the new market as
+        soon as the site shows it."""
+        recent = sorted(self.seen, key=lambda k: self.seen[k], reverse=True)[:10]
+        if not recent:
             return
-        for mid in new_ids:
-            self.evaluated.add(mid)
-        best = self.pick_best(new_ids)
+        best = self.pick_best(recent)
         if best and best != self.last_market_id:
             self.emit("log", text=tr("w_auto_new"))
             self.load_market(best)
@@ -411,11 +410,7 @@ class Worker(threading.Thread):
                         self.refresh_price()
                     elif cmd[0] == "auto":
                         self.auto_open = bool(cmd[1])
-                        if self.auto_open:
-                            self.evaluated.clear()
-                            self.emit("log", text=tr("w_auto_on"))
-                        else:
-                            self.emit("log", text=tr("w_auto_off"))
+                        self.emit("log", text=tr("w_auto_on") if self.auto_open else tr("w_auto_off"))
                     elif cmd[0] == "scan":
                         self.emit("log", text=tr("w_find_searching"))
                         if not self.ensure_market():
@@ -431,7 +426,7 @@ class Worker(threading.Thread):
 
                 # AUTO: no forced reloads. Watch traffic; when the site updates
                 # and a new market appears, grab it by itself.
-                if self.auto_open and (time.time() - self.last_scan) >= 2.0:
+                if self.auto_open and (time.time() - self.last_scan) >= 3.0:
                     self.auto_watch()
                     self.last_scan = time.time()
 
