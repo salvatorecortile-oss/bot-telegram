@@ -17,6 +17,7 @@ import hmac
 import json
 import platform
 import secrets
+import sys
 import urllib.request
 import uuid
 from pathlib import Path
@@ -27,8 +28,12 @@ SERVER_URL = "http://LA-TUA-VPS:8000"
 SIGNING_SECRET = "CAMBIA-QUESTO-segreto-di-firma-lungo-a-caso"
 # ----------------------------------------------------------------------
 
-# license.key sta accanto al bot (stessa cartella)
-KEY_FILE = Path(__file__).resolve().parent / "license.key"
+# license.key sta accanto al bot/exe (anche quando e' compilato con PyInstaller)
+if getattr(sys, "frozen", False):
+    _APP_DIR = Path(sys.executable).resolve().parent
+else:
+    _APP_DIR = Path(__file__).resolve().parent
+KEY_FILE = _APP_DIR / "license.key"
 
 
 def machine_id() -> str:

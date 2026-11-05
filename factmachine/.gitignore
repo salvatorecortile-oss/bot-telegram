@@ -3,3 +3,9 @@ browser_profile/
 storage_state.json
 recon_capture.json
 license.key
+
+# Artefatti di compilazione PyInstaller
+dist/
+build/
+pw-browsers/
+*.spec

@@ -25,13 +25,24 @@ Serve Playwright (Tkinter e' gia' incluso in Python su Windows):
 """
 import json
 import queue
+import os
 import re
+import sys
 import threading
 import time
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
 from tkinter import messagebox, simpledialog
+
+# --- Supporto .exe (PyInstaller): browser incluso + file salvati accanto
+#     all'exe (non nella cartella temporanea che viene cancellata). ---
+if getattr(sys, "frozen", False):
+    # browser Chromium incluso nell'exe
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = os.path.join(sys._MEIPASS, "pw-browsers")
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    APP_DIR = Path(__file__).resolve().parent
 
 from playwright.sync_api import sync_playwright
 
@@ -45,7 +56,7 @@ PREZZO_REFRESH_SEC = 2.0            # ogni quanto aggiornare i prezzi mostrati
 AUTO_OPEN_DEFAULT = False           # auto-apri il nuovo mercato dalla pagina
 # ----------------------------------------
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = APP_DIR
 USER_DATA_DIR = BASE_DIR / "browser_profile"
 
 ORIGIN = "https://alpha.factmachine.com"
