@@ -207,8 +207,8 @@ class Worker(threading.Thread):
             self.seen[m.group(1)] = time.time()
 
     def pick_best(self, ids):
-        """Among the ids, pick the active, not-expired, NOT-voted, most recent
-        market. Returns the id or None."""
+        """Among the ids, pick the LIVE (activated), not-expired, NOT-voted,
+        most recent market. Returns the id or None."""
         best = None  # (when, mid)
         for mid in ids:
             status, mkt = self.api_get(MARKET_PATH + mid)
@@ -216,14 +216,38 @@ class Worker(threading.Thread):
                 continue
             if mkt.get("isComplete"):
                 continue
+            if not mkt.get("activatedAt"):   # non ancora live (es. "Coming Soon")
+                continue
             if not self._in_future(mkt.get("endTime")):
                 continue
             if bool((mkt.get("userVoteState") or {}).get("hasVoted")):
                 continue
-            when = mkt.get("activatedAt") or mkt.get("createdAt") or ""
+            when = mkt.get("activatedAt")
             if best is None or when > best[0]:
                 best = (when, mid)
         return best[1] if best else None
+
+    def _ids_from_page(self):
+        """Estrae gli id dei mercati dal contenuto della pagina corrente
+        (le tile Live & Upcoming della home), senza ricaricare."""
+        try:
+            html = self.page.content()
+        except Exception:
+            return []
+        ids = []
+        for mid in re.findall(r"/market/([a-z0-9]{10,})", html or ""):
+            if mid not in ids:
+                ids.append(mid)
+        return ids
+
+    def candidate_ids(self):
+        """Id candidati: prima quelli nella pagina (home), poi quelli visti nel
+        traffico, dal piu' recente."""
+        ids = self._ids_from_page()
+        for mid in sorted(self.seen, key=lambda k: self.seen[k], reverse=True):
+            if mid not in ids:
+                ids.append(mid)
+        return ids[:15]
 
     def api_get(self, path):
         res = self.page.evaluate(
@@ -283,14 +307,13 @@ class Worker(threading.Thread):
         return None, None
 
     def auto_watch(self):
-        """No page reload: re-check the markets seen recently in traffic and,
-        if the most recent active & not-voted one differs from the current,
-        switch to it. Re-checks continuously so it catches the new market as
-        soon as the site shows it."""
-        recent = sorted(self.seen, key=lambda k: self.seen[k], reverse=True)[:10]
-        if not recent:
+        """No page reload: read the market ids on the current page (home tiles)
+        plus traffic, and if the most recent LIVE & not-voted market differs
+        from the current one, switch to it."""
+        cand = self.candidate_ids()
+        if not cand:
             return
-        best = self.pick_best(recent)
+        best = self.pick_best(cand)
         if best and best != self.last_market_id:
             self.emit("log", text=tr("w_auto_new"))
             self.load_market(best)
@@ -304,8 +327,8 @@ class Worker(threading.Thread):
             if mid != self.last_market_id or not self.market:
                 self.load_market(mid)
             return bool(self.market)
-        seen_ids = sorted(self.seen, key=lambda k: self.seen[k], reverse=True)[:12]
-        best = self.pick_best(seen_ids) if seen_ids else None
+        cand = self.candidate_ids()
+        best = self.pick_best(cand) if cand else None
         if best:
             if best != self.last_market_id or not self.market:
                 self.load_market(best)
