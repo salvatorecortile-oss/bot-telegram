@@ -31,8 +31,11 @@ import time
 import tkinter as tk
 from datetime import datetime, timezone
 from pathlib import Path
+from tkinter import messagebox, simpledialog
 
 from playwright.sync_api import sync_playwright
+
+import license_client
 
 # ---- I TUOI DEFAULT (cambiali qui) ----
 IMPORTI = [25, 50, 100, 300, 500]   # importi (USDC) -> una riga di bottoni ciascuno
@@ -565,7 +568,47 @@ class App:
         self.root.after(300, self.root.destroy)
 
 
+def license_gate(root) -> bool:
+    """Verifica la licenza col server. Se manca/non valida chiede la chiave.
+    Ritorna True se si puo' procedere, False altrimenti."""
+    for _ in range(3):
+        res = license_client.check()
+        if res["ok"]:
+            gg = res.get("days_left")
+            scad = res.get("expires_at", "")
+            messagebox.showinfo("Licenza",
+                                f"Licenza valida.\nGiorni rimasti: {gg}\nScade: {scad}")
+            return True
+
+        status = res["status"]
+        # errori che NON si risolvono inserendo una chiave diversa
+        if status == "offline":
+            messagebox.showerror("Licenza", res["message"] +
+                                 "\n\nControlla la connessione a internet e riprova.")
+            return False
+        if status == "bad_sig":
+            messagebox.showerror("Licenza", res["message"])
+            return False
+        if status in ("revoked", "expired", "wrong_machine"):
+            messagebox.showerror("Licenza", res["message"])
+            # per scaduta/revocata/altro-PC si puo' provare un'altra chiave
+        # chiedi (o ri-chiedi) la chiave
+        key = simpledialog.askstring(
+            "Attivazione licenza",
+            f"{res['message']}\n\nInserisci la tua chiave di licenza (FM-XXXX-XXXX-XXXX):")
+        if not key:
+            return False
+        license_client.save_key(key)
+    messagebox.showerror("Licenza", "Troppi tentativi. Chiudo.")
+    return False
+
+
 if __name__ == "__main__":
     root = tk.Tk()
+    root.withdraw()  # nascondi finestra durante il controllo licenza
+    if not license_gate(root):
+        root.destroy()
+        raise SystemExit
+    root.deiconify()
     App(root)
     root.mainloop()

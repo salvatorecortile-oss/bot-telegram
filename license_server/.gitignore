@@ -1,0 +1,3 @@
+# Dati sensibili: non committare
+licenses.db
+__pycache__/
