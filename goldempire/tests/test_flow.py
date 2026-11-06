@@ -700,6 +700,47 @@ async def scenario(trading):
         assert db.get_signal(301)["status"] == "OPENED"
         assert sum(1 for x in db.get_open_signals() if x["source_message_id"] == 301) == 1
 
+    if trading:
+        # 26) MT5 mostra la posizione appena aperta solo dopo qualche istante: il bot riprova
+        import mt5_executor as mx
+        real_lookup = mx._lookup_position_ticket
+        calls = {"n": 0}
+
+        def slow_lookup(result, direction):
+            calls["n"] += 1
+            return 0 if calls["n"] <= 2 else real_lookup(result, direction)
+
+        mx._lookup_position_ticket = slow_lookup
+        mt5.bid, mt5.ask = 4040.00, 4040.30
+        await main.source_message_handler(event(msg(400, T.SIGNAL_4_SELL.replace("4117,69", "4040,02")
+                                                    .replace("4162,11", "4088,61").replace("3806,75", "3699,89"))))
+        mx._lookup_position_ticket = real_lookup
+        assert db.get_signal(400)["status"] == "OPENED" and calls["n"] == 3, (db.get_signal(400), calls)
+
+        # 27) Caso #899: ordine eseguito ma ticket mai trovato -> ERRORE; il controllo
+        #     successivo recupera la posizione del bot rimasta orfana e la gestisce
+        mx._lookup_position_ticket = lambda result, direction: 0
+        mx_sleep = mx.time.sleep
+        mx.time.sleep = lambda s: None
+        sig4 = msg(401, T.SIGNAL_4_SELL.replace("4117,69", "4040,02").replace("4162,11", "4088,61")
+                   .replace("3806,75", "3699,89"))
+        await main.source_message_handler(event(sig4))
+        mx._lookup_position_ticket = real_lookup
+        mx.time.sleep = mx_sleep
+        assert db.get_signal(401)["status"] == "ERROR"
+        orphan = max(t for t, p in mt5.positions.items() if p.magic == 26090110)
+        tg.history = [sig4]
+        tg.dest_history = []
+        n_before = len(tg.sent)
+        await main.adopt_manual_positions()
+        r = db.get_signal(401)
+        assert r["status"] == "OPENED" and r["position_ticket"] == orphan, r
+        assert len(tg.sent) == n_before + 1 and "XAUUSD — SELL" in tg.sent[-1].text   # pubblicato
+        mt5.bid, mt5.ask = 4000.00, 4000.30
+        await main.source_message_handler(event(msg(402, "🔴 CHIUDI ORA · SIGNAL 4", reply_to=401)))
+        assert db.get_signal(401)["status"] == "CLOSED_MANUAL" and orphan not in mt5.positions
+        print("   Posizione orfana recuperata e chiusa da CHIUDI ORA")
+
     # 22) Messaggio "🔄 INVERSIONE" del SIGNAL 5: chiude i SELL del 5 e apre il BUY
     mt5.bid, mt5.ask = 4100.00, 4100.30
     await main.source_message_handler(event(msg(160, strat(5, "SELL", "4100,00", "4350,00"))))

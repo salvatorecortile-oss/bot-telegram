@@ -6,6 +6,7 @@ posizioni aperte a mano o da altri bot sullo stesso conto.
 """
 import logging
 import threading
+import time
 from dataclasses import dataclass
 
 try:
@@ -187,30 +188,46 @@ def _send(request):
     return result
 
 
-def _find_position_ticket(result, direction):
-    """Ticket della POSIZIONE appena aperta (serve per BE e chiusure)."""
+def _lookup_position_ticket(result, direction):
     order_ticket = int(getattr(result, "order", 0) or 0)
     if order_ticket and mt5.positions_get(ticket=order_ticket):
         return order_ticket
 
-    deal_ticket = int(getattr(result, "deal", 0) or 0)
-    if deal_ticket:
-        deals = mt5.history_deals_get(ticket=deal_ticket) or []
-        for deal in deals:
+    # Deal di apertura generato dall'ordine (history_deals_get(ticket=) vuole l'ORDINE).
+    if order_ticket:
+        for deal in mt5.history_deals_get(ticket=order_ticket) or []:
             position_id = int(getattr(deal, "position_id", 0) or 0)
-            if position_id:
+            if position_id and mt5.positions_get(ticket=position_id):
                 return position_id
 
-    # Ultima riserva: posizione piu' recente del nostro magic e direzione.
+    # Riserva: posizione del nostro magic e direzione aperta negli ultimi 2 minuti
+    # (mai una posizione vecchia gia' gestita).
+    tick = mt5.symbol_info_tick(MT5_SYMBOL)
+    now = int(getattr(tick, "time", 0) or 0)
     wanted_type = mt5.POSITION_TYPE_BUY if direction == "BUY" else mt5.POSITION_TYPE_SELL
     candidates = [
         p for p in (mt5.positions_get(symbol=MT5_SYMBOL) or [])
         if int(p.magic) == int(MAGIC_NUMBER) and int(p.type) == int(wanted_type)
+        and (not now or int(p.time) >= now - 120)
     ]
     if not candidates:
         return 0
     candidates.sort(key=lambda p: getattr(p, "time_msc", p.time), reverse=True)
     return int(candidates[0].ticket)
+
+
+def _find_position_ticket(result, direction, attempts=10, wait=0.5):
+    """
+    Ticket della POSIZIONE appena aperta (serve per BE e chiusure). Subito dopo
+    l'esecuzione MT5 a volte non la mostra ancora: si riprova per qualche secondo.
+    """
+    for attempt in range(attempts):
+        ticket = _lookup_position_ticket(result, direction)
+        if ticket:
+            return ticket
+        if attempt < attempts - 1:
+            time.sleep(wait)
+    return 0
 
 
 def open_market_order(signal):
@@ -438,6 +455,14 @@ def get_bot_positions():
     _require_mt5()
     with _MT5_LOCK:
         return [p for p in (mt5.positions_get(symbol=MT5_SYMBOL) or []) if _is_managed(p)]
+
+
+def server_time():
+    """Ora del server MT5 (secondi), per confrontarla con position.time. 0 se non disponibile."""
+    _require_mt5()
+    with _MT5_LOCK:
+        tick = mt5.symbol_info_tick(MT5_SYMBOL)
+        return int(getattr(tick, "time", 0) or 0)
 
 
 def get_symbol_positions():

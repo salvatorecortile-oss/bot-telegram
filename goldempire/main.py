@@ -734,9 +734,17 @@ async def adopt_manual_positions():
     for ticket in known:
         mt5x.register_ticket(ticket)
 
+    now = await asyncio.to_thread(mt5x.server_time)
     candidates = [
         p for p in await asyncio.to_thread(mt5x.get_symbol_positions)
-        if int(p.ticket) not in known and int(p.magic) != int(MAGIC_NUMBER)
+        # Le posizioni aperte da meno di 2 minuti le sta ancora gestendo l'apertura normale.
+        if not now or int(p.time) < now - 120
+    ]
+    candidates = [
+        p for p in candidates
+        # Aperte a mano, oppure aperte dal bot ma rimaste senza ticket nel database
+        # (es. "ticket della posizione non trovato" subito dopo l'esecuzione).
+        if int(p.ticket) not in known
     ]
     if not candidates:
         # Operazioni manuali gia' collegate in un avvio precedente: cerca comunque
