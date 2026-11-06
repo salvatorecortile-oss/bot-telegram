@@ -281,22 +281,27 @@ class Worker(threading.Thread):
         return ids[:15]
 
     def api_get(self, path):
-        res = self.page.evaluate(
-            """async (p) => { const r = await fetch(p,{credentials:'include'});
-               return {status:r.status, text: await r.text()}; }""", path)
+        url = (ORIGIN + path) if path.startswith("/") else path
+        try:
+            res = self.page.evaluate(
+                """async (p) => { const r = await fetch(p,{credentials:'include'});
+                   return {status:r.status, text: await r.text()}; }""", url)
+        except Exception:
+            return 0, ""      # pagina in transizione/chiusa: non bloccare il bot
         try:
             return res["status"], json.loads(res["text"])
         except Exception:
             return res["status"], res["text"]
 
     def api_post(self, path, body):
+        url = (ORIGIN + path) if path.startswith("/") else path
         return self.page.evaluate(
             """async ([path, b]) => { const t0=performance.now();
                const r = await fetch(path,{method:'POST',
                  headers:{'content-type':'application/json'},
                  body: JSON.stringify(b), credentials:'include'});
                return {status:r.status, text: await r.text(),
-                       ms: Math.round(performance.now()-t0)}; }""", [path, body])
+                       ms: Math.round(performance.now()-t0)}; }""", [url, body])
 
     def _market_view(self, mkt):
         o1, o2 = mkt.get("optionOne", {}), mkt.get("optionTwo", {})
@@ -486,36 +491,40 @@ class Worker(threading.Thread):
                         break
                     continue
 
-                # AUTO event-driven: leggi il "campanello" (window.__fmNew),
-                # leggerissimo. Fai il lavoro pesante (auto_watch) SOLO quando
-                # compare un mercato nuovo. In piu' una rete di sicurezza ogni
-                # AUTO_SAFETY_SEC.
-                nowt = time.time()
-                if self.auto_open and (nowt - self.last_poll) >= AUTO_POLL_SEC:
-                    self.last_poll = nowt
-                    try:
-                        n = self.page.evaluate("window.__fmNew || 0")
-                    except Exception:
-                        n = self.last_fm
-                    if n != self.last_fm:
-                        self.last_fm = n
-                        self.auto_watch()
-                        self.last_full = nowt
-                    elif (nowt - self.last_full) >= AUTO_SAFETY_SEC:
-                        self.auto_watch()
-                        self.last_full = nowt
+                # tutta la parte periodica e' protetta: un errore momentaneo
+                # (pagina in transizione, scheda chiusa) non deve fermare il bot.
+                try:
+                    # AUTO event-driven: leggi il "campanello" (window.__fmNew),
+                    # leggerissimo. Lavoro pesante (auto_watch) SOLO quando
+                    # compare un mercato nuovo. Rete di sicurezza ogni AUTO_SAFETY_SEC.
+                    nowt = time.time()
+                    if self.auto_open and (nowt - self.last_poll) >= AUTO_POLL_SEC:
+                        self.last_poll = nowt
+                        try:
+                            n = self.page.evaluate("window.__fmNew || 0")
+                        except Exception:
+                            n = self.last_fm
+                        if n != self.last_fm:
+                            self.last_fm = n
+                            self.auto_watch()
+                            self.last_full = nowt
+                        elif (nowt - self.last_full) >= AUTO_SAFETY_SEC:
+                            self.auto_watch()
+                            self.last_full = nowt
 
-                # detect a market from ANY tab the user opened
-                pg, mid = self.current_market_page()
-                if mid and mid != self.last_market_id:
-                    self.page = pg
-                    self.load_market(mid)
+                    # detect a market from ANY tab the user opened
+                    pg, mid = self.current_market_page()
+                    if mid and mid != self.last_market_id:
+                        self.page = pg
+                        self.load_market(mid)
 
-                # periodic price refresh
-                now = time.time()
-                if self.market and (now - last_price) >= PREZZO_REFRESH_SEC:
-                    self.refresh_price()
-                    last_price = now
+                    # periodic price refresh
+                    now = time.time()
+                    if self.market and (now - last_price) >= PREZZO_REFRESH_SEC:
+                        self.refresh_price()
+                        last_price = now
+                except Exception:
+                    time.sleep(0.2)   # errore transitorio: ignora e riprova
 
             ctx.close()
         self.emit("log", text=tr("w_browser_closed"))
