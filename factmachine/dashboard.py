@@ -100,6 +100,7 @@ TR = {
         "col_amount": "amount",
         "custom_hint": "^ custom amount (type it)",
         "opt": "OPTION {n}",
+        "winning": "▲ WINNING: {opt} — {name}  ({pct})",
         "voted_tag": "  [ALREADY VOTED]",
         "log_label": "Log:",
         "err_amount": "ERROR: invalid custom amount (type a number, e.g. 150).",
@@ -143,6 +144,7 @@ TR = {
         "col_amount": "importo",
         "custom_hint": "^ importo libero (scrivi tu)",
         "opt": "OPZIONE {n}",
+        "winning": "▲ IN TESTA: {opt} — {name}  ({pct})",
         "voted_tag": "  [GIÀ VOTATO]",
         "log_label": "Log:",
         "err_amount": "ERRORE: importo libero non valido (scrivi un numero, es. 150).",
@@ -313,9 +315,20 @@ class Worker(threading.Thread):
             "name2": o2.get("name"), "price2": lp.get("optionTwoPrice"),
         }
 
+    def _fetch_prices(self, market_id):
+        """Quote correnti dall'endpoint dedicato: disponibili ANCHE prima di
+        votare (sono quelle che vedi sulla home)."""
+        status, lp = self.api_get(MARKET_PATH + market_id + "/latest-price")
+        if status == 200 and isinstance(lp, dict) and isinstance(lp.get("latestPrice"), dict):
+            return lp["latestPrice"]
+        return None
+
     def load_market(self, market_id):
         status, mkt = self.api_get(MARKET_PATH + market_id)
         if status == 200 and isinstance(mkt, dict):
+            lp = self._fetch_prices(market_id)
+            if lp:
+                mkt["latestPrice"] = lp   # quote vive, anche prima del voto
             self.market = mkt
             self.last_market_id = market_id
             self.emit("market", market=self._market_view(mkt))
@@ -325,10 +338,10 @@ class Worker(threading.Thread):
     def refresh_price(self):
         if not self.market:
             return
-        status, mkt = self.api_get(MARKET_PATH + self.market["id"])
-        if status == 200 and isinstance(mkt, dict):
-            self.market = mkt
-            self.emit("market", market=self._market_view(mkt))
+        lp = self._fetch_prices(self.market["id"])
+        if lp:
+            self.market["latestPrice"] = lp
+            self.emit("market", market=self._market_view(self.market))
 
     def current_market_page(self):
         """Look through ALL open tabs for one on a market."""
@@ -573,6 +586,12 @@ class App:
         self.info_var = tk.StringVar(value="")
         tk.Label(root, textvariable=self.info_var, fg="#555").pack(padx=10, anchor="w")
 
+        # riga grande: chi sta vincendo (a colpo d'occhio)
+        self.winner_var = tk.StringVar(value="")
+        self.winner_lbl = tk.Label(root, textvariable=self.winner_var,
+                                   font=("Segoe UI", 14, "bold"), fg="#1b8a2f")
+        self.winner_lbl.pack(padx=10, anchor="w", pady=(2, 2))
+
         # control bar
         bar = tk.Frame(root)
         bar.pack(fill="x", padx=10, pady=4)
@@ -681,6 +700,20 @@ class App:
             text=f"{tr('opt', n=1)}: {m.get('name1')}  —  {self._fmt_price(m.get('price1'))}")
         self.opt2_label.config(
             text=f"{tr('opt', n=2)}: {m.get('name2')}  —  {self._fmt_price(m.get('price2'))}")
+
+        # riga grande: chi sta vincendo (col colore dell'opzione)
+        p1, p2 = m.get("price1"), m.get("price2")
+        if isinstance(p1, (int, float)) and isinstance(p2, (int, float)):
+            if p1 >= p2:
+                self.winner_var.set(tr("winning", opt=tr("opt", n=1),
+                                       name=m.get("name1"), pct=self._fmt_price(p1)))
+                self.winner_lbl.config(fg="#1565c0")   # blu = opzione 1
+            else:
+                self.winner_var.set(tr("winning", opt=tr("opt", n=2),
+                                       name=m.get("name2"), pct=self._fmt_price(p2)))
+                self.winner_lbl.config(fg="#c62828")   # rosso = opzione 2
+        else:
+            self.winner_var.set("")
 
     def _drain_events(self):
         try:
