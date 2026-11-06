@@ -1,0 +1,56 @@
+===========================================================
+  FACTMACHINE - COMANDI LICENZE (promemoria)
+===========================================================
+
+DOVE LANCIARLI
+- Sulla VPS, nella cartella dove c'e' admin.py e server.py.
+- Apri la cartella, clicca sulla barra dell'indirizzo in alto,
+  scrivi:  cmd   e premi INVIO (si apre il CMD gia' nella cartella).
+- Il server deve essere ACCESO: una finestra con "python server.py"
+  deve restare aperta.
+
+-----------------------------------------------------------
+CREARE UNA LICENZA
+-----------------------------------------------------------
+Mensile (30 giorni):
+  python admin.py create --days 30 --note "cliente Mario"
+
+Settimanale (7 giorni):
+  python admin.py create --days 7 --note "cliente X"
+
+Giornaliera (1 giorno):
+  python admin.py create --days 1 --note "prova"
+
+Piu' licenze in blocco (es. 5 mensili):
+  python admin.py create --days 30 --count 5
+
+-> Il comando stampa la chiave, es:  FM-ABCD-EFGH-JKLM
+   Quella chiave la dai al cliente.
+
+-----------------------------------------------------------
+VEDERE TUTTE LE LICENZE (e quali sono attive)
+-----------------------------------------------------------
+  python admin.py list
+
+Colonna STATO:
+  attiva        = in uso e valida
+  non attivata  = creata ma il cliente non l'ha ancora usata
+  scaduta       = durata finita
+  revocata      = bloccata da te
+
+-----------------------------------------------------------
+BLOCCARE / SBLOCCARE
+-----------------------------------------------------------
+Revocare (bloccare subito) una licenza:
+  python admin.py revoke FM-ABCD-EFGH-JKLM
+
+Sbloccare il PC legato a una licenza (il cliente cambia computer):
+  python admin.py reset FM-ABCD-EFGH-JKLM
+
+===========================================================
+NOTE
+- --days  = durata (1 giorno, 7 settimana, 30 mese)
+- --count = quante licenze creare (facoltativo)
+- --note  = promemoria di chi e' la licenza (facoltativo)
+- La durata parte dalla PRIMA attivazione del cliente.
+===========================================================
