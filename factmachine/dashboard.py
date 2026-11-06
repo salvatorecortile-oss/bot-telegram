@@ -44,6 +44,8 @@ BUY_MAX_PRICE_PCT = 100.0           # max buy price (100 = same as the site)
 PREZZO_REFRESH_SEC = 2.0            # how often to refresh shown prices
 AUTO_OPEN_DEFAULT = True            # AUTO on by default (listens for new market)
 DEFAULT_LANG = "en"                 # "en" or "it"
+AUTO_POLL_SEC = 0.3                 # how often to read the light "bell" (event mode)
+AUTO_SAFETY_SEC = 15.0             # safety net: full re-check every so often
 # --------------------------------------
 
 BASE_DIR = APP_DIR
@@ -53,6 +55,34 @@ ORIGIN = "https://alpha.factmachine.com"
 VOTE_PATH = "/api/v1/vote/market/cast"       # 1) the VOTE (wheel = consensusGuess)
 BUY_PATH = "/api/v1/order/transactions/buy"  # 2) the BUY
 MARKET_PATH = "/api/v1/market/"
+
+# Osservatore (event-driven): sta DENTRO la pagina e, appena compare un id di
+# mercato nuovo nella home, aumenta window.__fmNew. I cambiamenti dei soli
+# countdown (testo) non aggiungono id nuovi, quindi non lo fanno scattare.
+FM_OBSERVER_JS = r"""
+(() => {
+  if (window.__fmInit) return; window.__fmInit = true;
+  window.__fmKnown = new Set();
+  window.__fmNew = 0;
+  let pending = false;
+  function scan() {
+    pending = false;
+    try {
+      const html = document.documentElement.innerHTML;
+      const re = /\/market\/([a-z0-9]{10,})/g; let m;
+      while ((m = re.exec(html))) {
+        if (!window.__fmKnown.has(m[1])) { window.__fmKnown.add(m[1]); window.__fmNew++; }
+      }
+    } catch (e) {}
+  }
+  scan();
+  try {
+    new MutationObserver(() => {
+      if (!pending) { pending = true; setTimeout(scan, 300); }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  } catch (e) {}
+})();
+"""
 
 
 # ======================================================================
@@ -177,10 +207,11 @@ class Worker(threading.Thread):
         self.market = None
         self.last_market_id = None
         self.auto_open = AUTO_OPEN_DEFAULT
-        self.last_scan = 0.0
         self.seen = {}          # market id seen in traffic -> timestamp
-        self.evaluated = set()  # ids already evaluated by AUTO
         self.api_urls = []      # /api/v1 GET urls seen (debug/support)
+        self.last_fm = -1       # ultimo valore di window.__fmNew (event-driven)
+        self.last_poll = 0.0    # ultimo check del "campanello"
+        self.last_full = 0.0    # ultimo controllo pieno di sicurezza
         self._stop = False
 
     def emit(self, kind, **data):
@@ -410,8 +441,16 @@ class Worker(threading.Thread):
                 args=["--disable-blink-features=AutomationControlled"])
             self.ctx = ctx
             ctx.on("response", self._on_response)
+            try:
+                ctx.add_init_script(FM_OBSERVER_JS)  # osservatore su ogni pagina
+            except Exception:
+                pass
             self.page = ctx.pages[0] if ctx.pages else ctx.new_page()
             self.page.goto(ORIGIN + "/")
+            try:
+                self.page.evaluate(FM_OBSERVER_JS)   # anche sulla pagina gia' aperta
+            except Exception:
+                pass
 
             status, me = self.api_get("/api/v1/user/current")
             if status == 200 and isinstance(me, dict):
@@ -447,11 +486,24 @@ class Worker(threading.Thread):
                         break
                     continue
 
-                # AUTO: no forced reloads. Watch traffic; when the site updates
-                # and a new market appears, grab it by itself.
-                if self.auto_open and (time.time() - self.last_scan) >= 3.0:
-                    self.auto_watch()
-                    self.last_scan = time.time()
+                # AUTO event-driven: leggi il "campanello" (window.__fmNew),
+                # leggerissimo. Fai il lavoro pesante (auto_watch) SOLO quando
+                # compare un mercato nuovo. In piu' una rete di sicurezza ogni
+                # AUTO_SAFETY_SEC.
+                nowt = time.time()
+                if self.auto_open and (nowt - self.last_poll) >= AUTO_POLL_SEC:
+                    self.last_poll = nowt
+                    try:
+                        n = self.page.evaluate("window.__fmNew || 0")
+                    except Exception:
+                        n = self.last_fm
+                    if n != self.last_fm:
+                        self.last_fm = n
+                        self.auto_watch()
+                        self.last_full = nowt
+                    elif (nowt - self.last_full) >= AUTO_SAFETY_SEC:
+                        self.auto_watch()
+                        self.last_full = nowt
 
                 # detect a market from ANY tab the user opened
                 pg, mid = self.current_market_page()
