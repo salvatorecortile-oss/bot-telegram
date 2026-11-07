@@ -46,6 +46,8 @@ AUTO_OPEN_DEFAULT = True            # AUTO on by default (listens for new market
 DEFAULT_LANG = "en"                 # "en" or "it"
 AUTO_POLL_SEC = 0.3                 # how often to read the light "bell" (event mode)
 AUTO_SAFETY_SEC = 15.0             # safety net: full re-check every so often
+LIGHT_MODE = True                   # blocca video/audio/font pesanti (PC deboli)
+BLOCK_IMAGES = False                # True = blocca anche le immagini (ancora piu' leggero)
 # --------------------------------------
 
 BASE_DIR = APP_DIR
@@ -78,7 +80,7 @@ FM_OBSERVER_JS = r"""
   scan();
   try {
     new MutationObserver(() => {
-      if (!pending) { pending = true; setTimeout(scan, 300); }
+      if (!pending) { pending = true; setTimeout(scan, 700); }
     }).observe(document.documentElement, { childList: true, subtree: true });
   } catch (e) {}
 })();
@@ -456,8 +458,36 @@ class Worker(threading.Thread):
             USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
             ctx = p.chromium.launch_persistent_context(
                 str(USER_DATA_DIR), headless=False,
-                args=["--disable-blink-features=AutomationControlled"])
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--mute-audio",                       # niente audio
+                    "--disable-dev-shm-usage",            # usa meno memoria condivisa
+                    "--disable-background-timer-throttling",  # AUTO resta attivo anche ridotto a icona
+                    "--disable-renderer-backgrounding",
+                ])
             self.ctx = ctx
+
+            # MODALITA' LEGGERA: blocca i contenuti pesanti (video/audio/font)
+            # che al bot non servono. Riduce molto RAM/CPU su PC deboli.
+            if LIGHT_MODE:
+                blocked = {"media", "font"} | ({"image"} if BLOCK_IMAGES else set())
+
+                def _route(route):
+                    try:
+                        if route.request.resource_type in blocked:
+                            route.abort()
+                        else:
+                            route.continue_()
+                    except Exception:
+                        try:
+                            route.continue_()
+                        except Exception:
+                            pass
+                try:
+                    ctx.route("**/*", _route)
+                except Exception:
+                    pass
+
             ctx.on("response", self._on_response)
             try:
                 ctx.add_init_script(FM_OBSERVER_JS)  # osservatore su ogni pagina
