@@ -312,7 +312,7 @@ class Worker(threading.Thread):
         lp = mkt.get("latestPrice") or {}
         return {
             "id": mkt.get("id"), "subject": mkt.get("subject"),
-            "voted": bool(mkt.get("userVoteState")),
+            "voted": bool((mkt.get("userVoteState") or {}).get("hasVoted")),
             "name1": o1.get("name"), "price1": lp.get("optionOnePrice"),
             "name2": o2.get("name"), "price2": lp.get("optionTwoPrice"),
         }
@@ -340,10 +340,15 @@ class Worker(threading.Thread):
     def refresh_price(self):
         if not self.market:
             return
-        lp = self._fetch_prices(self.market["id"])
+        mid = self.market["id"]
+        status, mkt = self.api_get(MARKET_PATH + mid)
+        if status != 200 or not isinstance(mkt, dict):
+            return
+        lp = self._fetch_prices(mid)           # quote vive (anche prima del voto)
         if lp:
-            self.market["latestPrice"] = lp
-            self.emit("market", market=self._market_view(self.market))
+            mkt["latestPrice"] = lp
+        self.market = mkt
+        self.emit("market", market=self._market_view(mkt))
 
     def current_market_page(self):
         """Look through ALL open tabs for one on a market."""
@@ -467,10 +472,10 @@ class Worker(threading.Thread):
                 ])
             self.ctx = ctx
 
-            # MODALITA' LEGGERA: blocca i contenuti pesanti (video/audio/font)
-            # che al bot non servono. Riduce molto RAM/CPU su PC deboli.
+            # MODALITA' LEGGERA: blocca SOLO i video/audio (la vera causa dei
+            # crash su PC deboli). Non tocca le chiamate API ne' le immagini.
             if LIGHT_MODE:
-                blocked = {"media", "font"} | ({"image"} if BLOCK_IMAGES else set())
+                blocked = {"media"} | ({"image"} if BLOCK_IMAGES else set())
 
                 def _route(route):
                     try:
@@ -527,9 +532,16 @@ class Worker(threading.Thread):
                             self.emit("log", text=tr("w_find_none"))
                     elif cmd[0] == "apis":
                         self.emit("log", text=f"--- {len(self.api_urls)} API endpoints seen ---")
-                        for u in self.api_urls[-50:]:
+                        for u in self.api_urls[-30:]:
                             self.emit("log", text="  " + u.replace(ORIGIN, ""))
                         self.emit("log", text=f"--- market ids captured: {list(self.seen.keys())} ---")
+                        # diagnostica prezzi/voto del mercato corrente
+                        if self.market:
+                            mid = self.market["id"]
+                            st, raw = self.api_get(MARKET_PATH + mid + "/latest-price")
+                            self.emit("log", text=f"--- latest-price status {st}: {str(raw)[:200]}")
+                            uvs = (self.market.get("userVoteState") or {})
+                            self.emit("log", text=f"--- hasVoted={uvs.get('hasVoted')}  embedded latestPrice={self.market.get('latestPrice')}")
                     elif cmd[0] == "quit":
                         break
                     continue
