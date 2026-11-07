@@ -318,11 +318,20 @@ class Worker(threading.Thread):
         }
 
     def _fetch_prices(self, market_id):
-        """Quote correnti dall'endpoint dedicato: disponibili ANCHE prima di
-        votare (sono quelle che vedi sulla home)."""
+        """Quote correnti. Prova prima /latest-price; se vuoto, ricava il
+        prezzo dall'andamento del trading (/chart-trading/.../history),
+        l'ultimo valore = prezzo attuale dell'opzione 1."""
         status, lp = self.api_get(MARKET_PATH + market_id + "/latest-price")
         if status == 200 and isinstance(lp, dict) and isinstance(lp.get("latestPrice"), dict):
             return lp["latestPrice"]
+        # riserva: ultimo prezzo dal grafico del trading
+        status, hist = self.api_get("/api/v1/chart-trading/" + market_id + "/history")
+        if status == 200 and isinstance(hist, dict):
+            pts = hist.get("data") or hist.get("recent") or []
+            if pts:
+                p1 = pts[-1].get("price")
+                if isinstance(p1, (int, float)):
+                    return {"optionOnePrice": p1, "optionTwoPrice": 1 - p1}
         return None
 
     def load_market(self, market_id):
@@ -539,9 +548,13 @@ class Worker(threading.Thread):
                         if self.market:
                             mid = self.market["id"]
                             st, raw = self.api_get(MARKET_PATH + mid + "/latest-price")
-                            self.emit("log", text=f"--- latest-price status {st}: {str(raw)[:200]}")
+                            self.emit("log", text=f"--- latest-price {st}: {str(raw)[:150]}")
+                            st2, h = self.api_get("/api/v1/chart-trading/" + mid + "/history")
+                            n = len((h.get("data") or []) if isinstance(h, dict) else [])
+                            last = (h.get("data") or [])[-1] if isinstance(h, dict) and h.get("data") else None
+                            self.emit("log", text=f"--- chart-trading {st2}: punti={n} ultimo={last}")
                             uvs = (self.market.get("userVoteState") or {})
-                            self.emit("log", text=f"--- hasVoted={uvs.get('hasVoted')}  embedded latestPrice={self.market.get('latestPrice')}")
+                            self.emit("log", text=f"--- hasVoted={uvs.get('hasVoted')}")
                     elif cmd[0] == "quit":
                         break
                     continue
