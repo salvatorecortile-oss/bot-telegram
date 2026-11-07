@@ -1,0 +1,37 @@
+===========================================================
+  FACTMACHINE - EXE PROTETTO CON PYARMOR (offuscamento)
+===========================================================
+
+A COSA SERVE
+- Offusca (rende illeggibile) il codice dentro l'exe, incluso il
+  SIGNING_SECRET della licenza. Rende MOLTO piu' difficile a un
+  tecnico estrarre il codice o aggirare la licenza.
+- Non e' inviolabile al 100% (nessun software lo e'), ma scoraggia
+  il 99% delle persone.
+
+COME COMPILARE L'EXE PROTETTO
+1. Metti nella cartella: dashboard.py, license_client.py,
+   license_config.py (con i tuoi SERVER_URL e SIGNING_SECRET gia'
+   impostati).
+2. Doppio click su:  COMPILA_EXE_PROTETTO.bat
+   Fa tutto da solo: installa gli strumenti, scarica il browser,
+   offusca con PyArmor, crea l'exe.
+3. Alla fine trovi l'exe protetto in:  dist\FactMachine.exe
+   Quello e' il file da dare ai clienti.
+
+NOTE / SE QUALCOSA NON VA
+- PyArmor nella versione base e' gratis e sufficiente per offuscare.
+  Alcune funzioni avanzate richiedono una licenza a pagamento, ma
+  per questo scopo NON servono.
+- Se COMPILA_EXE_PROTETTO.bat da' errore su PyArmor, copia il
+  messaggio e chiedi aiuto: la prima compilazione protetta a volte
+  va rifinita in base alla versione installata.
+- In alternativa resta disponibile COMPILA_EXE.bat (senza
+  offuscamento): produce un exe funzionante ma non protetto.
+
+DUE REGOLE IMPORTANTI
+- Dai l'exe SOLO a chi paga, non pubblicarlo.
+- Ogni tanto cambia il SIGNING_SECRET (in server.py e in
+  license_config.py) e ricompila: cosi' anche se qualcuno lo
+  estraesse da una vecchia versione, non vale piu'.
+===========================================================
