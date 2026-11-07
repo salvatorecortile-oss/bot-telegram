@@ -103,6 +103,7 @@ TR = {
         "custom_hint": "^ custom amount (type it)",
         "opt": "OPTION {n}",
         "winning": "▲ WINNING: {opt} — {name}  ({pct})",
+        "odds_hidden": "◦ Odds are hidden by the site until you vote",
         "voted_tag": "  [ALREADY VOTED]",
         "log_label": "Log:",
         "err_amount": "ERROR: invalid custom amount (type a number, e.g. 150).",
@@ -147,6 +148,7 @@ TR = {
         "custom_hint": "^ importo libero (scrivi tu)",
         "opt": "OPZIONE {n}",
         "winning": "▲ IN TESTA: {opt} — {name}  ({pct})",
+        "odds_hidden": "◦ Le quote sono nascoste dal sito finché non voti",
         "voted_tag": "  [GIÀ VOTATO]",
         "log_label": "Log:",
         "err_amount": "ERRORE: importo libero non valido (scrivi un numero, es. 150).",
@@ -768,7 +770,8 @@ class App:
                                        name=m.get("name2"), pct=self._fmt_price(p2)))
                 self.winner_lbl.config(fg="#c62828")   # rosso = opzione 2
         else:
-            self.winner_var.set("")
+            self.winner_var.set(tr("odds_hidden"))
+            self.winner_lbl.config(fg="#8a8f98")       # grigio = info
 
     def _drain_events(self):
         try:
