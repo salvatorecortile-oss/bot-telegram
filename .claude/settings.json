@@ -4,21 +4,15 @@
   },
   "permissions": {
     "allow": [
+      "Bash",
       "mcp__Zernio",
+      "mcp__claude-code-remote__send_later",
       "Artifact",
       "ArtifactData",
       "SendUserFile",
       "WebSearch",
       "WebFetch",
-      "Bash(ffmpeg:*)",
-      "Bash(ffprobe:*)",
-      "Bash(node:*)",
-      "Bash(python3:*)",
-      "Bash(curl:*)",
-      "Bash(zip:*)",
-      "Bash(mkdir:*)",
-      "Bash(cp:*)",
-      "Bash(ls:*)"
+      "ToolSearch"
     ]
   }
 }
