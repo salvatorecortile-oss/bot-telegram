@@ -100,7 +100,7 @@ Deve restare aperto (come gli altri bot). Su VPS/PC che resta acceso puoi usare 
 - La persona clicca il link → *"Richiesta inviata"* → il bot le scrive in privato: *"Premi: MELA"* con 6 pulsanti emoji (testo in italiano e inglese).
 - **Pulsante giusto** → la richiesta viene **approvata** e la persona entra. Tu ricevi l'avviso con il punteggio di sospetto.
 - **Sbagliato** → può riprovare (`CAPTCHA_TENTATIVI`, default 2). Finiti i tentativi la richiesta viene **rifiutata**.
-- **Nessuna risposta** entro `CAPTCHA_TIMEOUT_SECONDS` (default 3 minuti) → **rifiutata**.
+- **Nessuna risposta** entro `CAPTCHA_TIMEOUT_SECONDS` (default 60 secondi) → **rifiutata**.
 - Chi viene rifiutato può riprovare cliccando di nuovo il link.
 - Se hai creato il file `benvenuto.txt`, dopo il captcha superato il bot manda in privato **il tuo messaggio di benvenuto** (vedi sotto).
 - Se il guardiano è spento, le richieste restano in attesa: le approvi tu a mano dal canale (*Richieste di accesso*).

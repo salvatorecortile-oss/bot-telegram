@@ -58,7 +58,7 @@ BOT_SESSION_NAME = os.getenv("BOT_SESSION_NAME", "sicurezza_bot")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0") or 0)
 
 # Tempo per rispondere al captcha e tentativi a disposizione.
-CAPTCHA_TIMEOUT_SECONDS = float(os.getenv("CAPTCHA_TIMEOUT_SECONDS", "180"))
+CAPTCHA_TIMEOUT_SECONDS = float(os.getenv("CAPTCHA_TIMEOUT_SECONDS", "60"))
 CAPTCHA_TENTATIVI = int(os.getenv("CAPTCHA_TENTATIVI", "2"))
 
 # =========================

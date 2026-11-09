@@ -50,8 +50,13 @@ def nuova_sfida(adesso, timeout, tentativi, rng=random):
 def testo_domanda(sfida, titolo_chat="", secondi=0):
     emoji, it, en = sfida.oggetto
     dove = f" a <b>{titolo_chat}</b>" if titolo_chat else ""
-    minuti = max(1, round(secondi / 60)) if secondi else 0
-    tempo = f"\nHai {minuti} minuti. / You have {minuti} minutes." if minuti else ""
+    tempo = ""
+    if secondi:
+        if secondi < 120:
+            tempo = f"\nHai {int(secondi)} secondi. / You have {int(secondi)} seconds."
+        else:
+            minuti = round(secondi / 60)
+            tempo = f"\nHai {minuti} minuti. / You have {minuti} minutes."
     return (
         f"👋 Ciao! Hai chiesto di entrare{dove}.\n"
         f"Per confermare che sei una persona, premi: <b>{it}</b>\n\n"

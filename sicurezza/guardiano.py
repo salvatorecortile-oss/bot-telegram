@@ -196,7 +196,7 @@ async def start(event):
 
 async def controlla_scadute():
     while True:
-        await asyncio.sleep(15)
+        await asyncio.sleep(5)
         for chiave in captcha.scadute(SFIDE, time.time()):
             sfida = SFIDE.pop(chiave, None)
             if not sfida:

@@ -21,6 +21,8 @@ testo = captcha.testo_domanda(s, "Sala Elite", 180)
 assert s.oggetto[1] in testo and s.oggetto[2] in testo
 assert s.oggetto[0] not in testo
 assert "Sala Elite" in testo and "3 minuti" in testo
+assert "Hai 60 secondi" in captcha.testo_domanda(s, "", 60)
+assert "Hai 90 secondi" in captcha.testo_domanda(s, "", 90)
 
 # Risposta giusta
 assert captcha.rispondi(s, s.corretta, 1010) == "ok"
