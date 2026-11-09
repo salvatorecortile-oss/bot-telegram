@@ -35,7 +35,14 @@ from config import (
     MAX_ENTRY_DISTANCE,
     MAX_SIGNAL_AGE_SECONDS,
     MONITOR_INTERVAL_SECONDS,
+    EXCLUDED_SIGNALS,
+    FOLLOW_WAIT_SECONDS,
     FREE_CLOSE_COOLDOWN_MINUTES,
+    LOW_PRIORITY_SIGNALS,
+    MAX_PER_DIRECTION,
+    ONE_PER_FAMILY,
+    RISK_DAILY_LOSS_PCT,
+    RISK_MONTHLY_LOSS_PCT,
     PENDING_EXPIRY_MINUTES,
     PUBLISH_TO_CHANNEL,
     REVERSAL_SIGNALS,
@@ -119,6 +126,58 @@ def current_pip_size():
 # ============================================================
 
 async def handle_open(message, signal):
+    """
+    Apre il segnale. Sul conto principale (SYNC_ROLE=master) scrive anche nel
+    file condiviso se l'ha aperto o no: le copie aprono solo quello che ha
+    aperto il principale.
+    """
+    opened = await _handle_open(message, signal)
+    if sync.IS_MASTER and opened is not None:
+        sync.publish(message.id, "OPEN" if opened else "SKIP")
+
+
+def signal_family(signal_no):
+    """5.3 -> 5 (tutti i 5.x sono la famiglia 5), 6 -> 6, None -> None."""
+    return None if signal_no is None else int(float(signal_no))
+
+
+def open_limit_reason(signal):
+    """
+    Regole di apertura (conto principale o bot senza SYNC). None = si puo' aprire.
+    - massimo MAX_PER_DIRECTION operazioni per direzione (BUY / SELL)
+    - massimo 1 operazione per famiglia di segnale e direzione (5.x = famiglia 5)
+    - segnali a priorita' bassa (SIGNAL 4) solo se nella direzione non c'e' nulla
+    - segnali esclusi mai
+    """
+    family = signal_family(signal.get("signal_no"))
+    direction = signal["direction"]
+    if family in EXCLUDED_SIGNALS:
+        return f"SIGNAL {family} escluso (EXCLUDED_SIGNALS)"
+    same_dir = [r for r in db.get_open_signals() + db.get_pending_signals() if r["direction"] == direction]
+    if MAX_PER_DIRECTION and len(same_dir) >= MAX_PER_DIRECTION:
+        return f"gia' {len(same_dir)} operazioni {direction} aperte (massimo {MAX_PER_DIRECTION})"
+    if ONE_PER_FAMILY and family is not None:
+        for r in same_dir:
+            if signal_family(r["signal_no"]) == family:
+                return f"SIGNAL {family} {direction} gia' aperto (SIGNAL {r['signal_no']})"
+    if family in LOW_PRIORITY_SIGNALS and same_dir:
+        return (f"SIGNAL {family} ha priorita' bassa: si apre solo se non ci sono altre {direction} "
+                f"(aperte: {', '.join(str(r['signal_no']) for r in same_dir)})")
+    return None
+
+
+async def wait_master_decision(source_id):
+    """Copia: aspetta che il principale dica se ha aperto il segnale ('OPEN'/'SKIP'/None)."""
+    deadline = time.monotonic() + FOLLOW_WAIT_SECONDS
+    while True:
+        decision = await asyncio.to_thread(sync.find_decision, source_id)
+        if decision is not None or time.monotonic() >= deadline:
+            return decision
+        await asyncio.sleep(0.5)
+
+
+async def _handle_open(message, signal):
+    """True = aperta (o ordine pendente piazzato), False = non aperta, None = gia' gestita."""
     source_id = message.id
 
     # SIGNAL 5 / 6 (stop and reverse): prima si chiudono le operazioni dello
@@ -132,16 +191,19 @@ async def handle_open(message, signal):
                        signal["signal_no"], source_id)
         if db.insert_signal(source_id, signal):
             db.set_status(source_id, "BLOCKED_BY_CHANNEL")
-        return
+            return False
+        return None
 
     age = (datetime.now(timezone.utc) - message.date).total_seconds()
     if age > MAX_SIGNAL_AGE_SECONDS:
+        if db.get_signal(source_id) is not None:
+            return None  # segnale gia' gestito, ora solo modificato dalla Sala: niente da fare
         logger.warning("⏭️ SEGNALE #%s TROPPO VECCHIO (%.0fs): ignorato.", source_id, age)
-        return
+        return False
 
     async with get_lock(source_id):
         if not db.insert_signal(source_id, signal):
-            return  # gia' gestito
+            return None  # gia' gestito
 
         logger.info(
             "🎯 SIGNAL %s | %s XAUUSD | Ingresso %.2f | SL %.2f | TP %s%s | #%s",
@@ -154,13 +216,35 @@ async def handle_open(message, signal):
         if BOT_STATE == "PAUSED":
             logger.warning("⏸️ BOT IN PAUSA: trade non aperto | #%s", source_id)
             db.set_status(source_id, "PAUSED_NO_NEW_TRADE")
-            return
+            return False
+
+        if sync.IS_FOLLOWER:
+            # Copia: apre solo se il conto principale ha aperto lo stesso segnale.
+            decision = await wait_master_decision(source_id)
+            if decision != "OPEN":
+                logger.info("⏭️ SIGNAL %s non aperto: %s | #%s", signal["signal_no"],
+                            "il conto principale non l'ha aperto" if decision == "SKIP"
+                            else "nessuna conferma dal conto principale", source_id)
+                db.set_status(source_id, "NOT_OPENED_BY_MASTER")
+                return False
+        else:
+            pause = risk_pause_reason()
+            if pause:
+                logger.warning("🛑 PROTEZIONE CONTO: trade non aperto (%s) | #%s", pause, source_id)
+                db.set_status(source_id, "PAUSED_RISK", error=pause)
+                return False
+            limit = open_limit_reason(signal)
+            if limit:
+                logger.info("⏭️ SIGNAL %s %s non aperto: %s | #%s",
+                            signal["signal_no"], signal["direction"], limit, source_id)
+                db.set_status(source_id, "SKIPPED_LIMIT", error=limit)
+                return False
 
         if TRADING_ENABLED:
             if not MT5_READY:
                 logger.error("❌ MT5 NON PRONTO: trade non aperto | #%s", source_id)
                 db.set_status(source_id, "MT5_NOT_READY")
-                return
+                return False
             try:
                 if signal.get("order_type", "MARKET") == "MARKET":
                     result = await asyncio.to_thread(mt5x.open_market_order, signal)
@@ -169,18 +253,20 @@ async def handle_open(message, signal):
             except ValueError as exc:
                 logger.warning("⏭️ TRADE NON APERTO | #%s | %s", source_id, exc)
                 db.set_status(source_id, "SKIPPED", error=str(exc))
-                return
+                return False
             except Exception as exc:
                 logger.exception("❌ ERRORE APERTURA | #%s", source_id)
                 db.set_status(source_id, "ERROR", error=str(exc))
-                return
+                # Ordine eseguito ma ticket non trovato: la posizione c'e' (verra'
+                # recuperata dal controllo periodico), quindi le copie aprono lo stesso.
+                return "ticket della posizione non trovato" in str(exc)
             if isinstance(result, mt5x.PendingResult):
                 db.mark_pending(source_id, result.order_ticket)
                 logger.info(
                     "🕓 %s %s PIAZZATO | Order %s @ %.2f | pubblicato nel canale quando viene eseguito",
                     signal["direction"], signal["order_type"], result.order_ticket, result.price,
                 )
-                return
+                return True
             position_ticket, open_price = result.position_ticket, result.price
             volume, sl, tp = result.volume, result.sl, result.tp
             logger.info(
@@ -199,6 +285,7 @@ async def handle_open(message, signal):
 
         db.mark_opened(source_id, position_ticket, open_price, volume, sl, tp)
         await publish_open(source_id, signal["direction"], open_price, sl, tp)
+        return True
 
 
 def is_reversal_signal(signal):
@@ -915,6 +1002,8 @@ async def adopt_loop():
 
 async def apply_sync_event(event):
     """Fa sulla nostra operazione quello che il conto principale ha fatto sulla sua."""
+    if event["kind"] not in ("CLOSE", "SL", "BE", "TP"):
+        return  # OPEN / SKIP: li usa l'apertura (wait_master_decision)
     row = db.get_signal(event["source_message_id"])
     if row is None or row["status"] not in (db.OPEN_STATUS, db.PENDING_STATUS):
         return  # su questo conto quell'operazione non c'e' (o e' gia' chiusa)
@@ -972,6 +1061,82 @@ async def sync_follower_loop():
         except Exception:
             logger.exception("❌ ERRORE LETTURA FILE DI ALLINEAMENTO")
         await asyncio.sleep(2)
+
+
+# ============================================================
+# PROTEZIONE DEL CONTO (giornata -6%, mese -20%)
+# ============================================================
+# Sul conto principale (o bot senza SYNC). Le copie non aprono nulla che il
+# principale non apra, quindi si fermano insieme a lui.
+
+def _risk_pause_label(pause):
+    kind, _, period = pause.partition(":")
+    if kind == "daily":
+        return f"perdita giornaliera oltre il {RISK_DAILY_LOSS_PCT:g}% (fino a domani)"
+    return f"perdita mensile oltre il {RISK_MONTHLY_LOSS_PCT:g}% (fino al mese prossimo o {COMMAND_PREFIX}play)"
+
+
+def risk_pause_reason():
+    """Motivo della pausa automatica in corso, None se non c'e'."""
+    pause = db.get_setting("risk_pause", "")
+    if not pause:
+        return None
+    kind, _, period = pause.partition(":")
+    today = reports.now_italy().date().isoformat()
+    if (kind == "daily" and period == today) or (kind == "monthly" and period == today[:7]):
+        return _risk_pause_label(pause)
+    db.set_setting("risk_pause", "")  # periodo finito: la pausa si toglie da sola
+    return None
+
+
+async def check_account_risk():
+    balance, equity = await asyncio.to_thread(mt5x.account_snapshot)
+    today = reports.now_italy().date().isoformat()
+    month = today[:7]
+    # Saldo di partenza del giorno e del mese (registrato al primo controllo).
+    if db.get_setting("risk_day") != today:
+        db.set_setting("risk_day", today)
+        db.set_setting("risk_day_start", balance)
+    if db.get_setting("risk_month") != month:
+        db.set_setting("risk_month", month)
+        db.set_setting("risk_month_start", balance)
+    if risk_pause_reason():
+        return
+    day_start = float(db.get_setting("risk_day_start", balance))
+    month_start = float(db.get_setting("risk_month_start", balance))
+    day_pct = (equity - day_start) / day_start * 100 if day_start else 0.0
+    month_pct = (equity - month_start) / month_start * 100 if month_start else 0.0
+    pause = None
+    if (RISK_MONTHLY_LOSS_PCT and month_pct <= -RISK_MONTHLY_LOSS_PCT
+            and db.get_setting("risk_ack_month") != month):
+        pause = f"monthly:{month}"
+    elif (RISK_DAILY_LOSS_PCT and day_pct <= -RISK_DAILY_LOSS_PCT
+            and db.get_setting("risk_ack_day") != today):
+        pause = f"daily:{today}"
+    if pause:
+        db.set_setting("risk_pause", pause)
+        text = (f"🛑 <b>PROTEZIONE CONTO: NUOVE APERTURE IN PAUSA</b>\n"
+                f"Motivo: {_risk_pause_label(pause)}\n"
+                f"Giornata: {day_pct:+.1f}% | Mese: {month_pct:+.1f}% (equity {equity:.2f})\n"
+                f"Le operazioni aperte restano gestite. Per ripartire subito: {COMMAND_PREFIX}play")
+        logger.warning("🛑 PROTEZIONE CONTO ATTIVATA | %s | giorno %+.1f%% mese %+.1f%%",
+                       pause, day_pct, month_pct)
+        try:
+            await client.send_message("me", text, parse_mode="html")
+        except Exception:
+            logger.exception("❌ ERRORE AVVISO PROTEZIONE CONTO")
+
+
+async def risk_loop():
+    while True:
+        try:
+            if TRADING_ENABLED and MT5_READY and not sync.IS_FOLLOWER:
+                await check_account_risk()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("❌ ERRORE CONTROLLO PROTEZIONE CONTO")
+        await asyncio.sleep(30)
 
 
 async def mt5_connection_keeper():
@@ -1063,8 +1228,10 @@ STATE_LABELS = {"RUNNING": "▶️ ATTIVO", "PAUSED": "⏸️ IN PAUSA", "STOPPE
 
 def status_text():
     rows = db.get_open_signals()
+    risk = risk_pause_reason() if not sync.IS_FOLLOWER else None
     lines = [
-        f"<b>STATO BOT:</b> {STATE_LABELS.get(BOT_STATE, BOT_STATE)}",
+        f"<b>STATO BOT:</b> {STATE_LABELS.get(BOT_STATE, BOT_STATE)}"
+        + (f"\n🛑 <b>PROTEZIONE CONTO:</b> nuove aperture in pausa, {risk}" if risk else ""),
         f"<b>MT5:</b> {'collegato' if MT5_READY else ('modalita TEST' if not TRADING_ENABLED else 'NON collegato')}",
         f"<b>Operazioni aperte ({len(rows)}):</b>",
     ]
@@ -1105,6 +1272,14 @@ async def saved_messages_handler(event):
     try:
         if command == "play":
             BOT_STATE = "RUNNING"
+            pause = db.get_setting("risk_pause", "")
+            if pause:
+                # Ripartenza manuale dopo la protezione del conto: non riscatta nello stesso giorno/mese.
+                today = reports.now_italy().date().isoformat()
+                db.set_setting("risk_ack_day" if pause.startswith("daily") else "risk_ack_month",
+                               today if pause.startswith("daily") else today[:7])
+                db.set_setting("risk_pause", "")
+                logger.info("▶️ Protezione conto tolta a mano (%s)", pause)
             await event.reply(play_message(COMMAND_PREFIX), parse_mode="html")
         elif command == "pausa":
             BOT_STATE = "PAUSED"
@@ -1160,6 +1335,13 @@ async def main():
     logger.info("ETA' MAX    : %.0fs | Distanza max ingresso: %s",
                 MAX_SIGNAL_AGE_SECONDS, f"{MAX_ENTRY_DISTANCE:.2f} $" if MAX_ENTRY_DISTANCE else "nessun limite")
     logger.info("COMANDI     : %scomandi (in Messaggi salvati)", COMMAND_PREFIX)
+    if not sync.IS_FOLLOWER:
+        logger.info("REGOLE      : max %s per direzione | 1 per famiglia: %s | priorita' bassa: %s | esclusi: %s",
+                    MAX_PER_DIRECTION or "nessun limite", "si" if ONE_PER_FAMILY else "no",
+                    ", ".join(map(str, sorted(LOW_PRIORITY_SIGNALS))) or "nessuno",
+                    ", ".join(map(str, sorted(EXCLUDED_SIGNALS))) or "nessuno")
+        logger.info("PROTEZIONE  : pausa a -%g%% al giorno, -%g%% al mese (0 = disattivata)",
+                    RISK_DAILY_LOSS_PCT, RISK_MONTHLY_LOSS_PCT)
     if sync.IS_MASTER:
         logger.info("ALLINEAMENTO: CONTO PRINCIPALE (scrive in %s)", sync.SYNC_FILE)
     elif sync.IS_FOLLOWER:
@@ -1197,6 +1379,8 @@ async def main():
         tasks.append(asyncio.create_task(adopt_loop()))
         if sync.IS_FOLLOWER:
             tasks.append(asyncio.create_task(sync_follower_loop()))
+        if (RISK_DAILY_LOSS_PCT or RISK_MONTHLY_LOSS_PCT) and not sync.IS_FOLLOWER:
+            tasks.append(asyncio.create_task(risk_loop()))
 
     logger.info("👂 In ascolto del canale Gold Empire...")
     try:

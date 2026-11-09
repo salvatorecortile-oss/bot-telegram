@@ -27,6 +27,17 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
   o domande vengono ignorate. Dopo una chiusura senza reply, per `FREE_CLOSE_COOLDOWN_MINUTES` (default 10) altri messaggi
   simili senza reply vengono ignorati (il canale spesso scrive 2 messaggi per la stessa chiusura). I SIGNAL 5 e 6 non
   vengono mai chiusi così.
+- **Regole di apertura** (conto principale): massimo `MAX_PER_DIRECTION` (2) operazioni BUY e 2 SELL insieme;
+  una sola per famiglia e direzione (tutti i 5.x sono la famiglia 5, quindi max 1 BUY e 1 SELL del SIGNAL 5);
+  il SIGNAL 4 (`LOW_PRIORITY_SIGNALS`) si apre solo se nella sua direzione non c'è niente, così non toglie mai il
+  posto a 5, 6 o 7; `EXCLUDED_SIGNALS` per non aprire mai un segnale. Non si apre se il prezzo è a più di
+  `MAX_ENTRY_DISTANCE` $ dall'ingresso. Nel canale esce solo il segnale delle operazioni aperte davvero.
+- **Protezione del conto** (conto principale): equity a −`RISK_DAILY_LOSS_PCT`% (6) rispetto all'inizio della giornata →
+  nuove aperture in pausa fino al giorno dopo; −`RISK_MONTHLY_LOSS_PCT`% (20) nel mese → pausa fino al mese dopo.
+  Le aperte restano gestite; avviso nei Messaggi salvati; `play` la toglie.
+- **Copie (SYNC_ROLE=follower)**: aprono un segnale solo se il conto principale l'ha aperto (conferma nel file
+  condiviso, attesa massima `FOLLOW_WAIT_SECONDS`); se il principale è in pausa, spento o salta il segnale, le copie
+  non aprono. Chiusure, SL, BE e TP del principale vengono copiati.
 - Gli aggiornamenti vengono collegati al segnale tramite la **reply** di Telegram
   (riserva: ultimo `SIGNAL N` ancora aperto). Nel tuo canale escono in reply al segnale copiato.
 - BUY e SELL possono essere aperti **contemporaneamente** (serve un conto MT5 *hedging*).

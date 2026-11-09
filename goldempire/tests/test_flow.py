@@ -47,7 +47,11 @@ class FakeMT5(types.ModuleType):
 
     def initialize(self, **kw): return True
     def last_error(self): return (0, "ok")
-    def account_info(self): return SimpleNamespace(login=0, server="X", balance=1000.0, margin_mode=2)
+    balance = 1000.0
+    equity = 1000.0
+
+    def account_info(self):
+        return SimpleNamespace(login=0, server="X", balance=self.balance, equity=self.equity, margin_mode=2)
     def symbol_select(self, *a): return True
 
     def symbol_info(self, symbol):
@@ -150,6 +154,11 @@ def install_fakes(trading):
         "TELEGRAM_DESTINATION_CHAT": "-200", "TRADING_ENABLED": "true" if trading else "false",
         "MT5_LOGIN": "0", "MAGIC_NUMBER": "26090110",
     })
+    # Questi test provano la gestione dei segnali: regole di apertura e protezione
+    # del conto spente (salvo che il test le imposti prima), provate in test_rules.py.
+    for key, value in (("MAX_PER_DIRECTION", "0"), ("ONE_PER_FAMILY", "false"), ("LOW_PRIORITY_SIGNALS", ""),
+                       ("RISK_DAILY_LOSS_PCT", "0"), ("RISK_MONTHLY_LOSS_PCT", "0")):
+        os.environ.setdefault(key, value)
     telethon = types.ModuleType("telethon")
     telethon.events = SimpleNamespace(NewMessage=lambda **kw: None)
     sys.modules["telethon"] = telethon

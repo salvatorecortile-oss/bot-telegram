@@ -457,6 +457,16 @@ def get_bot_positions():
         return [p for p in (mt5.positions_get(symbol=MT5_SYMBOL) or []) if _is_managed(p)]
 
 
+def account_snapshot():
+    """(saldo, equity) del conto collegato."""
+    _require_mt5()
+    with _MT5_LOCK:
+        account = mt5.account_info()
+        if account is None:
+            raise RuntimeError(f"Account MT5 non disponibile: {mt5.last_error()}")
+        return float(account.balance), float(account.equity)
+
+
 def server_time():
     """Ora del server MT5 (secondi), per confrontarla con position.time. 0 se non disponibile."""
     _require_mt5()

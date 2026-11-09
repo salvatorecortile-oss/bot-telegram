@@ -53,7 +53,8 @@ async def master():
     mt5.broker_close(r11["position_ticket"], 4110.00, mt5.DEAL_REASON_EXPERT)   # chiusa a mano su MT5
     await _pass(main.monitor_closures)
     events = [(e["source_message_id"], e["kind"], e["value"]) for e in sync.read_after(0)]
-    assert events == [(10, "SL", 4200.0), (10, "BE", None), (10, "TP", 4000.0), (11, "CLOSE", None)], events
+    assert events == [(10, "OPEN", None), (11, "OPEN", None), (10, "SL", 4200.0), (10, "BE", None),
+                      (10, "TP", 4000.0), (11, "CLOSE", None)], events
     print("OK - master: scrive", events)
 
 

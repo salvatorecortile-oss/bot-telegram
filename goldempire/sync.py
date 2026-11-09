@@ -35,7 +35,10 @@ def _connect():
 
 
 def publish(source_message_id, kind, value=None):
-    """Solo il master scrive. kind: CLOSE | SL (value=prezzo) | BE | TP (value=prezzo, 0=nessuno)."""
+    """
+    Solo il master scrive. kind: OPEN / SKIP (segnale aperto o no), CLOSE,
+    SL (value=prezzo), BE, TP (value=prezzo, 0=nessuno).
+    """
     if not IS_MASTER:
         return
     with _connect() as conn:
@@ -44,6 +47,17 @@ def publish(source_message_id, kind, value=None):
             (int(source_message_id), kind, None if value is None else float(value),
              datetime.now(timezone.utc).isoformat()),
         )
+
+
+def find_decision(source_message_id):
+    """Cosa ha deciso il principale su un segnale: 'OPEN', 'SKIP' o None (non ancora)."""
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT kind FROM sync_events WHERE source_message_id = ? AND kind IN ('OPEN', 'SKIP') "
+            "ORDER BY id DESC LIMIT 1",
+            (int(source_message_id),),
+        ).fetchone()
+        return row["kind"] if row else None
 
 
 def read_after(last_id):

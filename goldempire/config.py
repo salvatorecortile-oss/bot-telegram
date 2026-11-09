@@ -51,6 +51,27 @@ PUBLISH_TO_CHANNEL = _bool("PUBLISH_TO_CHANNEL", "true")
 SYNC_FILE = os.getenv("SYNC_FILE", "").strip()
 SYNC_ROLE = os.getenv("SYNC_ROLE", "").strip().lower()
 
+# ---- Regole di apertura (valgono sul conto principale / bot senza SYNC) ----
+def _families(name, default):
+    return {int(float(n)) for n in os.getenv(name, default).replace(";", ",").split(",") if n.strip()}
+
+
+# Massimo operazioni aperte per direzione (2 = max 2 BUY e 2 SELL). 0 = nessun limite.
+MAX_PER_DIRECTION = int(os.getenv("MAX_PER_DIRECTION", "2") or 0)
+# Una sola operazione per famiglia di segnale e direzione (tutti i 5.x = famiglia 5).
+ONE_PER_FAMILY = _bool("ONE_PER_FAMILY", "true")
+# Segnali a priorita' bassa: si aprono solo se nella loro direzione non c'e' nulla di aperto.
+LOW_PRIORITY_SIGNALS = _families("LOW_PRIORITY_SIGNALS", "4")
+# Segnali da non aprire mai (es. EXCLUDED_SIGNALS=4).
+EXCLUDED_SIGNALS = _families("EXCLUDED_SIGNALS", "")
+
+# ---- Protezione del conto (pausa automatica; 0 = disattivata) ----
+RISK_DAILY_LOSS_PCT = float(os.getenv("RISK_DAILY_LOSS_PCT", "6") or 0)
+RISK_MONTHLY_LOSS_PCT = float(os.getenv("RISK_MONTHLY_LOSS_PCT", "20") or 0)
+
+# Copia (SYNC_ROLE=follower): secondi di attesa della conferma di apertura del principale.
+FOLLOW_WAIT_SECONDS = float(os.getenv("FOLLOW_WAIT_SECONDS", "20"))
+
 # Comandi da "Messaggi salvati" (es. bot3_status, bot3_pausa ...). Non usare bot2_ (e' dell'altro bot).
 COMMAND_PREFIX = os.getenv("COMMAND_PREFIX", "bot3_").strip().lower()
 
