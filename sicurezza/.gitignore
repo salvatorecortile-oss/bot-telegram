@@ -8,3 +8,5 @@ report/*
 logs/*
 !logs/.gitkeep
 __pycache__/
+# Testo personale del messaggio di benvenuto
+benvenuto.txt

@@ -102,8 +102,29 @@ Deve restare aperto (come gli altri bot). Su VPS/PC che resta acceso puoi usare 
 - **Sbagliato** → può riprovare (`CAPTCHA_TENTATIVI`, default 2). Finiti i tentativi la richiesta viene **rifiutata**.
 - **Nessuna risposta** entro `CAPTCHA_TIMEOUT_SECONDS` (default 3 minuti) → **rifiutata**.
 - Chi viene rifiutato può riprovare cliccando di nuovo il link.
+- Se hai creato il file `benvenuto.txt`, dopo il captcha superato il bot manda in privato **il tuo messaggio di benvenuto** (vedi sotto).
 - Se il guardiano è spento, le richieste restano in attesa: le approvi tu a mano dal canale (*Richieste di accesso*).
 - Se il bot non riesce a scrivere alla persona, la richiesta resta in attesa e ti avvisa: decidi tu.
+
+### Messaggio di benvenuto personale (facoltativo)
+
+Dopo il captcha superato il bot può mandare in privato un tuo messaggio (regole, link utili, avvisi anti-truffa...).
+
+```bat
+copy benvenuto.esempio.txt benvenuto.txt
+notepad benvenuto.txt
+```
+
+Scrivi il testo come un messaggio normale: a capo, emoji e link funzionano.
+- `{nome}` viene sostituito con il nome della persona, `{chat}` con il nome della community.
+- Le righe che iniziano con `#` sono note e non vengono mandate.
+- Puoi cambiarlo anche con il guardiano acceso: viene riletto ogni volta.
+- Se `benvenuto.txt` non c'è o è vuoto, nessun messaggio.
+- Il messaggio parte **prima** dell'approvazione: finché la richiesta è aperta Telegram permette al bot di scrivere.
+  Non alzare `CAPTCHA_TIMEOUT_SECONDS` sopra 240 (4 minuti): Telegram dà al bot circa 5 minuti per scrivere a chi ha fatto richiesta.
+
+> Il bot può scrivere in privato **solo** a chi chiede di entrare (o a chi gli scrive /start).
+> Non può mandare messaggi agli iscritti già presenti: è una regola di Telegram contro lo spam.
 
 Log in `logs\guardiano.log`.
 
@@ -113,4 +134,5 @@ Log in `logs\guardiano.log`.
 python tests/test_analisi.py
 python tests/test_captcha.py
 python tests/test_report.py
+python tests/test_benvenuto.py
 ```

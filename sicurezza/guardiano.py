@@ -8,7 +8,8 @@ attivo (vedi README). Chi usa quel link non entra subito: manda una richiesta.
 2. Pulsante giusto       -> richiesta APPROVATA, la persona entra.
 3. Sbagliato troppe volte o tempo scaduto -> richiesta RIFIUTATA
    (puo' riprovare cliccando di nuovo il link).
-4. Ti avvisa in privato (ADMIN_USER_ID) con il punteggio di sospetto.
+4. Se esiste benvenuto.txt, manda in privato il tuo messaggio di benvenuto.
+5. Ti avvisa in privato (ADMIN_USER_ID) con il punteggio di sospetto.
 
 Il bot deve essere ADMIN della chat con il permesso "Invita utenti / Aggiungi iscritti".
 
@@ -23,6 +24,7 @@ from telethon import Button, TelegramClient, events, functions, types, utils
 from telethon.errors import RPCError
 
 import analisi
+import benvenuto
 import captcha
 from config import (
     ADMIN_USER_ID, API_HASH, API_ID, BASE_DIR, BOT_SESSION_NAME, BOT_TOKEN,
@@ -51,6 +53,9 @@ if not API_ID or not API_HASH or not BOT_TOKEN:
 
 bot = TelegramClient(str(BASE_DIR / BOT_SESSION_NAME), API_ID, API_HASH,
                      connection_retries=5, retry_delay=1, auto_reconnect=True)
+
+# Messaggio di benvenuto personale (vedi benvenuto.esempio.txt)
+BENVENUTO_FILE = BASE_DIR / "benvenuto.txt"
 
 # (user_id, chat_id) -> captcha.Sfida
 SFIDE = {}
@@ -111,6 +116,7 @@ async def nuova_richiesta(update):
 
     sfida = captcha.nuova_sfida(time.time(), CAPTCHA_TIMEOUT_SECONDS, CAPTCHA_TENTATIVI)
     sfida.dati.update(peer=peer, input_user=input_user, titolo=titolo, nome=nome_utente(user),
+                      nome_breve=getattr(user, "first_name", "") or "",
                       punteggio=val.punteggio, livello=val.livello, motivi=val.motivi)
     SFIDE[(user_id, chat_id)] = sfida
 
@@ -158,9 +164,17 @@ async def risposta(event):
 
     SFIDE.pop((user_id, chat_id), None)
     if esito == "ok":
-        await decidi(sfida, user_id, approva=True)
         await event.edit(f"✅ Fatto! Benvenuto in <b>{html.escape(sfida.dati['titolo'])}</b>.\n✅ Done, welcome!",
                          parse_mode="html")
+        # Il messaggio di benvenuto parte PRIMA dell'approvazione: finche' la
+        # richiesta e' aperta Telegram permette sempre al bot di scrivere.
+        testo = benvenuto.testo_benvenuto(BENVENUTO_FILE, sfida.dati.get("nome_breve", ""), sfida.dati["titolo"])
+        if testo:
+            try:
+                await bot.send_message(user_id, testo, link_preview=False)
+            except Exception as exc:
+                logger.warning("Messaggio di benvenuto non inviato a %s: %s", user_id, exc)
+        await decidi(sfida, user_id, approva=True)
         logger.info("APPROVATO: %s (ID %s) in %s", sfida.dati["nome"], user_id, sfida.dati["titolo"])
         await avvisa_admin(riassunto(sfida, user_id, "✅ <b>Entrato</b> (captcha superato)"))
     else:  # fallito o scaduto

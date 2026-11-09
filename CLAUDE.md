@@ -49,6 +49,7 @@ Sicurezza (dalla cartella `sicurezza`):
 python tests/test_analisi.py
 python tests/test_captcha.py
 python tests/test_report.py
+python tests/test_benvenuto.py
 ```
 
 Lancia i test del bot che hai modificato prima di fare commit.

@@ -1,0 +1,12 @@
+# Messaggio mandato in privato a chi supera il captcha.
+# Per usarlo: copia questo file in "benvenuto.txt" e scrivi il tuo testo.
+# Le righe che iniziano con # non vengono mandate.
+# {nome} = nome della persona, {chat} = nome della community.
+
+Ciao {nome}, benvenuto in {chat}! 🔥
+
+Qui trovi tutte le info per iniziare:
+- Leggi il messaggio fissato in alto
+- Per qualsiasi domanda scrivimi qui: @tuousername
+
+⚠️ Lo staff non ti chiederà MAI soldi o password in privato.
