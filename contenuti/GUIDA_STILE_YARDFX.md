@@ -1,6 +1,7 @@
 # Guida di stile video YardFX (@yard.fx)
 
 Libreria completa con le schede dei video modello: https://claude.ai/artifact/6yztDxv7dCxcrsRM5jqtHc
+Kit grafico e procedura di montaggio passo passo: `contenuti/yardfx_video/` (leggi `README.md`).
 
 Ogni nuovo video di riferimento va scomposto (fondo, testo, grafica, passaggi, ritmo, chiusura), aggiunto alla libreria
 e, se ha una tecnica utile, rifatto da zero in stile YardFX. Mai copiare loghi, musiche, foto o grafiche di altri creator.

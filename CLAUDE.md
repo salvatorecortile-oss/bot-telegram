@@ -16,6 +16,7 @@ Leggi questo file all'inizio di ogni sessione. Contiene il contesto del progetto
 | `goldempire/` | **Bot Gold Empire** (indipendente: suo `.env`, sua sessione, suo DB `data/goldempire.db`, suo MAGIC NUMBER). Legge il canale "Gold empire signals room", apre/gestisce le operazioni su MT5 e pubblica nel mio canale. Testi dei messaggi in `messages.py`, report in `reports.py`. Regole in `goldempire/README.md`. |
 | `ea/` | Expert Advisor MT5 in MQL5 (`ScalperM1_XAU`, `StraddleM1`) e i loro file `.set`. |
 | `factmachine/` | Bot per alpha.factmachine.com (Playwright): vota e apre l'operazione. |
+| `contenuti/` | **Video social YardFX** (@yard.fx): guida di stile `GUIDA_STILE_YARDFX.md` e kit di montaggio `yardfx_video/` (leggi il suo `README.md` prima di montare un video del calendario). |
 
 ## Regole importanti
 
