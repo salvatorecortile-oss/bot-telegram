@@ -373,3 +373,240 @@ def music_pad(dur, out, root=110.0):
     cmd += ['-filter_complex', '[0][1][2][3][4]amix=inputs=5:weights=0.9 0.6 0.45 0.4 0.15,tremolo=f=0.4:d=0.35,aecho=0.8:0.7:420|860:0.35|0.22,lowpass=f=1800,'
             f'afade=t=in:d=1.5,afade=t=out:st={dur - 2}:d=2,loudnorm=I=-16', '-c:a', 'aac', '-b:a', '160k', out]
     subprocess.run(cmd, check=True); return out
+
+# =====================================================================
+# I TRE MONDI (ogni video li alterna; le firme YardFX restano in tutti)
+#   NOTTE     (video 1 + 4): gancio, numeri, settimana  -> night_bg, rays, constellation, glow_icon, timeline_nodes, spotlight
+#   TERMINALE (video 2 + 5 + 6): dati, livelli, trade   -> term_bg, price_widget, ui_card, perspective, zoom_callout, prob_bars
+#   QUADERNO  (r601 + video 3): spiegare il perché      -> grid_paper, serif_heading, dashed_arrow (+ hand, icon, stamp)
+# =====================================================================
+SERIF, MONO, SANS = 'InstrumentSerif-Italic.ttf', 'JetBrainsMono-Bold.ttf', 'Inter-SemiBold.ttf'
+NAVY = (8, 11, 22); NAVY2 = (18, 26, 48); ICE = (150, 190, 255); TERM = (12, 13, 16); CARD = (24, 25, 30); CARD_LINE = (48, 50, 58)
+GRIDPAPER = (244, 242, 236); GRIDLINE = (214, 218, 222)
+
+def _vgrad(top, bot):
+    g = Image.linear_gradient('L').resize((W, H)); return Image.composite(Image.new('RGB', (W, H), bot), Image.new('RGB', (W, H), top), g)
+
+_NIGHT = None
+def night_bg(t, ray_origin=(W // 2, -200), rays=True):
+    """NOTTE: blu-nero profondo, raggi sottili che ruotano piano, costellazione che respira, griglia di particelle in basso"""
+    global _NIGHT
+    if _NIGHT is None:
+        b = _vgrad(NAVY, (4, 5, 10)); d = ImageDraw.Draw(b)
+        for gx in range(0, W, 36):                       # griglia di particelle (prospettiva semplice)
+            for k, gy in enumerate(range(1250, H, 34)):
+                a = min(1, (gy - 1250) / 500); c = int(30 + 40 * a)
+                d.ellipse((gx - 1.5, gy - 1.5, gx + 1.5, gy + 1.5), fill=(c // 2, c // 2 + 6, c + 20))
+        _NIGHT = b
+    img = _NIGHT.copy()
+    if rays:
+        lay = Image.new('L', (W, H), 0); ld = ImageDraw.Draw(lay); ox, oy = ray_origin
+        for i in range(28):
+            ang = math.pi / 2 + (i - 14) * 0.075 + 0.02 * math.sin(t * 0.4 + i)
+            ld.line([(ox, oy), (ox + 2600 * math.cos(ang), oy + 2600 * math.sin(ang))], fill=22 + (i % 3) * 8, width=2)
+        img = Image.composite(Image.new('RGB', (W, H), (60, 80, 140)), img, lay.filter(ImageFilter.GaussianBlur(1.2)))
+    constellation(img, t)
+    return img
+
+def constellation(img, t, seed=21, n=26, box=(0, 0, W, 1150)):
+    d = ImageDraw.Draw(img); r = random.Random(seed)
+    pts = [(r.uniform(box[0], box[2]), r.uniform(box[1], box[3])) for _ in range(n)]
+    for i, (x, y) in enumerate(pts):
+        for j in range(i + 1, n):
+            x2, y2 = pts[j]
+            if math.hypot(x - x2, y - y2) < 190: d.line([(x, y), (x2, y2)], fill=(34, 44, 72), width=1)
+    for i, (x, y) in enumerate(pts):
+        a = 0.5 + 0.5 * math.sin(t * 1.3 + i); s = 2 + 2 * a
+        d.ellipse((x - s, y - s, x + s, y + s), fill=tuple(int(v * (0.5 + 0.5 * a)) for v in ICE))
+
+def spotlight(img, cx, top_y, bottom_y, width=420, strength=90, col=(255, 220, 140)):
+    """faretto dall'alto su un oggetto (video 1)"""
+    m = Image.new('L', (W, H), 0)
+    ImageDraw.Draw(m).polygon([(cx - 40, top_y), (cx + 40, top_y), (cx + width / 2, bottom_y), (cx - width / 2, bottom_y)], fill=strength)
+    ImageDraw.Draw(m).ellipse((cx - width / 2, bottom_y - 40, cx + width / 2, bottom_y + 40), fill=strength + 30)
+    return Image.composite(Image.new('RGB', (W, H), col), img, m.filter(ImageFilter.GaussianBlur(40)))
+
+def glow_icon(img, name, cx, cy, size, prog, col=GOLD, w=6):
+    """icona a tratto PULITA (non tremolante) con bagliore: per i mondi Notte e Terminale"""
+    if prog <= 0: return img
+    m = Image.new('L', (W, H), 0); md = ImageDraw.Draw(m); paths = ICONS[name]; n = len(paths)
+    for j, path in enumerate(paths):
+        p = max(0, min(1, prog * n - j))
+        if p <= 0: continue
+        pts = [(cx + (x - 50) * size / 100, cy + (y - 50) * size / 100) for x, y in path]
+        if len(path) == 2 and abs(path[0][0] - path[1][0]) < 3:
+            md.ellipse((pts[0][0] - 8, pts[0][1] - 8, pts[0][0] + 8, pts[0][1] + 8), fill=255); continue
+        seg = [pts[0]]; L = sum(math.dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1)) * p
+        for i in range(len(pts) - 1):
+            dl = math.dist(pts[i], pts[i + 1])
+            if L >= dl: seg.append(pts[i + 1]); L -= dl
+            else:
+                f = L / dl if dl else 0; seg.append((pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f)); break
+        md.line(seg, fill=255, width=w, joint='curve')
+    img = Image.composite(Image.new('RGB', (W, H), tuple(int(v * 0.55) for v in col)), img, m.filter(ImageFilter.GaussianBlur(14)))
+    return Image.composite(Image.new('RGB', (W, H), col), img, m)
+
+def timeline_nodes(img, items, y, active, t, t0, x0=110, x1=970):
+    """linea del tempo con nodi luminosi (video 4): items=[('LUN','9',''),('MAR','10','CPI'),...]"""
+    a = ease((t - t0) / 0.6)
+    if a <= 0: return img
+    d = ImageDraw.Draw(img); n = len(items); xs = [x0 + (x1 - x0) * i / (n - 1) for i in range(n)]
+    d.line([(x0, y), (x0 + (x1 - x0) * a, y)], fill=(60, 72, 110), width=4)
+    if active is not None and a > 0.3: d.line([(x0, y), (xs[active], y)], fill=GOLD, width=4)
+    m = Image.new('L', (W, H), 0); md = ImageDraw.Draw(m)
+    for i, (g, num, tag) in enumerate(items):
+        if xs[i] > x0 + (x1 - x0) * a + 1: continue
+        hot = i == active; r = 22 if hot else (14 if tag else 9)
+        if hot or tag: md.ellipse((xs[i] - r - 14, y - r - 14, xs[i] + r + 14, y + r + 14), fill=200 if hot else 90)
+        d.ellipse((xs[i] - r, y - r, xs[i] + r, y + r), fill=GOLD if (hot or tag) else (70, 84, 130))
+        d.text((xs[i], y - 60), g, font=F(MONO, 30), fill=WHITE if hot else (120, 135, 175), anchor='mm')
+        d.text((xs[i], y + 62), num, font=F(BIG, 52), fill=WHITE if hot else (150, 160, 190), anchor='mm')
+        if tag: d.text((xs[i], y + 115), tag, font=F(MONO, 30), fill=GOLD, anchor='mm')
+    img = Image.composite(Image.new('RGB', (W, H), (140, 100, 30)), img, m.filter(ImageFilter.GaussianBlur(16)))
+    d = ImageDraw.Draw(img)
+    for i, (g, num, tag) in enumerate(items):
+        if xs[i] <= x0 + (x1 - x0) * a + 1 and (i == active or tag):
+            r = 22 if i == active else 14; d.ellipse((xs[i] - r, y - r, xs[i] + r, y + r), fill=GOLD)
+            if i == active: d.ellipse((xs[i] - 8, y - 8, xs[i] + 8, y + 8), fill=WHITE)
+    return img
+
+def mixed_title(d, parts, y, cx=W // 2):
+    """titolo misto (video 3 + 7): parts=[('oggi alle','serif',90,WHITE),('14:30','big',200,GOLD)] sulla stessa riga"""
+    fonts = {'serif': SERIF, 'big': BIG, 'cond': COND, 'mono': MONO}
+    ws = [d.textlength(s, font=F(fonts[k], sz)) for s, k, sz, c in parts]; sp = 24
+    x = cx - (sum(ws) + sp * (len(parts) - 1)) / 2
+    for (s, k, sz, c), wd in zip(parts, ws):
+        d.text((x, y), s, font=F(fonts[k], sz), fill=c, anchor='ls'); x += wd + sp
+
+# ---------- TERMINALE ----------
+_TERM = None
+def term_bg():
+    """TERMINALE: grafite scura con griglia sottile a punti"""
+    global _TERM
+    if _TERM is None:
+        _TERM = _vgrad((16, 17, 21), (9, 9, 11)); d = ImageDraw.Draw(_TERM)
+        for x in range(0, W, 54):
+            for y in range(0, H, 54): d.point((x, y), fill=(42, 44, 52))
+    return _TERM.copy()
+
+def price_widget(d, price, chg_pct, y=125, label='XAUUSD'):
+    """widget fisso del prezzo in alto a destra (video 5): resta uguale in tutte le scene Terminale"""
+    up = chg_pct >= 0; col = GREEN if up else RED
+    s = f"{price:,.1f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    x1 = W - 60; x0 = x1 - 330
+    d.rounded_rectangle((x0, y - 42, x1, y + 42), radius=14, fill=CARD, outline=CARD_LINE, width=2)
+    d.ellipse((x0 + 22, y - 7, x0 + 36, y + 7), fill=col)
+    d.text((x0 + 50, y - 14), label, font=F(MONO, 22), fill=MUTE, anchor='lm')
+    d.text((x0 + 50, y + 14), s, font=F(MONO, 30), fill=WHITE, anchor='lm')
+    arrow_ch = ('+' if up else '−') + f"{abs(chg_pct):.1f}%".replace('.', ',')
+    d.text((x1 - 22, y), arrow_ch, font=F(MONO, 28), fill=col, anchor='rm')
+
+def ui_card(rows, cols, title, w=900, highlight=None, col_w=None):
+    """scheda tipo app (calendario economico, MT5): rows=[[...celle...]], ritorna un'immagine RGBA da posare o mettere in prospettiva"""
+    rh = 96; h = 130 + rh * (len(rows) + 1) + 30
+    card = Image.new('RGBA', (w, h), (0, 0, 0, 0)); d = ImageDraw.Draw(card)
+    d.rounded_rectangle((0, 0, w - 1, h - 1), radius=26, fill=CARD + (255,), outline=CARD_LINE + (255,), width=3)
+    for i, c in enumerate([(255, 95, 86), (255, 189, 46), (39, 201, 63)]): d.ellipse((30 + i * 34, 34, 50 + i * 34, 54), fill=c)
+    d.text((w / 2, 44), title, font=F(MONO, 28), fill=MUTE, anchor='mm')
+    col_w = col_w or [w // len(cols)] * len(cols); xs = [40]
+    for cw in col_w[:-1]: xs.append(xs[-1] + cw)
+    y = 110
+    for x, c in zip(xs, cols): d.text((x, y + rh / 2), c, font=F(MONO, 24), fill=(110, 112, 124), anchor='lm')
+    d.line([(30, y + rh), (w - 30, y + rh)], fill=CARD_LINE, width=2)
+    for r, row in enumerate(rows):
+        yy = y + rh * (r + 1)
+        if r == highlight: d.rounded_rectangle((18, yy + 8, w - 18, yy + rh - 8), radius=16, fill=(52, 42, 18, 255))
+        for x, cell in zip(xs, row):
+            col = WHITE
+            if isinstance(cell, tuple): cell, col = cell
+            d.text((x, yy + rh / 2), cell, font=F(SANS, 38), fill=col, anchor='lm')
+        if r < len(rows) - 1: d.line([(30, yy + rh), (w - 30, yy + rh)], fill=(36, 38, 44), width=1)
+    card.info['row_y'] = [y + rh * (r + 1) for r in range(len(rows))]; card.info['rh'] = rh
+    return card
+
+def _coeffs(src, dst):
+    import numpy as np
+    A = []; B = []
+    for (x, y), (u, v) in zip(dst, src):
+        A.append([x, y, 1, 0, 0, 0, -u * x, -u * y]); A.append([0, 0, 0, x, y, 1, -v * x, -v * y]); B += [u, v]
+    return list(np.linalg.solve(np.array(A, float), np.array(B, float)))
+
+def perspective(img, layer, quad, shadow=True):
+    """posa un livello (es. ui_card) su un quadrilatero: quad = [alto-sx, alto-dx, basso-dx, basso-sx] (video 4: schermi in prospettiva 3D)"""
+    w, h = layer.size
+    c = _coeffs([(0, 0), (w, 0), (w, h), (0, h)], quad)
+    warped = layer.transform((W, H), Image.PERSPECTIVE, c, Image.BICUBIC)
+    if shadow:
+        sh = warped.getchannel('A').filter(ImageFilter.GaussianBlur(30)).point(lambda v: int(v * 0.6))
+        img.paste(Image.new('RGB', (W, H), (0, 0, 0)), (0, 30), sh)
+    img.paste(warped, (0, 0), warped); return img
+
+def map_point(layer, quad, x, y):
+    """dove finisce il punto (x,y) del livello dopo perspective()"""
+    w, h = layer.size; c = _coeffs([(0, 0), (w, 0), (w, h), (0, h)], quad)
+    import numpy as np
+    a, b, cc, dd, e, f, g, hh = c
+    M = np.array([[a, b, cc], [dd, e, f], [g, hh, 1]]); X = np.linalg.inv(M) @ np.array([x, y, 1]); return X[0] / X[2], X[1] / X[2]
+
+def zoom_callout(img, src_box, dst_center, scale, prog, ring=GOLD):
+    """lente di ingrandimento (video 2): ritaglia src_box, lo ingrandisce dentro un riquadro oro con linea di collegamento"""
+    if prog <= 0: return img
+    a = ease(prog); crop = img.crop(tuple(int(v) for v in src_box))
+    cw, ch = int(crop.width * scale * (0.7 + 0.3 * a)), int(crop.height * scale * (0.7 + 0.3 * a)); crop = crop.resize((cw, ch), Image.LANCZOS)
+    x, y = int(dst_center[0] - cw / 2), int(dst_center[1] - ch / 2)
+    d = ImageDraw.Draw(img)
+    d.line([((src_box[0] + src_box[2]) / 2, src_box[3]), (dst_center[0], y)], fill=ring, width=3)
+    d.rounded_rectangle(src_box, radius=12, outline=ring, width=4)
+    m = Image.new('L', (cw, ch), 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, cw - 1, ch - 1), radius=22, fill=255)
+    img.paste(crop, (x, y), m); ImageDraw.Draw(img).rounded_rectangle((x, y, x + cw, y + ch), radius=22, outline=ring, width=6)
+    return img
+
+def chip(d, s, xy, ok=True):
+    """etichetta ✓ / ✕ (video 2)"""
+    col = GREEN if ok else RED; f = F(COND, 44); tw = d.textlength(s, font=f); x, y = xy
+    d.rounded_rectangle((x, y - 34, x + tw + 90, y + 34), radius=34, fill=tuple(int(v * 0.25) for v in col), outline=col, width=3)
+    icon(d, 'spunta' if ok else 'croce', x + 36, y, 34, 1, col, 6, 3); d.text((x + 66, y), s, font=f, fill=col, anchor='lm')
+
+def prob_bars(d, items, box, t, t0):
+    """barre orizzontali di scenario (video 5): items=[('CPI SOPRA 3,7%','oro ↓',62,RED), ...] valori 0-100"""
+    x0, y0, x1, y1 = box; a = ease((t - t0) / 0.4)
+    if a <= 0: return
+    d.rounded_rectangle(box, radius=24, fill=CARD, outline=CARD_LINE, width=2)
+    for i, (lab, eff, v, col) in enumerate(items):
+        y = y0 + 70 + i * 130; b = ease((t - t0 - 0.3 - i * 0.25) / 0.8)
+        d.text((x0 + 40, y), lab, font=F(COND, 46), fill=WHITE, anchor='lm'); d.text((x1 - 40, y), eff, font=F(COND, 46), fill=col, anchor='rm')
+        d.rounded_rectangle((x0 + 40, y + 34, x1 - 40, y + 58), radius=12, fill=(40, 42, 50))
+        d.rounded_rectangle((x0 + 40, y + 34, x0 + 40 + (x1 - x0 - 80) * v / 100 * b, y + 58), radius=12, fill=col)
+
+# ---------- QUADERNO ----------
+_GRID = None
+def grid_paper():
+    """QUADERNO: carta a quadretti (video 3) con grana leggera"""
+    global _GRID
+    if _GRID is None:
+        _GRID = Image.new('RGB', (W, H), GRIDPAPER); d = ImageDraw.Draw(_GRID)
+        for x in range(0, W, 54): d.line([(x, 0), (x, H)], fill=GRIDLINE, width=1)
+        for y in range(0, H, 54): d.line([(0, y), (W, y)], fill=GRIDLINE, width=1)
+        r = random.Random(5)
+        for _ in range(6000):
+            v = r.randint(-8, 4); d.point((r.uniform(0, W), r.uniform(0, H)), fill=tuple(max(0, min(255, c + v)) for c in GRIDPAPER))
+    return _GRID.copy()
+
+def serif_heading(d, num_word, title, y, col=INK, accent=GOLDK, prog=1.0):
+    """titolo numerato elegante (video 3): 'due:' in corsivo graziato + titolo in bastone grosso"""
+    if prog <= 0: return
+    a = ease(prog); f1 = F(SERIF, 96); f2 = F(BIG, 96)
+    w1 = d.textlength(num_word, font=f1); w2 = d.textlength(title, font=f2); x = W / 2 - (w1 + 24 + w2) / 2
+    d.text((x, y), num_word, font=f1, fill=accent, anchor='ls')
+    d.text((x + w1 + 24, y), title, font=f2, fill=col if a >= 1 else fade(col, a, GRIDPAPER), anchor='ls')
+
+def dashed_arrow(d, x0, y0, x1, y1, prog, col=INK, w=5, dash=18):
+    """freccia tratteggiata dritta (video 3)"""
+    if prog <= 0: return
+    L = math.hypot(x1 - x0, y1 - y0) * min(1, prog); ux, uy = (x1 - x0) / math.hypot(x1 - x0, y1 - y0), (y1 - y0) / math.hypot(x1 - x0, y1 - y0)
+    s = 0
+    while s < L:
+        e = min(L, s + dash); d.line([(x0 + ux * s, y0 + uy * s), (x0 + ux * e, y0 + uy * e)], fill=col, width=w); s += dash * 1.8
+    if prog >= 0.98:
+        a = math.atan2(y1 - y0, x1 - x0)
+        d.polygon([(x1, y1), (x1 - 30 * math.cos(a - 0.45), y1 - 30 * math.sin(a - 0.45)), (x1 - 30 * math.cos(a + 0.45), y1 - 30 * math.sin(a + 0.45))], fill=col)
