@@ -53,11 +53,13 @@ def format_alert(level, category, title_it, summary_it, source, num_sources, lin
     return "\n".join(lines)
 
 
-def format_morning(now, recap):
+def format_morning(now, recap, weekend=False):
     """
     Messaggio del buongiorno + riepilogo.
     recap = lista di dict con: category, title_it, source, link
+    weekend = True il lunedì: il riepilogo copre tutto il fine settimana.
     """
+    periodo = "del weekend" if weekend else "di ieri"
     frase = FRASI_BUONGIORNO[now.timetuple().tm_yday % len(FRASI_BUONGIORNO)]
     lines = [
         "☀️ <b>Buongiorno a tutti!</b>",
@@ -67,9 +69,12 @@ def format_morning(now, recap):
         "",
     ]
     if not recap:
-        lines.append("📰 Ieri nessuna notizia di rilievo: giornata tranquilla sui mercati.")
+        if weekend:
+            lines.append("📰 Nel weekend nessuna notizia di rilievo: mercati tranquilli.")
+        else:
+            lines.append("📰 Ieri nessuna notizia di rilievo: giornata tranquilla sui mercati.")
     else:
-        lines.append("📰 <b>Queste sono le notizie più importanti di ieri:</b>")
+        lines.append(f"📰 <b>Queste sono le notizie più importanti {periodo}:</b>")
         for number, r in enumerate(recap, start=1):
             label = CATEGORY_LABELS.get(r["category"], "📰").split(" ")[0]
             lines += ["", f"{number}. {label} {_link(r['title_it'], r['link'])} <i>({escape(r['source'])})</i>"]

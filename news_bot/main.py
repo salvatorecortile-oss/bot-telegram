@@ -20,7 +20,7 @@ from telethon import TelegramClient, errors
 import calendario
 import config
 import messages
-from news_engine import NewsEngine, fetch_all
+from news_engine import NewsEngine, fetch_all, recap_days_back
 from storage import Storage
 from translator import to_italian
 
@@ -161,16 +161,19 @@ class NewsBot:
 
     # ---------- buongiorno delle 6:00 ----------
     async def send_morning(self, now_local):
+        # Quanti giorni sono passati dall'ultimo riepilogo (lunedì: 3, da venerdì).
+        days = recap_days_back(now_local.weekday(), config.RECAP_DAYS)
         recap = []
-        for info in self.engine.recap():
+        for info in self.engine.recap(window_hours=24 * days):
             recap.append({
                 "category": info["category"],
                 "title_it": await asyncio.to_thread(to_italian, info["title"]),
                 "source": info["source"],
                 "link": info["link"],
             })
-        await self.send(messages.format_morning(now_local, recap))
-        log.info("Buongiorno inviato con %d notizie nel riepilogo.", len(recap))
+        await self.send(messages.format_morning(now_local, recap, weekend=days > 1))
+        log.info("Buongiorno inviato con %d notizie nel riepilogo (ultimi %d giorni).",
+                 len(recap), days)
 
     async def morning_loop(self):
         while True:
@@ -183,7 +186,9 @@ class NewsBot:
                 today = now_local.date().isoformat()
                 # Finestra di 1 ora: se il PC era spento alle 6:00 ma riparte
                 # entro le 7:00, il buongiorno viene comunque inviato una volta.
-                if (start <= now_local < start + timedelta(hours=1)
+                # Sabato e domenica (giorni fuori da RECAP_DAYS) niente buongiorno.
+                if (now_local.weekday() in config.RECAP_DAYS
+                        and start <= now_local < start + timedelta(hours=1)
                         and self.storage.get_meta("last_morning") != today):
                     await self.send_morning(now_local)
                     self.storage.set_meta("last_morning", today)

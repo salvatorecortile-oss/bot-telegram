@@ -166,6 +166,43 @@ def test_no_duplicate_alerts():
         storage.db.close()
 
 
+def test_recap_rules():
+    from news_engine import recap_days_back
+    weekdays = {0, 1, 2, 3, 4}
+    assert recap_days_back(0, weekdays) == 3, "lunedì: tutto il weekend da venerdì"
+    assert recap_days_back(1, weekdays) == 1
+    assert recap_days_back(4, weekdays) == 1
+
+    with tempfile.TemporaryDirectory() as tmp:
+        storage = Storage(Path(tmp) / "t.db")
+        engine = NewsEngine(storage)
+        engine.ingest([item("a", "Iran launches missiles at US base in Iraq", "Reuters", tier=1)])
+        sent = engine.recap()[0]
+        storage.mark_sent(sent["story_id"], time.time())
+        # Stesso fatto, altra testata e altre parole: non deve finire nel riepilogo
+        engine.ingest([
+            item("b", "Pentagon says Iranian missiles hit US base in Iraq", "CNN", tier=2),
+            item("c", "Fed holds rates steady, Powell signals cuts later this year", "Reuters", tier=1),
+            item("d", "Houthis attack oil tankers in the Red Sea", "Reuters", tier=1),
+        ])
+        titles = [i["title"] for i in engine.recap()]
+        assert not any("missiles" in t for t in titles), "doppione di una ULTIM'ORA"
+        assert len(titles) == 2, "meno di 5: i doppioni non vengono sostituiti"
+        # Il lunedì il riepilogo guarda indietro di 3 giorni
+        old = item("e", "China announces new tariffs on US goods", "Reuters", tier=1, age=50 * 3600)
+        storage.add_item(old, storage.new_story(time.time() - 50 * 3600),
+                         classifier.base_score(old["title"], 1), time.time() - 50 * 3600)
+        assert not any("China" in i["title"] for i in engine.recap())
+        assert any("China" in i["title"] for i in engine.recap(window_hours=72))
+        storage.db.close()
+
+    weekend = messages.format_morning(datetime(2026, 11, 9, 6, 0), [], weekend=True)
+    assert "Nel weekend nessuna notizia" in weekend
+    monday = messages.format_morning(datetime(2026, 11, 9, 6, 0), [
+        {"category": "macro", "title_it": "La Fed", "source": "Reuters", "link": "https://r"}], weekend=True)
+    assert "notizie più importanti del weekend" in monday
+
+
 def test_translator():
     import translator
 
@@ -227,6 +264,6 @@ def test_messages():
 
 
 if __name__ == "__main__":
-    for test in (test_classifier, test_real_headlines, test_market_relevance, test_parse_feed, test_engine, test_no_duplicate_alerts, test_translator, test_calendar, test_messages):
+    for test in (test_classifier, test_real_headlines, test_market_relevance, test_parse_feed, test_engine, test_no_duplicate_alerts, test_recap_rules, test_translator, test_calendar, test_messages):
         test()
         print("OK", test.__name__)

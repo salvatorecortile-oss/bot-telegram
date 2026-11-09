@@ -41,6 +41,10 @@ NEWS_CHANNEL = int(os.getenv("NEWS_CHANNEL", "0"))
 TIMEZONE = os.getenv("TIMEZONE", "Europe/Rome")
 MORNING_HOUR = int(os.getenv("MORNING_HOUR", "6"))
 MORNING_MINUTE = int(os.getenv("MORNING_MINUTE", "0"))
+# Giorni in cui esce il buongiorno con il riepilogo: 0 = lunedì ... 6 = domenica.
+# Di base lunedì-venerdì. Il primo giorno dopo una pausa (es. lunedì) il riepilogo
+# copre tutto il periodo saltato (venerdì mattina -> lunedì mattina).
+RECAP_DAYS = {int(d) for d in os.getenv("RECAP_DAYS", "0,1,2,3,4").split(",") if d.strip()}
 
 # Calendario economico della settimana (solo USD).
 # WEEKLY_DAY: 0 = lunedì, 1 = martedì, ... 6 = domenica.

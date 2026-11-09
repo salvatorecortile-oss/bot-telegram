@@ -26,6 +26,17 @@ def fetch_all(feeds=FEEDS):
     return items
 
 
+def recap_days_back(weekday, recap_days):
+    """
+    Quanti giorni copre il riepilogo di oggi: 1 di solito, 3 il lunedì
+    (sabato e domenica non c'è riepilogo, quindi si riparte da venerdì).
+    """
+    days = 1
+    while days < 7 and (weekday - days) % 7 not in recap_days:
+        days += 1
+    return days
+
+
 class NewsEngine:
     def __init__(self, storage):
         self.storage = storage
@@ -114,18 +125,31 @@ class NewsEngine:
         out.sort(key=lambda i: i["score"], reverse=True)
         return out
 
-    def recap(self, now=None):
-        """Notizie per il riepilogo del mattino (ultime 24 ore)."""
+    def recap(self, now=None, window_hours=None):
+        """
+        Notizie per il riepilogo del mattino (di base ultime 24 ore; il lunedì
+        tutto il weekend). Massimo RECAP_MAX_ITEMS, ma anche meno: le notizie
+        già uscite come ULTIM'ORA, o che parlano dello stesso fatto, vengono tolte
+        e non sostituite.
+        """
         now = now or time.time()
-        since = now - config.RECAP_WINDOW_HOURS * 3600
+        since = now - (window_hours or config.RECAP_WINDOW_HOURS) * 3600
+        already_sent = [classifier.keywords(t) for t in self.storage.sent_titles_since(since)]
         infos = []
         for story in self.storage.stories_since(since):
             # Le notizie già uscite come ULTIM'ORA non si ripetono nel riepilogo.
-            # (sent_at = 0 vuol dire solo "vista al primo avvio", non inviata.)
+            # (sent_at = 0 vuol dire solo "non inviata come ULTIM'ORA".)
             if story["sent_at"] is not None and story["sent_at"] >= 1:
                 continue
             info = self.story_info(story["id"])
-            if info and info["score"] >= config.RECAP_THRESHOLD:
-                infos.append(info)
+            if not info or info["score"] < config.RECAP_THRESHOLD:
+                continue
+            info["words"] = set()
+            for row in self.storage.story_items(story["id"]):
+                info["words"] |= classifier.keywords(row["title"])
+            infos.append(info)
         infos.sort(key=lambda i: i["score"], reverse=True)
-        return infos[: config.RECAP_MAX_ITEMS]
+        top = infos[: config.RECAP_MAX_ITEMS]
+        # Tra le prime 5, togli i doppioni di una ULTIM'ORA (anche scritti diversamente).
+        return [i for i in top
+                if not any(classifier.similar_story(i["words"], sent) for sent in already_sent)]

@@ -3,7 +3,8 @@
 Bot **solo notizie**: niente MT5, niente trade.
 Pubblica nel canale Community, con il tuo account Telegram (Telethon, **non** BotFather):
 
-- ☀️ **ogni mattina alle 6:00** il messaggio di buongiorno con il riepilogo delle notizie più importanti delle ultime 24 ore;
+- ☀️ **dal lunedì al venerdì alle 6:00** il buongiorno con il riepilogo (massimo 5 notizie, senza
+  doppioni delle ULTIM'ORA); il lunedì il riepilogo copre tutto il weekend; sabato e domenica niente riepilogo;
 - 🚨 **subito**, durante il giorno, ogni notizia davvero importante, tradotta in italiano;
 - 🌙 la sera **nessun** riepilogo.
 
