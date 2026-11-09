@@ -336,8 +336,8 @@ def checklist(d, items, box, t, t0, dt=0.55, dark=True):
         c = ease((t - t0 - 0.4 - dt * i) / 0.35)
         if c <= 0: continue
         y = y0 + 80 + i * 92
-        d.text((x0 + 70, y), it, font=F(COND, 60), fill=WHITE if dark else INK, anchor='lm')
-        icon(d, 'spunta', x1 - 90, y, 70, c, GREEN, 9, 50 + i)
+        icon(d, 'spunta', x0 + 70, y, 60, c, GREEN, 9, 50 + i)
+        d.text((x0 + 125, y), it, font=F(COND, 60), fill=WHITE if dark else INK, anchor='lm')
 
 def big_counter(img, value, xy, size, col, t, t0, dur=1.2, fmt='{:+,.0f}', halo=(30, 80, 50)):
     """numero che conta da 0 al valore con alone (pips, percentuali)"""
@@ -610,3 +610,145 @@ def dashed_arrow(d, x0, y0, x1, y1, prog, col=INK, w=5, dash=18):
     if prog >= 0.98:
         a = math.atan2(y1 - y0, x1 - x0)
         d.polygon([(x1, y1), (x1 - 30 * math.cos(a - 0.45), y1 - 30 * math.sin(a - 0.45)), (x1 - 30 * math.cos(a + 0.45), y1 - 30 * math.sin(a + 0.45))], fill=col)
+
+# =====================================================================
+# ELEMENTI PER GLI ALTRI FORMATI (recap, journal, lezione, mindset, meme, CTA)
+# =====================================================================
+def trade_card(img, xy, side, entry, sl, tp, result, prog=1.0, w=900, symbol='XAUUSD'):
+    """scheda di un trade stile app (recap / journal): side 'BUY'/'SELL', result es. '+320 pips' o '−250 pips'"""
+    a = ease(prog)
+    if a <= 0: return img
+    win = not result.strip().startswith(('−', '-')); col = GREEN if win else RED
+    h = 300; card = Image.new('RGBA', (w, h), (0, 0, 0, 0)); d = ImageDraw.Draw(card)
+    d.rounded_rectangle((0, 0, w - 1, h - 1), radius=26, fill=CARD + (255,), outline=col + (255,), width=4)
+    sc = GREEN if side.upper() == 'BUY' else RED
+    d.rounded_rectangle((32, 30, 160, 82), radius=12, fill=sc); d.text((96, 56), side.upper(), font=F(COND, 40), fill=DARK, anchor='mm')
+    d.text((185, 56), symbol, font=F(MONO, 36), fill=WHITE, anchor='lm')
+    d.text((w - 36, 56), result, font=F(BIG, 64), fill=col, anchor='rm')
+    for i, (lab, v, c) in enumerate([('ENTRY', entry, GOLD), ('SL', sl, RED), ('TP', tp, GREEN)]):
+        x = 40 + i * (w - 80) / 3
+        d.text((x, 150), lab, font=F(MONO, 26), fill=MUTE, anchor='lm'); d.text((x, 205), v, font=F(SANS, 46), fill=c, anchor='lm')
+    d.rounded_rectangle((40, 250, w - 40, 262), radius=6, fill=(40, 42, 50)); d.rounded_rectangle((40, 250, 40 + (w - 80) * a, 262), radius=6, fill=col)
+    x, y = xy; x = x + 80 * (1 - a)
+    if a < 1: card.putalpha(card.getchannel('A').point(lambda v: int(v * a)))
+    img.paste(card, (int(x - w / 2), int(y - h / 2)), card); return img
+
+def equity_curve(img, values, box, prog, label=None, col=GOLD):
+    """curva cumulata (pips o saldo) che si disegna con area sfumata e punto finale luminoso"""
+    x0, y0, x1, y1 = box; n = len(values); lo, hi = min(min(values), 0), max(values)
+    X = lambda i: x0 + (x1 - x0) * i / (n - 1); Y_ = lambda v: y1 - (v - lo) / (hi - lo or 1) * (y1 - y0)
+    k = (n - 1) * ease(prog); pts = [(X(i), Y_(values[i])) for i in range(int(k) + 1)]
+    if int(k) < n - 1:
+        f = k - int(k); i = int(k); pts.append((X(i) + (X(i + 1) - X(i)) * f, Y_(values[i]) + (Y_(values[i + 1]) - Y_(values[i])) * f))
+    d = ImageDraw.Draw(img); d.line([(x0, Y_(0)), (x1, Y_(0))], fill=(70, 70, 80), width=2)
+    if len(pts) < 2: return img
+    m = Image.new('L', (W, H), 0); ImageDraw.Draw(m).polygon(pts + [(pts[-1][0], y1), (pts[0][0], y1)], fill=70)
+    img = Image.composite(Image.new('RGB', (W, H), col), img, m.filter(ImageFilter.GaussianBlur(6)))
+    gl = Image.new('L', (W, H), 0); ImageDraw.Draw(gl).line(pts, fill=255, width=10, joint='curve')
+    img = Image.composite(Image.new('RGB', (W, H), col), img, gl.filter(ImageFilter.GaussianBlur(10)).point(lambda v: v // 2))
+    d = ImageDraw.Draw(img); d.line(pts, fill=col, width=8, joint='curve')
+    ex, ey = pts[-1]; d.ellipse((ex - 14, ey - 14, ex + 14, ey + 14), fill=WHITE, outline=col, width=5)
+    if label and prog >= 1: d.text((ex - 20, ey - 50), label, font=F(BIG, 70), fill=col, anchor='rs')
+    return img
+
+def dial(img, cx, cy, r, value, prog, label, segments=10, col=GOLD):
+    """quadrante a segmenti (video 1): rischio, volatilità, fiducia… value 0-100"""
+    d = ImageDraw.Draw(img); on = int(segments * value / 100 * ease(prog) + 0.5)
+    for i in range(segments):
+        a0 = 150 + i * 240 / segments + 2; a1 = 150 + (i + 1) * 240 / segments - 2
+        c = (RED if i >= segments * 0.7 else col) if i < on else (50, 52, 62)
+        d.arc((cx - r, cy - r, cx + r, cy + r), a0, a1, fill=c, width=int(r * 0.22))
+    d.text((cx, cy), f"{int(value * ease(prog))}%", font=F(BIG, int(r * 0.6)), fill=WHITE, anchor='mm')
+    d.text((cx, cy + r * 0.62), label, font=F(MONO, int(r * 0.17)), fill=MUTE, anchor='mm'); return img
+
+def notification(img, app, title, body, y, prog, col=GOLD):
+    """notifica che scende dall'alto (video 2): es. ('MT5', 'Take profit raggiunto', 'XAUUSD +320 pips')"""
+    a = ease(prog)
+    if a <= 0: return img
+    yy = y - 260 * (1 - a); x0, x1 = 70, W - 70
+    lay = Image.new('RGBA', (W, H), (0, 0, 0, 0)); d = ImageDraw.Draw(lay)
+    d.rounded_rectangle((x0, yy, x1, yy + 170), radius=34, fill=(36, 37, 44, 245), outline=(70, 72, 82, 255), width=2)
+    d.rounded_rectangle((x0 + 30, yy + 35, x0 + 130, yy + 135), radius=24, fill=col)
+    gold_mini = [(x0 + 80, yy + 50), (x0 + 80, yy + 120)]; d.line(gold_mini, fill=DARK, width=5); d.rectangle((x0 + 66, yy + 66, x0 + 94, yy + 104), fill=DARK)
+    d.text((x0 + 160, yy + 52), app, font=F(MONO, 26), fill=MUTE, anchor='lm'); d.text((x1 - 34, yy + 52), 'ora', font=F(MONO, 26), fill=MUTE, anchor='rm')
+    d.text((x0 + 160, yy + 95), title, font=F(SANS, 40), fill=WHITE, anchor='lm'); d.text((x0 + 160, yy + 138), body, font=F(SANS, 34), fill=(190, 192, 200), anchor='lm')
+    img.paste(lay, (0, 0), lay); return img
+
+def phone(img, screen, cx, cy, h=1100, tilt=0.0):
+    """smartphone (anche inclinato, tilt -0.15..0.15) con dentro uno schermo (immagine RGB qualsiasi, es. grafico o scheda)"""
+    w = int(h * 0.49); body = Image.new('RGBA', (w, h), (0, 0, 0, 0)); d = ImageDraw.Draw(body)
+    d.rounded_rectangle((0, 0, w - 1, h - 1), radius=70, fill=(28, 28, 32, 255), outline=(90, 90, 100, 255), width=4)
+    sw, sh = w - 36, h - 36; scr = screen.convert('RGB').resize((sw, sh)); m = Image.new('L', (sw, sh), 0); ImageDraw.Draw(m).rounded_rectangle((0, 0, sw - 1, sh - 1), radius=56, fill=255)
+    body.paste(scr, (18, 18), m); d.rounded_rectangle((w / 2 - 70, 34, w / 2 + 70, 66), radius=16, fill=(10, 10, 12, 255))
+    k = tilt * w
+    quad = [(cx - w / 2 + k, cy - h / 2 + abs(k) * 0.4), (cx + w / 2 + k, cy - h / 2 - abs(k) * 0.4), (cx + w / 2 - k, cy + h / 2 + abs(k) * 0.4), (cx - w / 2 - k, cy + h / 2 - abs(k) * 0.4)]
+    return perspective(img, body, quad)
+
+def quote(d, lines, y, size=120, col=WHITE, accent=GOLD, bg=DARK):
+    """citazione elegante per mindset: virgolette grandi in corsivo + righe; la riga che inizia con '*' va in oro bastone"""
+    d.text((W / 2, y - size * 0.6), '“', font=F(SERIF, size * 2), fill=accent, anchor='mm')
+    yy = y + size * 0.5
+    for ln in lines:
+        if ln.startswith('*'): d.text((W / 2, yy), ln[1:], font=F(BIG, int(size * 1.05)), fill=accent, anchor='mm'); yy += size * 1.15
+        else: d.text((W / 2, yy), ln, font=F(SERIF, size), fill=col, anchor='mm'); yy += size * 1.0
+
+def split_meme(top, bottom, top_label, bottom_label, prog=1.0):
+    """meme a due metà (es. 'io alle 14:29' / 'io alle 14:31'): top e bottom sono immagini 1080x1920 (vengono ritagliate a metà)"""
+    out = Image.new('RGB', (W, H), DARK)
+    out.paste(top.crop((0, H // 4, W, H // 4 + H // 2)), (0, 0))
+    if prog > 0: out.paste(bottom.crop((0, H // 4, W, H // 4 + H // 2)), (0, H // 2))
+    d = ImageDraw.Draw(out); d.rectangle((0, H // 2 - 6, W, H // 2 + 6), fill=GOLD)
+    for lab, y in [(top_label, 70), (bottom_label, H // 2 + 70)]:
+        if y > H // 2 and prog <= 0: continue
+        tw = d.textlength(lab, font=F(BIG, 70)); d.rounded_rectangle((W / 2 - tw / 2 - 26, y - 50, W / 2 + tw / 2 + 26, y + 50), radius=14, fill=WHITE)
+        d.text((W / 2, y), lab, font=F(BIG, 70), fill=DARK, anchor='mm')
+    return out
+
+def shake(img, t, amp=14, freq=27):
+    """scossa della camera (meme, dato che esce): sposta l'immagine di qualche pixel"""
+    dx = int(amp * math.sin(t * freq)); dy = int(amp * 0.7 * math.cos(t * freq * 1.3))
+    out = Image.new('RGB', (W, H), DARK); out.paste(img.resize((W + 2 * amp, H + 2 * amp)), (dx - amp, dy - amp)); return out
+
+def comment_cta(img, word, y, prog, dark=True):
+    """fumetto commento (video 3, 'SCRIVIMI COSTO'): 'Commenta GUIDA'"""
+    a = ease(prog)
+    if a <= 0: return img
+    d = ImageDraw.Draw(img); x0, x1 = 120, W - 120; yy = y + 40 * (1 - a)
+    d.rounded_rectangle((x0, yy, x1, yy + 190), radius=40, fill=CARD if dark else WHITE, outline=GOLD, width=4)
+    d.polygon([(x0 + 90, yy + 188), (x0 + 60, yy + 250), (x0 + 150, yy + 188)], fill=GOLD)
+    d.ellipse((x0 + 40, yy + 55, x0 + 120, yy + 135), fill=GOLD); d.text((x0 + 80, yy + 95), 'Y', font=F(BIG, 50), fill=DARK, anchor='mm')
+    d.text((x0 + 150, yy + 65), 'commenta', font=F(SERIF, 62), fill=WHITE if dark else INK, anchor='lm')
+    if a > 0.5: key_box(d, word, (x0 + 150 + d.textlength(word, font=F(BIG, 90)) / 2 + 10, yy + 135), 70, (a - 0.5) * 2)
+    return img
+
+def follow_card(img, prog, followers=None):
+    """scheda profilo finale (video 4): avatar con candela d'oro, @yard.fx, bottone SEGUI"""
+    a = ease(prog)
+    if a <= 0: return img
+    d = ImageDraw.Draw(img); x0, y0, x1, y1 = 140, 760 + 60 * (1 - a), W - 140, 1160 + 60 * (1 - a)
+    d.rounded_rectangle((x0, y0, x1, y1), radius=36, fill=CARD, outline=CARD_LINE, width=3)
+    cx, cy = x0 + 130, y0 + 130; d.ellipse((cx - 80, cy - 80, cx + 80, cy + 80), fill=DARK, outline=GOLD, width=6)
+    d.line([(cx, cy - 55), (cx, cy + 55)], fill=GOLD, width=6); d.rounded_rectangle((cx - 22, cy - 32, cx + 22, cy + 30), radius=5, fill=GOLD)
+    d.text((cx + 120, cy - 30), '@yard.fx', font=F(BIG, 70), fill=WHITE, anchor='lm')
+    d.text((cx + 122, cy + 35), 'oro · XAUUSD · ogni giorno', font=F(MONO, 26), fill=MUTE, anchor='lm')
+    bw = (x1 - x0 - 80); btn = ease((prog - 0.5) * 2)
+    d.rounded_rectangle((x0 + 40, y1 - 120, x0 + 40 + bw, y1 - 40), radius=40, fill=GOLD if btn < 1 else (60, 62, 70))
+    d.text((W / 2, y1 - 80), 'SEGUI' if btn < 1 else 'SEGUITO', font=F(COND, 54), fill=DARK if btn < 1 else WHITE, anchor='mm')
+    return img
+
+def poll(d, a_txt, b_txt, y, prog, a_col=GREEN, b_col=RED):
+    """sondaggio sopra/sotto per chiudere con un commento"""
+    p = ease(prog)
+    if p <= 0: return
+    for i, (s, c) in enumerate([(a_txt, a_col), (b_txt, b_col)]):
+        x0 = 100 + i * 460; d.rounded_rectangle((x0, y, x0 + 420, y + 200), radius=30, fill=fade(tuple(int(v * 0.25) for v in c), p), outline=fade(c, p), width=5)
+        d.text((x0 + 210, y + 100), s, font=F(BIG, 90), fill=fade(c, p), anchor='mm')
+    d.text((W / 2, y + 100), 'o', font=F(SERIF, 80), fill=WHITE, anchor='mm')
+
+def number_roll(img, value_str, xy, size, col, t, t0, dur=0.6):
+    """numero che 'rotola' come un contachilometri prima di fermarsi sul valore (per dati appena usciti)"""
+    if t < t0: return img
+    if t - t0 < dur:
+        r = random.Random(int((t - t0) * 30)); s = ''.join(str(r.randint(0, 9)) if ch.isdigit() else ch for ch in value_str)
+        return glow_text(img, s, xy, size, MUTE)
+    return glow_text(img, value_str, xy, size, col)

@@ -6,32 +6,46 @@ Kit grafico e procedura di montaggio passo passo: `contenuti/yardfx_video/` (leg
 Ogni nuovo video di riferimento va scomposto (fondo, testo, grafica, passaggi, ritmo, chiusura), aggiunto alla libreria
 e, se ha una tecnica utile, rifatto da zero in stile YardFX. Mai copiare loghi, musiche, foto o grafiche di altri creator.
 
-## Firme fisse
-- **Candeline dei capitoli**: 3-5 candeline in alto a sinistra che si accendono d'oro, con il nome del capitolo scritto a mano ("due: il dato"). Niente barra del tempo.
-- **Sottotitoli**: 2-3 parole, maiuscolo condensato (Barlow Condensed 800), la parola detta si accende, la parola chiave dentro un riquadro oro pieno.
-- **Candela d'oro** luminosa in apertura e chiusura (niente statuetta o pupazzo 3D, mai).
-- **Scrittura a mano** (Caveat) per note e spiegazioni, con cerchi, frecce e sottolineature tremolanti.
-- **Timbri inclinati** per i verdetti e **barrato rosso → nuovo valore**.
-- **Grafico ridisegnato** (mai screenshot) con zone ENTRY / SL / TP e banner del risultato; scritta "esempio didattico" quando serve.
-- **Icone a tratto** (carrello, cartellino, banca, calendario, orologio) collegate da frecce causa → effetto.
-- **Alternanza** scuro (gancio, grafici) / carta crema (spiegazioni) / blocco giallo (colpo di scena), con tendina circolare.
+## Il principio: 3 mondi + firme fisse
+Ogni video alterna almeno 2 dei 3 mondi (di solito 3), scelti scena per scena in base a cosa si dice:
+- **NOTTE** (video 1 + 4): blu notte, raggi, costellazione, faretto, icone luminose, numeri giganti con alone, linea del tempo a nodi. Per ganci, numeri e chiusure.
+- **TERMINALE** (video 2 + 5 + 6): grafite, schede di app in prospettiva con lente, widget del prezzo fisso, chip ✓/✕, barre scenario, grafici con zone, schede trade, notifiche. Per dati, livelli e trade.
+- **QUADERNO** (r601 + video 3): carta a quadretti, titoli numerati in corsivo elegante, disegni a mano, frecce tratteggiate, timbri, barrati. Per spiegare il perché.
 
-## Palette
-Nero caldo #0d0c0a · Oro #d6a63a · Carta crema #f6f1e6 · Giallo blocco #eec45c · Verde #46c878 · Rosso #e0483e.
-Titoli: Anton. Sottotitoli: Barlow Condensed. Note: Caveat.
+Firme fisse in tutti i mondi:
+- candeline dei capitoli in alto a sinistra;
+- sottotitoli parola per parola con la parola chiave nel riquadro oro;
+- candela d'oro in apertura e/o chiusura;
+- disclaimer piccolo.
+
+Cambio di mondo con tendina circolare.
+
+## Palette e font
+- Oro #d6a63a.
+- Notte: #080b16, con un tocco di azzurro ghiaccio #96beff.
+- Terminale: #0c0d10, con schede #18191e.
+- Quaderno: #f4f2ec, con quadretti #d6dade.
+- Verde #46c878, rosso #e0483e.
+
+Font:
+- titoli: Anton;
+- corsivo elegante: Instrument Serif Italic;
+- sottotitoli: Barlow Condensed;
+- dati e app: JetBrains Mono e Inter;
+- note a mano: Caveat, solo nel Quaderno.
 
 ## Sempre / mai
 - Sempre: @yard.fx (col punto) in chiusura; "Contenuto informativo. Il trading comporta rischi." piccolo in basso.
-- Mai: barra del tempo in alto, pillola "YARDFX · XAUUSD", statuetta 3D, la frase sulla "prima candela" ripetuta ogni volta.
+- Mai:
+  - barra del tempo in alto;
+  - pillola "YARDFX · XAUUSD";
+  - statuetta 3D;
+  - screenshot incollati;
+  - loghi, musiche o foto di altri creator;
+  - la frase sulla "prima candela" ripetuta ogni volta.
 
-## Ricette per formato
-| Formato | Fondo | Elementi | Durata |
-|---|---|---|---|
-| Notizia / dato macro | scuro → carta → scuro | icone causa → effetto, timbro sul verdetto, livello cerchiato | 30-40 s |
-| Anteprima settimana | scuro | calendario a schede, zone sul grafico, candeline capitolo | 25-30 s |
-| Recap risultati | scuro | banner TAKE PROFIT / STOP PRESO, numero luminoso, curva pips, contatore fisso | 35-45 s |
-| Mindset / regola | carta + blocco giallo | frase grande, corsivo, barrato, checklist | 10-15 s |
-| Lezione / setup | scuro | zone ENTRY/SL/TP, frecce a mano, checklist | 40-60 s |
+## Catalogo elementi e ricette per formato
+Sono in `yardfx_video/README.md`. I formati coperti sono: news, reazione, anteprima, recap/journal, lezione, mindset, meme e carosello.
 
 ## Video modello analizzati (9 nov 2026)
 r601 quaderno disegnato · v1 icone cinematografiche · v2 interfacce e timbri · v3 capitoli numerati e tendina circolare ·
