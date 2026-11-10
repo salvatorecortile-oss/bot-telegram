@@ -13,8 +13,11 @@ Quando Salvatore incolla un prompt del calendario, segui questi passi. Lui lavor
 
 ## 2. Voce: la registra SEMPRE Salvatore con Enea
 - Manda lo script in chat dentro un blocco da copiare, poi **fermati** e aspetta il suo MP3, registrato su ElevenLabs con la voce Enea.
-- **Mai** generare la voce da solo e mai usare voci gratuite o altre voci, nemmeno come bozza.
-- Quando arriva l'MP3, ricava i tempi parola per parola con `Y.words_from_whisper('voce.mp3')`. Ogni scena cambia sulla prima parola del suo paragrafo (`Y.find_word`).
+- **Mai** usare un'altra voce nel video.
+- Quando arriva l'MP3, ricava i tempi parola per parola con **`Y.words_aligned('voce.mp3', testo_script)`**: genera un audio di riferimento solo per il calcolo e lo allinea con DTW. È preciso, serve `pip install librosa`.
+- **Non usare `words_from_script`**: stima i tempi dalle pause e sbaglia di 1-2 s verso la fine.
+- Ogni scena inizia sulla **prima parola del suo paragrafo** e resta finché la voce non ha finito quel paragrafo.
+- Ogni scritta compare sulla parola che la nomina (`T(i)`). Se una scena sembra corta, non anticipare la successiva: il cambio scena lo decide la voce.
 
 ## 3. Storyboard (scrivilo prima del codice)
 Per ogni scena indica:
@@ -145,7 +148,7 @@ Ogni video, carosello e didascalia chiude chiedendo di:
 ## 3d. CHIUSURA FISSA: logo + Telegram
 Dopo la call to action con i 4 paletti:
 1. `Y.logo_reveal(img, t, t0, W//2, 700, 400)`: il logo di Salvatore (`logo_yardfx.png`, già senza sfondo), non in grande. Entra ruotando con rimbalzo, alone oro e riflesso di luce, poi galleggia.
-2. `Y.telegram_cta(img, t, t0 + 1.15, 1150)`: l'aereo di carta di Telegram vola dentro con la scia, poi compaiono "CERCAMI SU TELEGRAM" e @yard.fx come un timbro.
+2. `Y.telegram_cta(img, t, t0 + 1.15, 1150)`: l'aereo di carta di Telegram vola dentro con la scia, poi compaiono "CERCAMI SU TELEGRAM" e @yard_fx come un timbro (su Telegram il nome è yard_fx con il trattino basso; su TikTok e Instagram resta @yard.fx con il punto).
 
 - Effetti sonori: boom, whoosh, trin sul riflesso, whoosh sull'aereo, pop, stamp e coin.
 - Allunga la durata di circa 4 s dopo la voce.

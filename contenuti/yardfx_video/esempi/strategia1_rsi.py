@@ -12,7 +12,7 @@ sys.path.insert(0, '/home/user/bot-telegram/contenuti/yardfx_video'); import yar
 from PIL import Image, ImageDraw
 import dati_didattici as dati
 D = os.path.dirname(os.path.abspath(__file__))
-WORDS = json.load(open(os.path.join(D, 'words.json'))); G = Y.make_groups(WORDS)
+WORDS = json.load(open(os.path.join(D, 'words_aligned.json'))); G = Y.make_groups(WORDS)
 T = lambda i: WORDS[i][1]
 VEND = WORDS[-1][2]; DUR = VEND + 4.3
 KEYS = {4, 14, 21, 23, 31, 34, 38, 46, 48, 54, 58, 62, 67, 74, 75, 82, 87, 96, 101}

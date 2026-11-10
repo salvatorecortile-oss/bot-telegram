@@ -1121,7 +1121,7 @@ def telegram_icon(d, cx, cy, r, col_bg=(42, 171, 238), col=(255, 255, 255)):
     d.polygon([(cx + r * 0.02, cy + r * 0.22), (cx - r * 0.12, cy + r * 0.45), (cx - r * 0.1, cy + r * 0.12)], fill=(200, 225, 245))
     d.line([(cx - r * 0.1, cy + r * 0.12), (cx + r * 0.42, cy - r * 0.32)], fill=(170, 210, 240), width=max(2, int(r * 0.06)))
 
-def telegram_cta(img, t, t0, y=1300, handle='@yard.fx', line='CERCAMI SU TELEGRAM'):
+def telegram_cta(img, t, t0, y=1300, handle='@yard_fx', line='CERCAMI SU TELEGRAM'):
     """l'aereo di carta vola dentro con la scia, poi la scritta e il nome che sbatte come un timbro"""
     if t < t0: return img
     s = t - t0; a = back(s / 0.55); d = ImageDraw.Draw(img)
@@ -1134,3 +1134,30 @@ def telegram_cta(img, t, t0, y=1300, handle='@yard.fx', line='CERCAMI SU TELEGRA
         dd = ImageDraw.Draw(b); f = F(COND, 74); tw = dd.textlength(handle, font=f)
         dd.rounded_rectangle((W / 2 - tw / 2 - 40, y + 90, W / 2 + tw / 2 + 40, y + 200), radius=55, fill=(42, 171, 238)); dd.text((W / 2, y + 145), handle, font=f, fill=WHITE, anchor='mm')
     return sprite(img, pill, t, t0 + 0.55, enter='stamp', idle='breathe', seed=62, dur=0.3, amp=0.6)
+
+# ---------------- tempi ESATTI delle parole sull'MP3 di Salvatore (allineamento audio-audio) ----------------
+def words_aligned(mp3, text, workdir=None):
+    """1) genera con ElevenLabs un audio di RIFERIMENTO dello stesso testo con i tempi esatti di ogni parola (voce gratuita,
+          serve SOLO per il calcolo, non va mai nel video);
+       2) allinea il riferimento alla voce di Salvatore con DTW sulle caratteristiche del suono (MFCC, librosa);
+       3) trasferisce i tempi delle parole sulla sua registrazione. Precisione tipica: 0,05 s. Richiede `pip install librosa`."""
+    import numpy as np, librosa
+    workdir = workdir or os.path.dirname(os.path.abspath(mp3))
+    ref = os.path.join(workdir, '_riferimento_allineamento.mp3')
+    rw = tts_elevenlabs(text, ref)
+    sr = 16000; hop = 160
+    y1, _ = librosa.load(ref, sr=sr); y2, _ = librosa.load(mp3, sr=sr)
+    def feat(y):
+        m = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20, hop_length=hop, n_fft=512)
+        m = (m - m.mean(axis=1, keepdims=True)) / (m.std(axis=1, keepdims=True) + 1e-6)
+        e = librosa.feature.rms(y=y, hop_length=hop, frame_length=512)
+        return np.vstack([m, 3 * (e - e.mean()) / (e.std() + 1e-6)])
+    f1, f2 = feat(y1), feat(y2)
+    _, wp = librosa.sequence.dtw(X=f1, Y=f2, metric='cosine', step_sizes_sigma=np.array([[1, 1], [0, 1], [1, 0]]), weights_mul=np.array([1, 1.3, 1.3]))
+    wp = wp[::-1]; m1 = wp[:, 0] * hop / sr; m2 = wp[:, 1] * hop / sr
+    def mp(tref):
+        i = np.searchsorted(m1, tref); i = min(max(i, 0), len(m2) - 1); return float(m2[i])
+    out = [[w, round(mp(a), 3), round(mp(b), 3)] for w, a, b in rw]
+    for i in range(1, len(out)):                      # tempi sempre crescenti
+        out[i][1] = max(out[i][1], out[i - 1][1] + 0.02); out[i][2] = max(out[i][2], out[i][1] + 0.05)
+    return out
