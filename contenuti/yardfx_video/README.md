@@ -83,6 +83,14 @@ Cambio di mondo: sempre con `circle_wipe` (0,4 s).
 - I sottotitoli stanno a y=1585 (sotto la grafica); se la scena usa quell'area, spostali (`y=1720`).
 - Grafici: candele vere, dai suoi screenshot o dai prezzi trovati sul web. Se illustrative: "esempio didattico".
 
+## 3a. VOCE = SCHERMO (regola fissa)
+- **Ogni parola scritta a schermo deve essere detta dalla voce**, e compare nel momento in cui viene detta (`Y.find_word`).
+- Scrivi lo script partendo dalle scritte delle scene, poi controlla che non ci sia nessuna scritta che la voce non dice.
+- Le uniche eccezioni sono il disclaimer piccolo e il widget del prezzo.
+- I nomi dei capitoli accanto alle candeline vanno usati solo se la voce li dice, altrimenti lascia solo le candeline.
+- **Sottotitoli** (`Y.captions_pop`) sempre visibili, grandi e chiari per tutto il video, per chi guarda senza audio.
+- Si tolgono solo durante la chiusura con i 4 paletti (`Y.cta_four`), dove le scritte animate fanno già da sottotitolo: passa `end=` uguale al tempo della prima parola della chiusura.
+
 ## 3b. MOVIMENTO, MUSICA ED EFFETTI (obbligatori: un video fermo è da rifare)
 Niente sta fermo. Questi movimenti vengono dai video modello (vedi la libreria):
 - **Entrate con rimbalzo**: ogni oggetto va disegnato dentro `Y.sprite(img, fn, t, t0, enter=..., idle=...)`.
