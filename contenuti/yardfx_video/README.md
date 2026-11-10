@@ -142,6 +142,17 @@ Ogni video, carosello e didascalia chiude chiedendo di:
 - A schermo usa `Y.cta_four(img, t, [t_segui, t_mipiace, t_commenta, t_condividi], 'PAROLA')`: i 4 tempi sono le parole della voce. Effetti sonori: pop, pop_hi, bubble, swoosh_up, più coin sull'ultimo.
 - Se c'è spazio, aggiungi "scrivimi in DM per entrare nella community".
 
+## 3d. CHIUSURA FISSA: logo + Telegram
+Dopo la call to action con i 4 paletti:
+1. `Y.logo_reveal(img, t, t0, W//2, 700, 400)`: il logo di Salvatore (`logo_yardfx.png`, già senza sfondo), non in grande. Entra ruotando con rimbalzo, alone oro e riflesso di luce, poi galleggia.
+2. `Y.telegram_cta(img, t, t0 + 1.15, 1150)`: l'aereo di carta di Telegram vola dentro con la scia, poi compaiono "CERCAMI SU TELEGRAM" e @yard.fx come un timbro.
+
+- Effetti sonori: boom, whoosh, trin sul riflesso, whoosh sull'aereo, pop, stamp e coin.
+- Allunga la durata di circa 4 s dopo la voce.
+- Il logo va anche in piccolo sulla **copertina**, che deve essere diversa dal primo fotogramma.
+- **Candeline dei capitoli**: non metterle, a meno che abbiano un senso preciso detto dalla voce (es. numero della puntata).
+- Esempio completo: `esempi/strategia1_rsi.py`.
+
 ## 4. Ricette per formato (mondi in ordine)
 | Formato | Sequenza dei mondi | Elementi suggeriti | Durata |
 |---|---|---|---|

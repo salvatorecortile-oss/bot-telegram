@@ -1090,3 +1090,47 @@ def cta_four(img, t, times, comment_word=None, y0=640, dark=True):
                 p = (t - t0) / 0.6; hx = 260 + r.uniform(-60, 60) + 40 * math.sin(p * 6 + j); hy = y - 120 * p * r.uniform(1, 2.2)
                 _cta_icon(d, 'cuore', hx, hy, 40 * (1 - p), RED)
     return img
+
+# ---------------- LOGO e TELEGRAM (chiusura) ----------------
+_LOGO = {}
+def logo_reveal(img, t, t0, cx, cy, size=380):
+    """logo YardFX (sfondo già trasparente, logo_yardfx.png): entra ruotando con rimbalzo, alone oro, riflesso di luce che lo attraversa, poi galleggia"""
+    if t < t0: return img
+    if size not in _LOGO:
+        lo = Image.open(os.path.join(D, 'logo_yardfx.png')).convert('RGBA'); _LOGO[size] = lo.resize((size, int(size * lo.height / lo.width)), Image.LANCZOS)
+    lo = _LOGO[size].copy(); s = t - t0; a = back(s / 0.6)
+    k = (s - 0.7) / 0.6                                   # riflesso
+    if 0 < k < 1:
+        sh = Image.new('L', lo.size, 0); x = -lo.width * 0.5 + k * lo.width * 2
+        ImageDraw.Draw(sh).polygon([(x, 0), (x + 70, 0), (x - 130, lo.height), (x - 200, lo.height)], fill=170)
+        sh = ImageChops.multiply(sh.filter(ImageFilter.GaussianBlur(14)), lo.getchannel('A'))
+        lo = Image.composite(Image.new('RGBA', lo.size, (255, 245, 210, 255)), lo, sh)
+    sc = max(0.05, 0.3 + 0.7 * a) * (1 + 0.025 * math.sin(s * 2.4)); rot = -200 * (1 - ease(s / 0.6)) + 1.5 * math.sin(s * 1.7)
+    lo = lo.resize((max(1, int(lo.width * sc)), max(1, int(lo.height * sc))), Image.BICUBIC).rotate(rot, expand=True, resample=Image.BICUBIC)
+    if s < 0.25: lo.putalpha(lo.getchannel('A').point(lambda v: int(v * s / 0.25)))
+    glow = Image.new('L', (W, H), 0); r = size * 0.55 * sc
+    ImageDraw.Draw(glow).ellipse((cx - r, cy - r, cx + r, cy + r), fill=int(110 * min(1, s / 0.4)))
+    img = Image.composite(Image.new('RGB', (W, H), (120, 90, 25)), img, glow.filter(ImageFilter.GaussianBlur(70)))
+    y = cy + 6 * math.sin(s * 2.0)
+    img.paste(lo.convert('RGB'), (int(cx - lo.width / 2), int(y - lo.height / 2)), lo); return img
+
+def telegram_icon(d, cx, cy, r, col_bg=(42, 171, 238), col=(255, 255, 255)):
+    """icona aereo di carta (Telegram) disegnata"""
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=col_bg)
+    d.polygon([(cx - r * 0.55, cy - r * 0.02), (cx + r * 0.5, cy - r * 0.45), (cx + r * 0.3, cy + r * 0.5), (cx + r * 0.02, cy + r * 0.22)], fill=col)
+    d.polygon([(cx + r * 0.02, cy + r * 0.22), (cx - r * 0.12, cy + r * 0.45), (cx - r * 0.1, cy + r * 0.12)], fill=(200, 225, 245))
+    d.line([(cx - r * 0.1, cy + r * 0.12), (cx + r * 0.42, cy - r * 0.32)], fill=(170, 210, 240), width=max(2, int(r * 0.06)))
+
+def telegram_cta(img, t, t0, y=1300, handle='@yard.fx', line='CERCAMI SU TELEGRAM'):
+    """l'aereo di carta vola dentro con la scia, poi la scritta e il nome che sbatte come un timbro"""
+    if t < t0: return img
+    s = t - t0; a = back(s / 0.55); d = ImageDraw.Draw(img)
+    ix = -150 + (230 + 150) * a; iy = y + 40 * (1 - ease(s / 0.55)) - 60 * math.sin(math.pi * min(1, s / 0.55)) + 5 * math.sin(s * 3)
+    for k in range(1, 6):                                       # scia
+        if s < 0.7: d.ellipse((ix - 40 * k - 8, iy - 8 + 6 * k, ix - 40 * k + 8, iy + 8 + 6 * k), fill=(42, 171, 238))
+    telegram_icon(d, ix, iy, 70)
+    img = sprite(img, lambda b: ImageDraw.Draw(b).text((330, y), line, font=F(BIG, 64), fill=WHITE, anchor='lm'), t, t0 + 0.25, enter='left', idle='float', seed=61, amp=0.5)
+    def pill(b):
+        dd = ImageDraw.Draw(b); f = F(COND, 74); tw = dd.textlength(handle, font=f)
+        dd.rounded_rectangle((W / 2 - tw / 2 - 40, y + 90, W / 2 + tw / 2 + 40, y + 200), radius=55, fill=(42, 171, 238)); dd.text((W / 2, y + 145), handle, font=f, fill=WHITE, anchor='mm')
+    return sprite(img, pill, t, t0 + 0.55, enter='stamp', idle='breathe', seed=62, dur=0.3, amp=0.6)
