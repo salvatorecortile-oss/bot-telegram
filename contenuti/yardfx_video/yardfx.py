@@ -1048,3 +1048,45 @@ def card_flip_quad(quad, t, t0, dur=0.7):
         dy *= 1 + side * tilt * 0.5
         out.append((cx + dx + 12 * math.sin(t * 1.3 + i), cy + dy + 9 * math.cos(t * 1.1 + i * 2) + 300 * (1 - a)))
     return out
+
+# ---------------- CALL TO ACTION con i 4 paletti ----------------
+def _cta_icon(d, kind, cx, cy, s, col):
+    w = max(4, int(s * 0.07))
+    if kind == 'segui':
+        d.ellipse((cx - s * 0.32, cy - s * 0.48, cx + s * 0.08, cy - s * 0.08), outline=col, width=w)
+        d.arc((cx - s * 0.5, cy - s * 0.02, cx + s * 0.26, cy + s * 0.7), 180, 360, fill=col, width=w)
+        d.line([(cx + s * 0.32, cy - s * 0.2), (cx + s * 0.32, cy + s * 0.12)], fill=col, width=w); d.line([(cx + s * 0.16, cy - s * 0.04), (cx + s * 0.48, cy - s * 0.04)], fill=col, width=w)
+    elif kind == 'cuore':
+        pts = [(cx + s * 0.5 * 16 * math.sin(a) ** 3 / 16, cy - s * 0.5 * (13 * math.cos(a) - 5 * math.cos(2 * a) - 2 * math.cos(3 * a) - math.cos(4 * a)) / 16) for a in [i * 2 * math.pi / 60 for i in range(61)]]
+        d.polygon(pts, fill=col)
+    elif kind == 'commenta':
+        d.rounded_rectangle((cx - s * 0.45, cy - s * 0.38, cx + s * 0.45, cy + s * 0.22), radius=int(s * 0.18), outline=col, width=w)
+        d.polygon([(cx - s * 0.2, cy + s * 0.2), (cx - s * 0.3, cy + s * 0.45), (cx, cy + s * 0.2)], fill=col)
+        for k in (-1, 0, 1): d.ellipse((cx + k * s * 0.2 - s * 0.05, cy - s * 0.13, cx + k * s * 0.2 + s * 0.05, cy - s * 0.03), fill=col)
+    elif kind == 'condividi':
+        d.polygon([(cx + s * 0.45, cy - s * 0.1), (cx + s * 0.05, cy - s * 0.45), (cx + s * 0.05, cy - s * 0.25), (cx - s * 0.45, cy - s * 0.15), (cx - s * 0.35, cy + s * 0.4),
+                   (cx - s * 0.1, cy + s * 0.05), (cx + s * 0.05, cy + s * 0.05), (cx + s * 0.05, cy + s * 0.25)], fill=col)
+
+CTA_STEPS = [('segui', 'SEGUI', GOLD), ('cuore', 'MI PIACE', RED), ('commenta', 'COMMENTA', WHITE), ('condividi', 'CONDIVIDI', GREEN)]
+def cta_four(img, t, times, comment_word=None, y0=640, dark=True):
+    """i 4 paletti della chiusura (segui, mi piace, commenta, condividi): times = 4 tempi (parole della voce) in cui ognuno salta dentro.
+    Effetti sonori consigliati: pop, pop_hi, bubble, swoosh_up ai 4 tempi + coin sull'ultimo."""
+    for k, ((kind, lab, col), t0) in enumerate(zip(CTA_STEPS, times)):
+        if t < t0: continue
+        y = y0 + k * 210
+        def draw(b, kind=kind, lab=lab, col=col, y=y):
+            d = ImageDraw.Draw(b); cc = col if not (kind == 'commenta' and not dark) else INK
+            d.rounded_rectangle((150, y - 85, W - 150, y + 85), radius=42, fill=CARD if dark else WHITE, outline=col if col != WHITE else GOLD, width=4)
+            _cta_icon(d, kind, 260, y, 120, cc)
+            fs = 74 if not (kind == 'commenta' and comment_word) else 60
+            d.text((350, y), lab, font=F(BIG, fs), fill=WHITE if dark else INK, anchor='lm')
+            if kind == 'commenta' and comment_word:
+                tw = d.textlength(lab, font=F(BIG, fs)); kw = d.textlength(comment_word, font=F(BIG, 50))
+                key_box(d, comment_word, (350 + tw + 34 + kw / 2, y), 50, 1)
+        img = sprite(img, draw, t, t0, enter='left' if k % 2 == 0 else 'right', idle='float', seed=40 + k, amp=0.6)
+        if kind == 'cuore' and t - t0 < 0.6:   # cuoricini che volano
+            d = ImageDraw.Draw(img); r = random.Random(k)
+            for j in range(6):
+                p = (t - t0) / 0.6; hx = 260 + r.uniform(-60, 60) + 40 * math.sin(p * 6 + j); hy = y - 120 * p * r.uniform(1, 2.2)
+                _cta_icon(d, 'cuore', hx, hy, 40 * (1 - p), RED)
+    return img

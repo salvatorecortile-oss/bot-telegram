@@ -123,6 +123,17 @@ Niente sta fermo. Questi movimenti vengono dai video modello (vedi la libreria):
   - In un video da 40 s ci vogliono almeno 60 effetti.
 - **Render**: usa `multiprocessing.Pool(4)` per i fotogrammi (vedi esempio in `esempi/cpi_animato.py`): il video muto, poi `S.mix` e l'unione.
 
+## 3c. CALL TO ACTION: sempre i 4 paletti
+Ogni video, carosello e didascalia chiude chiedendo di:
+1. **SEGUIRE** il profilo;
+2. lasciare un **MI PIACE**;
+3. **COMMENTARE** con una parola o una domanda legata al video (es. "commenta STRATEGIA", "scrivi SOPRA o SOTTO");
+4. **CONDIVIDERE** il video (con chi sta iniziando, con l'amico che fa trading…).
+
+- Le parole cambiano da video a video, ma i 4 paletti ci sono sempre. Nella voce sono l'ultima frase.
+- A schermo usa `Y.cta_four(img, t, [t_segui, t_mipiace, t_commenta, t_condividi], 'PAROLA')`: i 4 tempi sono le parole della voce. Effetti sonori: pop, pop_hi, bubble, swoosh_up, più coin sull'ultimo.
+- Se c'è spazio, aggiungi "scrivimi in DM per entrare nella community".
+
 ## 4. Ricette per formato (mondi in ordine)
 | Formato | Sequenza dei mondi | Elementi suggeriti | Durata |
 |---|---|---|---|
@@ -130,7 +141,7 @@ Niente sta fermo. Questi movimenti vengono dai video modello (vedi la libreria):
 | Reazione al dato | Notte → Terminale → Quaderno → Notte | number_roll del dato uscito; strike atteso → uscito + chip; grafico ricostruito con freccia e banner; cosa guardare adesso | 25-35 s |
 | Anteprima settimana | Notte → Terminale → Notte | timeline/week_strip; ui_card dei dati della settimana; grafico con livelli; follow_card | 25-30 s |
 | Recap / journal | Notte → Terminale → Quaderno → Notte | big_counter pips; trade_card (stop compresi) + notification; equity_curve; lezione in checklist o quote | 35-45 s |
-| Lezione / setup | Quaderno → Terminale → Notte | serif_heading numerati; phone con grafico + zone; dial del rischio; checklist | 40-60 s |
+| Strategia base / lezione | Quaderno → Terminale → Notte | serif_heading numerati; phone con grafico + zone; dial del rischio; checklist | 40-60 s |
 | Mindset | Quaderno (o crema) → Notte | quote; strike_swap; checklist; gold_candle in chiusura; `music_pad` | 10-15 s |
 | Meme | split_meme + shake | stamp, scrittura a mano, grafico che crolla; `music_pad` | 8-12 s |
 | Carosello (slide 1080x1350) | alterna Quaderno e Notte, slide dati in Terminale | stessi elementi, candeline = numero della slide, comment_cta sull'ultima | 6 slide |
