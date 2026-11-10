@@ -6,6 +6,18 @@ Kit grafico e procedura di montaggio passo passo: `contenuti/yardfx_video/` (leg
 Ogni nuovo video di riferimento va scomposto (fondo, testo, grafica, passaggi, ritmo, chiusura), aggiunto alla libreria
 e, se ha una tecnica utile, rifatto da zero in stile YardFX. Mai copiare loghi, musiche, foto o grafiche di altri creator.
 
+## VIDEO MODELLO (qualità da raggiungere sempre)
+**Strategia base #1: RSI**, programmato per l'11 novembre 2026 alle 10:00. Codice: `yardfx_video/esempi/strategia1_rsi.py`.
+
+Paletti fissi presi da questo video:
+1. **Sincronizzazione perfetta**: `Y.words_aligned(mp3, script)`. Ogni scena inizia sulla prima parola del suo paragrafo e resta finché la voce non l'ha finito. Ogni scritta compare sulla sua parola.
+2. **Montaggio** animato e dinamico: una scena per paragrafo, transizioni sempre diverse, camera viva, lampi.
+3. **Audio**: la voce Enea di Salvatore, una musica che si abbassa sotto la voce e circa 100 effetti sonori al minuto.
+4. **Sottotitoli** sempre visibili fino alla chiusura.
+5. **Chiusura**: i 4 paletti detti e animati, poi il logo animato e "CERCAMI SU TELEGRAM @yard_fx".
+6. **Copertina** diversa dal primo fotogramma, con il logo piccolo.
+7. **Revisione**: video e copertina vanno a Salvatore prima di pubblicare o programmare.
+
 ## Il principio: 3 mondi + firme fisse
 Ogni video alterna almeno 2 dei 3 mondi (di solito 3), scelti scena per scena in base a cosa si dice:
 - **NOTTE** (video 1 + 4): blu notte, raggi, costellazione, faretto, icone luminose, numeri giganti con alone, linea del tempo a nodi. Per ganci, numeri e chiusure.
@@ -13,9 +25,8 @@ Ogni video alterna almeno 2 dei 3 mondi (di solito 3), scelti scena per scena in
 - **QUADERNO** (r601 + video 3): carta a quadretti, titoli numerati in corsivo elegante, disegni a mano, frecce tratteggiate, timbri, barrati. Per spiegare il perché.
 
 Firme fisse in tutti i mondi:
-- candeline dei capitoli in alto a sinistra;
 - sottotitoli parola per parola con la parola chiave nel riquadro oro;
-- candela d'oro in apertura e/o chiusura;
+- chiusura con logo YardFX animato + Telegram @yard_fx (candeline in alto solo se hanno un senso detto dalla voce);
 - disclaimer piccolo.
 
 Cambio di mondo con tendina circolare.
