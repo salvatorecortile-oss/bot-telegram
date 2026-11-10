@@ -752,3 +752,299 @@ def number_roll(img, value_str, xy, size, col, t, t0, dur=0.6):
         r = random.Random(int((t - t0) * 30)); s = ''.join(str(r.randint(0, 9)) if ch.isdigit() else ch for ch in value_str)
         return glow_text(img, s, xy, size, MUTE)
     return glow_text(img, value_str, xy, size, col)
+
+# ---------------- tempi delle parole da un MP3 registrato (voce Enea di Salvatore) ----------------
+def speech_segments(mp3, noise='-32dB', min_sil=0.22):
+    """tratti di voce [(inizio, fine)] trovati con le pause di ffmpeg silencedetect"""
+    out = subprocess.run(['ffmpeg', '-hide_banner', '-i', mp3, '-af', f'silencedetect=noise={noise}:d={min_sil}', '-f', 'null', '-'], capture_output=True, text=True).stderr
+    dur = float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', mp3], capture_output=True, text=True).stdout)
+    sil = []; st = None
+    for ln in out.splitlines():
+        if 'silence_start' in ln: st = float(ln.split('silence_start:')[1])
+        elif 'silence_end' in ln and st is not None: sil.append((max(0, st), float(ln.split('silence_end:')[1].split('|')[0]))); st = None
+    if st is not None: sil.append((st, dur))
+    segs, cur = [], 0.0
+    for a, b in sil:
+        if a - cur > 0.08: segs.append((cur, a))
+        cur = b
+    if dur - cur > 0.08: segs.append((cur, dur))
+    return segs
+
+def _weight(w):
+    v = sum(ch in 'aeiouàèéìòù' for ch in w.lower()); return max(1, v) + 0.15 * len(w)
+
+def words_from_script(mp3, text):
+    """Tempi parola per parola SENZA servizi esterni: le pause dell'audio dividono le frasi, dentro ogni tratto
+    le parole si distribuiscono in base alle sillabe. Errore tipico 0,1-0,2 s: va bene per sottotitoli e cambi scena.
+    (Se la chiave ElevenLabs ha il permesso speech_to_text si può usare la trascrizione con i tempi esatti.)"""
+    words = text.split(); segs = speech_segments(mp3)
+    # gruppi di parole = frasi/pezzi chiusi da punteggiatura
+    chunks, cur = [], []
+    for w in words:
+        cur.append(w)
+        if w[-1] in '.,;:?!': chunks.append(cur); cur = []
+    if cur: chunks.append(cur)
+    cw = [sum(_weight(w) for w in c) for c in chunks]; total_w = sum(cw)
+    sd = [b - a for a, b in segs]; total_s = sum(sd)
+    # assegna i pezzi ai tratti di voce in ordine, in proporzione al peso (programmazione dinamica semplice)
+    import itertools
+    n, m = len(chunks), len(segs)
+    INF = 1e9; best = [[INF] * (m + 1) for _ in range(n + 1)]; prev = [[None] * (m + 1) for _ in range(n + 1)]
+    best[0][0] = 0
+    for i in range(n + 1):
+        for j in range(m + 1):
+            if best[i][j] >= INF: continue
+            for di in range(1, n - i + 1):                         # di pezzi -> dj tratti
+                for dj in range(1, m - j + 1):
+                    if di > 1 and dj > 1: break
+                    wv = sum(cw[i:i + di]) / total_w; sv = sum(sd[j:j + dj]) / total_s
+                    c = best[i][j] + (wv - sv) ** 2 * 100 + 0.02 * (di + dj - 2)
+                    if c < best[i + di][j + dj]: best[i + di][j + dj] = c; prev[i + di][j + dj] = (i, j)
+    path = []; i, j = n, m
+    while (i, j) != (0, 0):
+        pi, pj = prev[i][j]; path.append((pi, i, pj, j)); i, j = pi, pj
+    out = []
+    for ci0, ci1, sj0, sj1 in reversed(path):
+        ws = [w for c in chunks[ci0:ci1] for w in c]; a, b = segs[sj0][0], segs[sj1 - 1][1]
+        wt = [_weight(w) for w in ws]; tot = sum(wt); t = a
+        for w, x in zip(ws, wt):
+            d = (b - a) * x / tot; out.append([w, round(t, 3), round(t + d, 3)]); t += d
+    return out
+
+# =====================================================================
+# MOVIMENTO: niente deve stare fermo
+#   - ogni elemento entra con rimbalzo (sprite) e poi galleggia/oscilla (idle)
+#   - la camera spinge sempre piano in avanti, deriva, e dà colpi di zoom/scossa sulle parole chiave (camera)
+#   - flash bianchi sui momenti forti (flash), polvere che sale (dust), luce che attraversa (light_sweep)
+#   - transizioni: circle_wipe, whip (strisciata), zoom_through (entra dentro la scena)
+#   - sottotitoli che saltano parola per parola (captions_pop)
+# =====================================================================
+from PIL import ImageChops
+
+def back(x, s=1.9):
+    """easing con rimbalzo oltre il bersaglio (overshoot)"""
+    x = max(0.0, min(1.0, x)) - 1; return 1 + x * x * ((s + 1) * x + s)
+
+def elastic(x):
+    x = max(0.0, min(1.0, x))
+    if x in (0, 1): return x
+    return 2 ** (-10 * x) * math.sin((x * 10 - 0.75) * (2 * math.pi) / 3) + 1
+
+def sprite(img, fn, t, t0=0.0, enter='pop', idle='float', seed=0, dur=0.5, exit_t=None, anchor=None, amp=1.0):
+    """Disegna con fn(copia) e anima il risultato come un oggetto unico.
+    enter: 'pop' (cresce con rimbalzo), 'drop' (cade dall'alto e rimbalza), 'rise' (sale dal basso), 'left'/'right' (entra di lato),
+           'spin' (ruota mentre cresce), 'stamp' (arriva grande e sbatte), 'none'
+    idle:  'float' (su e giù + leggera rotazione), 'breathe' (pulsa), 'wobble' (tremolio), 'sway' (dondola), None
+    exit_t: se dato, l'oggetto esce rimpicciolendo da quel tempo."""
+    if t < t0: return img
+    base = img.copy(); r = fn(base)
+    if r is not None: base = r
+    diff = ImageChops.difference(base, img).convert('L')
+    mask = diff.point(lambda v: 0 if v < 3 else min(255, v * 5))
+    bb = mask.getbbox()
+    if not bb: return img
+    pad = 30; bb = (max(0, bb[0] - pad), max(0, bb[1] - pad), min(W, bb[2] + pad), min(H, bb[3] + pad))
+    crop = base.crop(bb).convert('RGBA'); m = mask.crop(bb)
+    cx, cy = anchor or ((bb[0] + bb[2]) / 2, (bb[1] + bb[3]) / 2)
+    a = (t - t0) / dur; e = ease(a); bk = back(a)
+    sc, dx, dy, rot, al = 1.0, 0.0, 0.0, 0.0, 1.0
+    if enter == 'pop': sc = 0.2 + 0.8 * bk; al = min(1, a * 3)
+    elif enter == 'drop': dy = -500 * (1 - bk); al = min(1, a * 4)
+    elif enter == 'rise': dy = 160 * (1 - bk); al = min(1, a * 2.5)
+    elif enter == 'left': dx = -W * (1 - bk)
+    elif enter == 'right': dx = W * (1 - bk)
+    elif enter == 'spin': sc = 0.2 + 0.8 * bk; rot = -90 * (1 - e); al = min(1, a * 3)
+    elif enter == 'stamp': sc = 2.2 - 1.2 * min(1, back(a, 3.0)); al = min(1, a * 4)
+    ph = seed * 1.7; tt = t - t0
+    if idle == 'float': dy += 9 * amp * math.sin(tt * 2.2 + ph); rot += 1.3 * amp * math.sin(tt * 1.6 + ph)
+    elif idle == 'breathe': sc *= 1 + 0.035 * amp * math.sin(tt * 3.2 + ph)
+    elif idle == 'wobble': rot += 2.2 * amp * math.sin(tt * 9 + ph); dx += 3 * amp * math.sin(tt * 13 + ph)
+    elif idle == 'sway': rot += 3.5 * amp * math.sin(tt * 1.8 + ph); dx += 14 * amp * math.sin(tt * 1.3 + ph)
+    if exit_t is not None and t > exit_t:
+        k = ease((t - exit_t) / 0.3); sc *= 1 - k; al *= 1 - k
+    if sc <= 0.02 or al <= 0.01: return img
+    w, h = crop.size; nw, nh = max(1, int(w * sc)), max(1, int(h * sc))
+    crop = crop.resize((nw, nh), Image.BICUBIC); m = m.resize((nw, nh), Image.BICUBIC)
+    if abs(rot) > 0.05:
+        crop = crop.rotate(rot, expand=True, resample=Image.BICUBIC); m = m.rotate(rot, expand=True, resample=Image.BICUBIC)
+    if al < 1: m = m.point(lambda v: int(v * al))
+    ox = int(cx + dx - crop.width / 2 + ((bb[0] + bb[2]) / 2 - cx) * sc); oy = int(cy + dy - crop.height / 2 + ((bb[1] + bb[3]) / 2 - cy) * sc)
+    out = img.copy(); out.paste(crop.convert('RGB'), (ox, oy), m); return out
+
+def camera(img, t, t0, punches=(), shakes=(), push=0.06, drift=1.0):
+    """camera viva: spinta lenta in avanti da t0, deriva e rotazione leggere, colpi di zoom (punches) e scosse (shakes) ai tempi dati"""
+    s = 1.0 + push * ease((t - t0) / 5.0)
+    for p in punches:
+        k = t - p
+        if 0 <= k < 0.4: s += 0.09 * math.sin(math.pi * min(1, k / 0.4)) * (1 - k / 0.4) ** 0.5
+    dx = 14 * drift * math.sin(t * 0.7); dy = 10 * drift * math.cos(t * 0.55); rot = 0.5 * drift * math.sin(t * 0.45)
+    for p in shakes:
+        k = t - p
+        if 0 <= k < 0.45:
+            amp = 22 * (1 - k / 0.45); dx += amp * math.sin(k * 70); dy += amp * 0.8 * math.cos(k * 55); rot += 0.8 * (1 - k / 0.45) * math.sin(k * 60)
+    a = math.radians(rot); ca, sa = math.cos(a) / s, math.sin(a) / s
+    cx, cy = W / 2, H / 2
+    # mappa inversa: punto di uscita -> punto della scena
+    c = (ca, sa, cx - ca * (cx + dx) - sa * (cy + dy), -sa, ca, cy + sa * (cx + dx) - ca * (cy + dy))
+    return img.transform((W, H), Image.AFFINE, c, Image.BICUBIC, fillcolor=img.getpixel((5, 5)))
+
+def flash(img, t, times, dur=0.14, col=(255, 255, 255), strength=0.75):
+    """lampo sui momenti forti"""
+    for p in times:
+        k = t - p
+        if 0 <= k < dur: return Image.blend(img, Image.new('RGB', (W, H), col), strength * (1 - k / dur))
+    return img
+
+def dust(img, t, n=40, seed=9, col=GOLD, speed=60):
+    """particelle che salgono lentamente (aria viva in ogni mondo)"""
+    d = ImageDraw.Draw(img); r = random.Random(seed)
+    for _ in range(n):
+        x0, y0, sp, sz, ph = r.uniform(0, W), r.uniform(0, H), r.uniform(0.4, 1.4), r.uniform(1.5, 4), r.uniform(0, 6.28)
+        y = (y0 - t * speed * sp) % H; x = x0 + 18 * math.sin(t * 0.8 + ph)
+        a = 0.35 + 0.35 * math.sin(t * 2 + ph)
+        d.ellipse((x - sz, y - sz, x + sz, y + sz), fill=tuple(int(c * a) for c in col))
+    return img
+
+def light_sweep(img, t, period=3.5, width=220, strength=55):
+    """banda di luce diagonale che attraversa lo schermo ogni `period` secondi"""
+    k = (t % period) / period; x = -600 + k * (W + 1200)
+    m = Image.new('L', (W, H), 0); ImageDraw.Draw(m).polygon([(x, 0), (x + width, 0), (x + width - 500, H), (x - 500, H)], fill=strength)
+    return Image.composite(Image.new('RGB', (W, H), (255, 240, 200)), img, m.filter(ImageFilter.GaussianBlur(60)))
+
+def whip(img_from, img_to, prog, direction=1):
+    """strisciata veloce: la scena vecchia scappa di lato con scia, la nuova entra"""
+    p = ease(prog); off = int(W * p) * direction
+    out = Image.new('RGB', (W, H), DARK)
+    out.paste(img_from, (-off, 0)); out.paste(img_to, (W * direction - off, 0))
+    if 0.05 < prog < 0.95:
+        trail = Image.new('RGB', (W, H)); acc = out
+        for k in (12, 24, 36): acc = Image.blend(acc, ImageChops.offset(out, k * direction, 0), 0.35)
+        out = acc
+    return out
+
+def zoom_through(img_from, img_to, prog):
+    """entra dentro la scena: la vecchia ingrandisce e sparisce in un lampo, la nuova arriva da più grande"""
+    if prog < 0.5:
+        k = ease(prog * 2); s = 1 + 0.6 * k
+        a = img_from.resize((int(W * s), int(H * s)), Image.BILINEAR).crop((int((W * s - W) / 2), int((H * s - H) / 2), int((W * s + W) / 2), int((H * s + H) / 2)))
+        return Image.blend(a, Image.new('RGB', (W, H), (255, 255, 255)), k * 0.8)
+    k = ease((prog - 0.5) * 2); s = 1.25 - 0.25 * k
+    b = img_to.resize((int(W * s), int(H * s)), Image.BILINEAR).crop((int((W * s - W) / 2), int((H * s - H) / 2), int((W * s + W) / 2), int((H * s + H) / 2)))
+    return Image.blend(Image.new('RGB', (W, H), (255, 255, 255)), b, 0.2 + 0.8 * k)
+
+def captions_pop(img, t, words, groups, keys, dark, y=1585, end=None, size=78):
+    """sottotitoli animati: ogni parola salta dentro con rimbalzo quando viene detta, la parola chiave arriva nel riquadro oro che si allarga"""
+    gi = None
+    for g in groups:
+        if words[g[0]][1] - 0.05 <= t: gi = g
+    if gi is None or t > (end if end is not None else words[-1][2] + 0.3): return img
+    d = ImageDraw.Draw(img); f = F(COND, size); sp = 22
+    txt = [words[i][0].upper().strip('.,:;') for i in gi]
+    ws = [d.textlength(w, font=f) for w in txt]; x = W / 2 - (sum(ws) + sp * (len(txt) - 1)) / 2
+    gstart = words[gi[0]][1]; lift = 30 * (1 - back((t - gstart + 0.05) / 0.25))
+    for i, w, wd in zip(gi, txt, ws):
+        k = (t - words[i][1]) / 0.22; said = k >= 0
+        sc = 0.75 + 0.25 * back(k) if said else 0.75
+        fs = F(COND, max(8, int(size * sc))); cx = x + wd / 2; yy = y + lift - (8 * math.sin(math.pi * min(1, max(0, k))) if said else 0)
+        if said and i in keys:
+            bw = (wd + 28) * back(k / 0.9); d.rounded_rectangle((cx - bw / 2, yy - 46 * sc, cx + bw / 2, yy + 44 * sc), radius=12, fill=GOLD); col = DARK
+        else:
+            col = (WHITE if dark else INK) if said else (MUTE if dark else (175, 168, 152))
+        d.text((cx, yy), w, font=fs, fill=col, anchor='mm'); x += wd + sp
+    return img
+
+def typewriter_big(img, s, xy, size, col, t, t0, per=0.05, font=BIG):
+    """titolo che entra lettera per lettera, ogni lettera cade con rimbalzo"""
+    d = ImageDraw.Draw(img); f = F(font, size); tw = d.textlength(s, font=f); x = xy[0] - tw / 2
+    for i, ch in enumerate(s):
+        k = (t - t0 - i * per) / 0.3
+        cw = d.textlength(ch, font=f)
+        if k > 0:
+            dy = -80 * (1 - back(k)); d.text((x, xy[1] + dy), ch, font=f, fill=fade(col, min(1, k * 3), img.getpixel((int(x), int(xy[1])))), anchor='ls')
+        x += cw
+    return img
+
+# ---------------- movimenti presi dai video modello ----------------
+def pulse_rings(img, cx, cy, t, col=GOLD, period=1.6, n=3, rmax=420, width=4):
+    """cerchi che si allargano come onde dietro un oggetto (video 1 e 7)"""
+    lay = Image.new('L', (W, H), 0); d = ImageDraw.Draw(lay)
+    for k in range(n):
+        p = ((t / period) + k / n) % 1.0; r = 40 + rmax * ease(p)
+        d.ellipse((cx - r, cy - r, cx + r, cy + r), outline=int(200 * (1 - p)), width=width)
+    return Image.composite(Image.new('RGB', (W, H), col), img, lay)
+
+def blur_in(img, fn, t, t0, dur=0.45, idle='float', seed=0, amp=1.0):
+    """oggetto che passa da sfocato e grande a nitido (video 7 e r601), poi resta vivo"""
+    if t < t0: return img
+    base = img.copy(); r = fn(base)
+    if r is not None: base = r
+    a = ease((t - t0) / dur)
+    if a < 1:
+        diff = ImageChops.difference(base, img).convert('L').point(lambda v: 0 if v < 3 else min(255, v * 5))
+        bl = base.filter(ImageFilter.GaussianBlur(28 * (1 - a))); m = diff.filter(ImageFilter.GaussianBlur(28 * (1 - a))).point(lambda v: int(v * a))
+        out = img.copy(); out.paste(bl, (0, 0), m); return out
+    return sprite(img, fn, t, t0 - 10, enter='none', idle=idle, seed=seed, amp=amp)
+
+def type_text(d, s, xy, size, col, t, t0, cps=18, font=MONO, cursor=True, anchor='lm'):
+    """testo che si scrive con il cursore che lampeggia (video 2 e 4)"""
+    k = int(max(0, (t - t0)) * cps); shown = s[:k]; f = F(font, size)
+    d.text(xy, shown, font=f, fill=col, anchor=anchor)
+    if cursor and t >= t0 and (k < len(s) or int(t * 2.5) % 2 == 0):
+        x = xy[0] + d.textlength(shown, font=f) + 6
+        d.rectangle((x, xy[1] - size * 0.45, x + size * 0.08, xy[1] + size * 0.45), fill=col)
+
+def count_text(value_from, value_to, t, t0, dur=0.8, fmt='{:.1f}', dec=','):
+    """numero che conta da un valore all'altro (video 5): ritorna la stringa da disegnare"""
+    v = value_from + (value_to - value_from) * ease((t - t0) / dur)
+    s = fmt.format(v)
+    if dec == ',': s = s.replace(',', 'X').replace('.', ',').replace('X', '.')
+    return s
+
+def color_flash(img, t, times, col=GOLD, dur=0.18, strength=0.35):
+    """lampo colorato su tutto lo schermo sulla parola chiave (video 2)"""
+    return flash(img, t, times, dur, col, strength)
+
+def whip_v(img_from, img_to, prog, direction=1):
+    """strisciata verticale con scia sfocata (video 4)"""
+    p = ease(prog); off = int(H * p) * direction
+    out = Image.new('RGB', (W, H), DARK); out.paste(img_from, (0, -off)); out.paste(img_to, (0, H * direction - off))
+    if 0.05 < prog < 0.95:
+        acc = out
+        for k in (20, 40, 60, 80): acc = Image.blend(acc, ImageChops.offset(out, 0, k * direction), 0.3)
+        out = acc
+    return out
+
+def blur_cross(img_from, img_to, prog):
+    """dissolvenza attraverso la sfocatura (video 7)"""
+    if prog < 0.5:
+        k = prog * 2; return img_from.filter(ImageFilter.GaussianBlur(30 * k))
+    k = (prog - 0.5) * 2; return Image.blend(img_from.filter(ImageFilter.GaussianBlur(30)), img_to.filter(ImageFilter.GaussianBlur(30 * (1 - k))), min(1, k * 1.5))
+
+def light_beams(img, t, col=(120, 160, 255), n=3, strength=22):
+    """fasci di luce verticali che scorrono (video 1)"""
+    m = Image.new('L', (W, H), 0); d = ImageDraw.Draw(m)
+    for k in range(n):
+        x = (W * 1.4) * (((t * 0.25) + k / n) % 1.0) - W * 0.2; w = 40 + 30 * k
+        d.rectangle((x - w / 2, 0, x + w / 2, H), fill=strength)
+    return Image.composite(Image.new('RGB', (W, H), col), img, m.filter(ImageFilter.GaussianBlur(30)))
+
+def clock_hands(img, cx, cy, r, t, col=GOLD, speed=1.0):
+    """orologio luminoso con lancette che girano sempre (video 1)"""
+    img = glow_icon(img, 'orologio', cx, cy, r * 2.1, 1, col, 7)
+    m = Image.new('L', (W, H), 0); d = ImageDraw.Draw(m)
+    for L, sp, w in [(r * 0.55, 0.6, 9), (r * 0.8, 4.0, 6)]:
+        a = t * sp * speed * 2 * math.pi - math.pi / 2; d.line([(cx, cy), (cx + L * math.cos(a), cy + L * math.sin(a))], fill=255, width=w)
+    img = Image.composite(Image.new('RGB', (W, H), tuple(int(v * .5) for v in col)), img, m.filter(ImageFilter.GaussianBlur(10)))
+    return Image.composite(Image.new('RGB', (W, H), col), img, m)
+
+def card_flip_quad(quad, t, t0, dur=0.7):
+    """quadrilatero che entra ruotando in 3D (video 4): da inclinato e lontano alla posizione, poi oscilla"""
+    a = back((t - t0) / dur, 1.4); cx = sum(p[0] for p in quad) / 4; cy = sum(p[1] for p in quad) / 4
+    sc = 0.4 + 0.6 * a; tilt = (1 - a) * 0.6
+    out = []
+    for i, (x, y) in enumerate(quad):
+        dx, dy = (x - cx) * sc, (y - cy) * sc
+        side = -1 if i in (0, 3) else 1
+        dy *= 1 + side * tilt * 0.5
+        out.append((cx + dx + 12 * math.sin(t * 1.3 + i), cy + dy + 9 * math.cos(t * 1.1 + i * 2) + 300 * (1 - a)))
+    return out

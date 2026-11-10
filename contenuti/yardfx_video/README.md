@@ -11,10 +11,10 @@ Quando Salvatore incolla un prompt del calendario, segui questi passi. Lui lavor
 - Numeri scritti in lettere per la voce ("quattromila e cento").
 - Nessuna previsione certa: usa "di solito".
 
-## 2. Voce e tempi parola per parola
-- Se Salvatore carica un MP3: `Y.words_from_whisper('voce.mp3')`.
-- Altrimenti: `Y.tts_elevenlabs(testo, 'voce.mp3')`. Enea richiede il piano a pagamento; con il piano gratuito usa George (default).
-- Ogni scena cambia sulla prima parola del suo paragrafo (`Y.find_word`).
+## 2. Voce: la registra SEMPRE Salvatore con Enea
+- Manda lo script in chat dentro un blocco da copiare, poi **fermati** e aspetta il suo MP3, registrato su ElevenLabs con la voce Enea.
+- **Mai** generare la voce da solo e mai usare voci gratuite o altre voci, nemmeno come bozza.
+- Quando arriva l'MP3, ricava i tempi parola per parola con `Y.words_from_whisper('voce.mp3')`. Ogni scena cambia sulla prima parola del suo paragrafo (`Y.find_word`).
 
 ## 3. Storyboard (scrivilo prima del codice)
 Per ogni scena indica:
@@ -82,6 +82,46 @@ Cambio di mondo: sempre con `circle_wipe` (0,4 s).
 - Ogni scena ha un movimento: tratto che si disegna, scheda che entra, numero che conta, zoom. Niente fermo immagine oltre 2 s.
 - I sottotitoli stanno a y=1585 (sotto la grafica); se la scena usa quell'area, spostali (`y=1720`).
 - Grafici: candele vere, dai suoi screenshot o dai prezzi trovati sul web. Se illustrative: "esempio didattico".
+
+## 3b. MOVIMENTO, MUSICA ED EFFETTI (obbligatori: un video fermo è da rifare)
+Niente sta fermo. Questi movimenti vengono dai video modello (vedi la libreria):
+- **Entrate con rimbalzo**: ogni oggetto va disegnato dentro `Y.sprite(img, fn, t, t0, enter=..., idle=...)`.
+  - `enter`: pop, drop, rise, left, right, spin, stamp.
+  - `idle`: float, breathe, wobble, sway. Dopo l'entrata l'oggetto galleggia, pulsa o oscilla **sempre**.
+- **Testo sfocato → nitido**: `Y.blur_in` (video 7, r601). Testo che si scrive con il cursore: `Y.type_text` (video 2, 4). Numeri che contano: `Y.count_text`, `Y.big_counter`, `Y.number_roll` (video 5).
+- **Sfondi vivi**:
+  - `Y.dust` (polvere che sale);
+  - `Y.light_beams` (fasci di luce, video 1);
+  - `Y.light_sweep` (luce diagonale);
+  - `Y.pulse_rings` (onde dietro l'oggetto, video 1 e 7);
+  - `Y.clock_hands` (lancette che girano);
+  - schede in 3D che entrano ruotando con `Y.card_flip_quad` (video 4).
+- **Camera**: `Y.camera(img, t, inizio_scena, punches=[...], shakes=[...])` su ogni scena. Spinge sempre piano in avanti e deriva, dà un colpo di zoom sulle parole chiave e una scossa su timbri e numeri forti.
+- **Lampi**: `Y.flash` (bianco) e `Y.color_flash` (oro, rosso o verde) sulla parola più forte di ogni scena (video 2).
+- **Transizioni**, mai due uguali di fila:
+  - `whip` e `whip_v`: strisciate con scia (video 4);
+  - `blur_cross` (video 7);
+  - `zoom_through`;
+  - `circle_wipe`.
+- **Sottotitoli**: `Y.captions_pop`. Le parole saltano dentro, la chiave arriva nel riquadro oro che si allarga.
+- **Audio** (`suoni.py`, tutto generato da zero, senza copyright):
+  - `S.music(...)` crea la base musicale. Mood: tensione (news negative), positivo (recap verdi), calmo (mindset).
+  - `S.mix(out, durata, voce=MP3 di Salvatore, musica=..., eventi=[(t,'pop'), ...])` abbassa la musica sotto la voce (sidechain) e normalizza a −14 LUFS.
+  - Ogni comparsa ha il suo effetto:
+
+    | Cosa succede | Effetto |
+    |---|---|
+    | entrata | pop / pop_hi / bubble |
+    | cambio scena | whoosh, swipe, swoosh_up |
+    | timbro | stamp |
+    | numero forte | boom (+ glitch) |
+    | dato giusto, livello | ding / trin / coin |
+    | notifica, chip ✕ | alert |
+    | scrittura e numeri che contano | click / tick |
+    | prima di una rivelazione | riser |
+
+  - In un video da 40 s ci vogliono almeno 60 effetti.
+- **Render**: usa `multiprocessing.Pool(4)` per i fotogrammi (vedi esempio in `esempi/cpi_animato.py`): il video muto, poi `S.mix` e l'unione.
 
 ## 4. Ricette per formato (mondi in ordine)
 | Formato | Sequenza dei mondi | Elementi suggeriti | Durata |
