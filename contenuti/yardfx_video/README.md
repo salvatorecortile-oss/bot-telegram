@@ -156,6 +156,15 @@ Dopo la call to action con i 4 paletti:
 - **Candeline dei capitoli**: non metterle, a meno che abbiano un senso preciso detto dalla voce (es. numero della puntata).
 - Esempio completo: `esempi/strategia1_rsi.py`.
 
+## 3e. VERSIONE TIKTOK (senza la parola Telegram)
+TikTok blocca i post che portano fuori dall'app: il 12/11 un carosello è stato rimosso. Per questo:
+- **Su TikTok** non compare mai la parola "Telegram" né "cercami su…":
+  - nella descrizione togli la riga di Telegram;
+  - nel finale del video usa `Y.telegram_cta(img, t, t0, 1150, line='')`: solo l'icona dell'aereo di carta e @yard_fx;
+  - nelle slide resta solo l'icona e @yard_fx.
+- **Su Instagram** resta la versione completa con "CERCAMI SU TELEGRAM".
+- Fai due render del video (o solo del finale), poi in Zernio passa `customMedia` e `tiktokSettings.description` diversi sulla piattaforma tiktok.
+
 ## 4. Ricette per formato (mondi in ordine)
 | Formato | Sequenza dei mondi | Elementi suggeriti | Durata |
 |---|---|---|---|

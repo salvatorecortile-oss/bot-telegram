@@ -1129,7 +1129,7 @@ def telegram_cta(img, t, t0, y=1300, handle='@yard_fx', line='CERCAMI SU TELEGRA
     for k in range(1, 6):                                       # scia
         if s < 0.7: d.ellipse((ix - 40 * k - 8, iy - 8 + 6 * k, ix - 40 * k + 8, iy + 8 + 6 * k), fill=(42, 171, 238))
     telegram_icon(d, ix, iy, 70)
-    img = sprite(img, lambda b: ImageDraw.Draw(b).text((330, y), line, font=F(BIG, 64), fill=WHITE, anchor='lm'), t, t0 + 0.25, enter='left', idle='float', seed=61, amp=0.5)
+    if line: img = sprite(img, lambda b: ImageDraw.Draw(b).text((330, y), line, font=F(BIG, 64), fill=WHITE, anchor='lm'), t, t0 + 0.25, enter='left', idle='float', seed=61, amp=0.5)
     def pill(b):
         dd = ImageDraw.Draw(b); f = F(COND, 74); tw = dd.textlength(handle, font=f)
         dd.rounded_rectangle((W / 2 - tw / 2 - 40, y + 90, W / 2 + tw / 2 + 40, y + 200), radius=55, fill=(42, 171, 238)); dd.text((W / 2, y + 145), handle, font=f, fill=WHITE, anchor='mm')
