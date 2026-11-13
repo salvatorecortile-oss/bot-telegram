@@ -129,6 +129,43 @@ async def follower():
     assert "20" not in main._pending_adopts()
     print("OK - follower: operazione manuale senza SL collegata al segnale del principale e SL copiato.")
 
+    # Operazione aperta a mano sulla copia, SENZA SL/TP e ingresso lontano, che il principale
+    # NON ha collegato (nessun ADOPT): la copia trova da sola il segnale per direzione e orario.
+    import sqlite3
+    import time as _time
+    from datetime import timedelta
+    now = F.msg(0, "").date
+    s30, s31, s32 = (F.msg(i, T.ENTRA_53_SELL) for i in (30, 31, 32))
+    s30.date, s31.date, s32.date = now - timedelta(hours=3), now - timedelta(hours=1), now + timedelta(minutes=30)
+    tg.history = [s32, s31, s30]
+    with sqlite3.connect(SYNC_FILE) as c:   # il principale ha aperto il 30 e poi spostato lo SL
+        c.execute("INSERT INTO sync_events (source_message_id, kind, value, created_at) VALUES (30, 'OPEN', NULL, '')")
+        c.execute("INSERT INTO sync_events (source_message_id, kind, value, created_at) VALUES (30, 'SL', 4200, '')")
+    main.mt5x.MT5_SYMBOL = "XAUUSD"
+    mt5.next_ticket += 1
+    t2 = mt5.next_ticket
+    mt5.positions[t2] = SimpleNamespace(ticket=t2, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_SELL, volume=0.01,
+                                        price_open=4060.00, price_current=4060.00, sl=0.0, tp=0.0, profit=0.0,
+                                        time=int(_time.time()) - 600, time_msc=0)
+    await main.adopt_manual_positions()
+    r30 = db.get_signal(30)
+    assert r30 and r30["status"] == "OPENED" and r30["position_ticket"] == t2, r30
+    assert mt5.positions[t2].sl == 4200.0 and r30["sl"] == 4200.0, (mt5.positions[t2].sl, r30)
+    assert db.get_signal(31) is None and db.get_signal(32) is None
+    print("OK - follower: operazione manuale senza SL collegata da sola (direzione + orario) e SL del principale messo.")
+
+    # Senza nessuna informazione dal principale: prende il segnale piu' recente prima dell'apertura (31)
+    mt5.next_ticket += 1
+    t3 = mt5.next_ticket
+    mt5.positions[t3] = SimpleNamespace(ticket=t3, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_SELL, volume=0.01,
+                                        price_open=4050.00, price_current=4050.00, sl=0.0, tp=0.0, profit=0.0,
+                                        time=int(_time.time()) - 300, time_msc=0)
+    await main.adopt_manual_positions()
+    r31 = db.get_signal(31)
+    assert r31 and r31["position_ticket"] == t3 and mt5.positions[t3].sl == 4350.0, (r31, mt5.positions[t3].sl)
+    assert db.get_signal(32) is None
+    print("OK - follower: senza dati del principale usa SL/TP del segnale Telegram.")
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

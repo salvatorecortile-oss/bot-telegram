@@ -17,6 +17,7 @@ aperti contemporaneamente: ogni segnale e' una posizione a se'.
 Avvio:  python main.py
 """
 import asyncio
+from types import SimpleNamespace
 import json
 import re
 import logging
@@ -815,6 +816,60 @@ def _match_score(position, signal):
 
 _unmatched_logged = set()
 
+# Stati di un segnale che il bot non ha aperto: un'operazione aperta a mano puo' collegarsi.
+_FREE_STATUSES = ("RECEIVED", "SKIPPED", "ERROR", "MT5_NOT_READY", "PAUSED_NO_NEW_TRADE",
+                  "BLOCKED_BY_CHANNEL", "NOT_OPENED_BY_MASTER", "SKIPPED_LIMIT", "PAUSED_RISK")
+
+
+def _signal_free(source_id):
+    row = db.get_signal(source_id)
+    return row is None or row["status"] in _FREE_STATUSES
+
+
+async def _follower_fallback(position, signals, used, server_now):
+    """
+    Copia, operazione aperta a mano senza SL/TP riconoscibili: sceglie il segnale
+    della stessa direzione arrivato prima dell'apertura, non chiuso sul principale,
+    preferendo quelli che il principale ha aperto (o collegato). Restituisce
+    ((score, message, signal), (sl, tp)) oppure None.
+    """
+    direction = "BUY" if int(position.type) == 0 else "SELL"
+    events = await asyncio.to_thread(sync.events_by_source)
+    # Ora di apertura della posizione in UTC (l'orario del server MT5 ha un fuso suo).
+    offset = round((server_now - time.time()) / 900) * 900 if server_now else 0
+    opened_utc = int(position.time) - offset
+    best = None
+    for message, signal in signals:
+        if message.id in used or signal["direction"] != direction or not _signal_free(message.id):
+            continue
+        history = events.get(message.id, [])
+        if any(kind == "CLOSE" for kind, _, _ in history):
+            continue  # gia' chiuso sul conto principale
+        if message.date.timestamp() > opened_utc + 300:
+            continue  # segnale arrivato dopo l'apertura della posizione
+        on_master = any(kind in ("OPEN", "ADOPT") for kind, _, _ in history)
+        key = (1 if on_master else 0, message.date.timestamp())
+        if best is None or key > best[0]:
+            best = (key, message, signal)
+    if best is None:
+        return None
+    _, message, signal = best
+    # Livelli: quelli del segnale, aggiornati con le ultime modifiche del principale.
+    sl, tp = float(signal["sl"] or 0.0), float(signal.get("tp") or 0.0)
+    for kind, value, data in events.get(message.id, []):
+        if kind == "ADOPT" and data:
+            sl, tp = float(data.get("sl") or sl), float(data.get("tp") or 0.0)
+        elif kind == "SL":
+            sl = float(value or 0.0)
+        elif kind == "BE":
+            sl = float(position.price_open)
+        elif kind == "TP":
+            tp = float(value or 0.0)
+    logger.info("🔎 Posizione %s %s @ %.2f senza SL/TP riconoscibili: collegata al SIGNAL %s (#%s) "
+                "per direzione e orario%s", position.ticket, direction, float(position.price_open),
+                signal["signal_no"], message.id, " (aperto anche sul principale)" if best[0][0] else "")
+    return (0, message, signal), (sl, tp)
+
 
 async def adopt_manual_positions():
     open_rows = db.get_open_signals()
@@ -847,13 +902,20 @@ async def adopt_manual_positions():
         for message, signal in signals:
             if message.id in used:
                 continue
-            row = db.get_signal(message.id)
-            if row is not None and row["status"] not in ("RECEIVED", "SKIPPED", "ERROR", "MT5_NOT_READY",
-                                                          "PAUSED_NO_NEW_TRADE", "BLOCKED_BY_CHANNEL"):
+            if not _signal_free(message.id):
                 continue  # segnale gia' gestito (aperto o chiuso) dal bot
             score = _match_score(position, signal)
             if score is not None and (best is None or score < best[0]):
                 best = (score, message, signal)
+        levels = None
+        if (best is None and sync.IS_FOLLOWER and int(position.magic) == 0
+                # prima lascia al principale un giro di controllo (ogni 10 min) per collegarla lui
+                and (not now or int(position.time) < now - 660)):
+            # Copia: SL/TP non corrispondono (es. aperta a mano senza stop). Cerca da sola
+            # il segnale per direzione e orario, preferendo quelli aperti sul principale.
+            found = await _follower_fallback(position, signals, used, now)
+            if found:
+                best, levels = found
         if best is None:
             if int(position.ticket) not in _unmatched_logged:
                 _unmatched_logged.add(int(position.ticket))
@@ -868,10 +930,20 @@ async def adopt_manual_positions():
         _, message, signal = best
         used.add(message.id)
         db.insert_signal(message.id, signal)
+        mt5x.register_ticket(position.ticket)
+        if levels is not None:
+            # SL/TP del segnale (o gli ultimi del conto principale) messi sulla posizione.
+            try:
+                sl_set, tp_set = await asyncio.to_thread(mt5x.set_levels, position.ticket, levels[0] or None,
+                                                         levels[1] or 0.0)
+                position = SimpleNamespace(**{**{k: getattr(position, k) for k in
+                                                 ("ticket", "type", "volume", "price_open", "magic")},
+                                              "sl": sl_set, "tp": tp_set})
+            except Exception:
+                logger.exception("❌ SL/TP non applicabili alla posizione %s", position.ticket)
         tp = float(position.tp or 0.0) or None
         db.mark_opened(message.id, int(position.ticket), float(position.price_open),
                        float(position.volume), float(position.sl or 0.0), tp)
-        mt5x.register_ticket(position.ticket)
         logger.info(
             "🤝 OPERAZIONE APERTA A MANO COLLEGATA | Position %s %s @ %.2f -> SIGNAL %s (#%s)",
             position.ticket, signal["direction"], float(position.price_open), signal["signal_no"], message.id,

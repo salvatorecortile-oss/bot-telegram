@@ -66,6 +66,14 @@ def find_decision(source_message_id):
         return row["kind"] if row else None
 
 
+def events_by_source():
+    """{source_message_id: [(kind, value, data), ...]} in ordine: storia di ogni segnale sul principale."""
+    out = {}
+    for event in read_after(0):
+        out.setdefault(event["source_message_id"], []).append((event["kind"], event["value"], event["data"]))
+    return out
+
+
 def read_after(last_id):
     with _connect() as conn:
         rows = conn.execute(

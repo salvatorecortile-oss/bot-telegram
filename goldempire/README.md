@@ -38,6 +38,12 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
 - **Copie (SYNC_ROLE=follower)**: aprono un segnale solo se il conto principale l'ha aperto (conferma nel file
   condiviso, attesa massima `FOLLOW_WAIT_SECONDS`); se il principale è in pausa, spento o salta il segnale, le copie
   non aprono. Chiusure, SL, BE e TP del principale vengono copiati.
+- **Operazioni aperte a mano**: il bot le collega al segnale con stessa direzione e stesso SL/TP (o ingresso
+  vicino). Sulle copie, se il principale ne ha collegata una, la copia collega la sua e mette lo stesso SL/TP.
+  Se invece non c'è nessuna corrispondenza (es. aperta a mano senza SL/TP, ingresso diverso) la copia, dopo
+  ~11 minuti, sceglie da sola il segnale della stessa direzione arrivato prima dell'apertura e non ancora
+  chiuso (preferendo quelli aperti anche sul principale, poi il più recente) e mette SL/TP: quelli più
+  aggiornati del principale (SL spostato, BE, TP) o, se mancano, quelli del segnale Telegram.
 - Gli aggiornamenti vengono collegati al segnale tramite la **reply** di Telegram
   (riserva: ultimo `SIGNAL N` ancora aperto). Nel tuo canale escono in reply al segnale copiato.
 - BUY e SELL possono essere aperti **contemporaneamente** (serve un conto MT5 *hedging*).
