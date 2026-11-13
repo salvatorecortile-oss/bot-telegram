@@ -17,6 +17,7 @@ aperti contemporaneamente: ogni segnale e' una posizione a se'.
 Avvio:  python main.py
 """
 import asyncio
+import json
 import re
 import logging
 import sys
@@ -878,6 +879,13 @@ async def adopt_manual_positions():
         # L'apertura nel canale la pubblica l'utente a mano: il bot la riconosce
         # (link_destination_post) e risponde a quel messaggio con TP/SL/chiusure.
         db.mark_sent(f"adopted:{message.id}")
+        # Le copie collegano la loro operazione manuale nella stessa direzione e
+        # le mettono lo stesso SL/TP del conto principale.
+        sync.publish(message.id, "ADOPT", data={
+            "direction": signal["direction"], "signal_no": signal["signal_no"],
+            "entry": signal["entry"], "sl": float(position.sl or 0.0) or signal["sl"],
+            "tp": tp or 0.0,
+        })
 
     await link_recent_destination_posts()
 
@@ -1002,6 +1010,9 @@ async def adopt_loop():
 
 async def apply_sync_event(event):
     """Fa sulla nostra operazione quello che il conto principale ha fatto sulla sua."""
+    if event["kind"] == "ADOPT":
+        await follow_master_adoption(event["source_message_id"], event.get("data") or {})
+        return
     if event["kind"] not in ("CLOSE", "SL", "BE", "TP"):
         return  # OPEN / SKIP: li usa l'apertura (wait_master_decision)
     row = db.get_signal(event["source_message_id"])
@@ -1043,6 +1054,66 @@ async def apply_sync_event(event):
             await check_tp_change(row, new_tp)
 
 
+# Operazioni manuali collegate dal principale ma non ancora trovate su questa copia
+# (es. aperta a mano qui qualche minuto dopo): si riprova finche' compare (max 72 ore).
+def _pending_adopts():
+    try:
+        return json.loads(db.get_setting("pending_adopts", "{}") or "{}")
+    except ValueError:
+        return {}
+
+
+async def follow_master_adoption(source_id, data, retry=False):
+    """
+    Il principale ha collegato una sua operazione aperta a mano al segnale
+    source_id: la copia collega la SUA posizione manuale nella stessa direzione
+    (la piu' recente non ancora gestita) e le mette lo stesso SL/TP.
+    """
+    pending = _pending_adopts()
+    row = db.get_signal(source_id)
+    if row is not None and row["status"] in (db.OPEN_STATUS, db.PENDING_STATUS):
+        pending.pop(str(source_id), None)
+        db.set_setting("pending_adopts", json.dumps(pending))
+        return  # su questo conto e' gia' gestita
+    direction = data.get("direction")
+    wanted_type = 0 if direction == "BUY" else 1  # POSITION_TYPE_BUY / SELL
+    known = {int(r["position_ticket"]) for r in db.get_open_signals() if r["position_ticket"]}
+    candidates = [p for p in await asyncio.to_thread(mt5x.get_symbol_positions)
+                  if int(p.ticket) not in known and int(p.type) == wanted_type
+                  and int(p.magic) in (0, int(MAGIC_NUMBER))]  # a mano (magic 0) o del bot, mai di altri bot
+    if not candidates:
+        if not retry:
+            logger.info("ℹ️ Il conto principale ha collegato una %s aperta a mano (SIGNAL %s): "
+                        "su questo conto non c'e' ancora, la aspetto.", direction, data.get("signal_no"))
+        data = dict(data, since=data.get("since") or time.time())
+        if time.time() - data["since"] < ADOPT_LOOKBACK_HOURS * 3600:
+            pending[str(source_id)] = data
+        else:
+            pending.pop(str(source_id), None)
+        db.set_setting("pending_adopts", json.dumps(pending))
+        return
+    position = max(candidates, key=lambda p: getattr(p, "time_msc", p.time))
+    sl = float(data.get("sl") or 0.0)
+    tp = float(data.get("tp") or 0.0)
+    mt5x.register_ticket(position.ticket)
+    try:
+        sl, tp = await asyncio.to_thread(mt5x.set_levels, position.ticket, sl or None, tp)
+    except Exception:
+        logger.exception("❌ SL/TP del conto principale non applicabili alla posizione %s", position.ticket)
+        sl, tp = float(position.sl or 0.0), float(position.tp or 0.0)
+    signal = {"direction": direction, "entry": data.get("entry") or float(position.price_open),
+              "sl": sl, "tp": tp or None, "signal_no": data.get("signal_no")}
+    db.insert_signal(source_id, signal)
+    db.mark_opened(source_id, int(position.ticket), float(position.price_open),
+                   float(position.volume), sl, tp or None)
+    db.mark_sent(f"adopted:{source_id}")
+    pending.pop(str(source_id), None)
+    db.set_setting("pending_adopts", json.dumps(pending))
+    logger.info("🔁 ALLINEATO: posizione %s %s @ %.2f aperta a mano collegata al SIGNAL %s come sul "
+                "conto principale (SL %.2f, TP %s)", position.ticket, direction, float(position.price_open),
+                data.get("signal_no"), sl, f"{tp:.2f}" if tp else "nessuno")
+
+
 async def sync_follower_loop():
     """Ogni 2 secondi applica le novita' del conto principale (file SYNC_FILE)."""
     while True:
@@ -1056,6 +1127,8 @@ async def sync_follower_loop():
                         logger.exception("❌ ERRORE ALLINEAMENTO (%s su #%s)",
                                          event["kind"], event["source_message_id"])
                     db.set_setting("sync_last_id", event["id"])
+                for source_id, data in _pending_adopts().items():
+                    await follow_master_adoption(int(source_id), data, retry=True)
         except asyncio.CancelledError:
             raise
         except Exception:

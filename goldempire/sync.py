@@ -6,6 +6,7 @@ sue operazioni: chiusura, SL spostato, BE, TP cambiato. Il bot "follower" legge
 il file e fa lo stesso sulla sua operazione collegata allo STESSO segnale del
 canale sorgente (stesso source_message_id: i due bot leggono lo stesso canale).
 """
+import json
 import sqlite3
 from datetime import datetime, timezone
 
@@ -31,21 +32,26 @@ def _connect():
         )
         """
     )
+    # Colonna aggiunta dopo (file gia' esistenti): dati extra in JSON (es. ADOPT).
+    columns = {r["name"] for r in conn.execute("PRAGMA table_info(sync_events)")}
+    if "data" not in columns:
+        conn.execute("ALTER TABLE sync_events ADD COLUMN data TEXT")
     return conn
 
 
-def publish(source_message_id, kind, value=None):
+def publish(source_message_id, kind, value=None, data=None):
     """
     Solo il master scrive. kind: OPEN / SKIP (segnale aperto o no), CLOSE,
-    SL (value=prezzo), BE, TP (value=prezzo, 0=nessuno).
+    SL (value=prezzo), BE, TP (value=prezzo, 0=nessuno), ADOPT (operazione
+    aperta a mano collegata a un segnale; data = direzione, SL, TP, segnale).
     """
     if not IS_MASTER:
         return
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO sync_events (source_message_id, kind, value, created_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO sync_events (source_message_id, kind, value, created_at, data) VALUES (?, ?, ?, ?, ?)",
             (int(source_message_id), kind, None if value is None else float(value),
-             datetime.now(timezone.utc).isoformat()),
+             datetime.now(timezone.utc).isoformat(), None if data is None else json.dumps(data)),
         )
 
 
@@ -65,4 +71,7 @@ def read_after(last_id):
         rows = conn.execute(
             "SELECT * FROM sync_events WHERE id > ? ORDER BY id", (int(last_id),)
         ).fetchall()
-        return [dict(r) for r in rows]
+        events = [dict(r) for r in rows]
+        for event in events:
+            event["data"] = json.loads(event["data"]) if event.get("data") else None
+        return events

@@ -57,6 +57,23 @@ async def master():
                       (10, "TP", 4000.0), (11, "CLOSE", None)], events
     print("OK - master: scrive", events)
 
+    # Operazione aperta A MANO sul principale (SL del segnale, ingresso piu' tardi): collegata e comunicata
+    from types import SimpleNamespace
+    sig = F.msg(20, T.ENTRA_56_BUY_REAL)
+    sig.date = sig.date.replace(hour=max(0, sig.date.hour - 1))
+    tg.history = [sig]
+    tg.dest_history = []
+    mt5.next_ticket += 1
+    t = mt5.next_ticket
+    mt5.positions[t] = SimpleNamespace(ticket=t, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_BUY, volume=0.01,
+                                       price_open=3970.00, price_current=3970.00, sl=3933.79, tp=0.0, profit=0.0,
+                                       time=t, time_msc=t)
+    await main.adopt_manual_positions()
+    adopt = [e for e in sync.read_after(0) if e["kind"] == "ADOPT"]
+    assert len(adopt) == 1 and adopt[0]["source_message_id"] == 20, adopt
+    assert adopt[0]["data"]["direction"] == "BUY" and adopt[0]["data"]["sl"] == 3933.79, adopt
+    print("OK - master: operazione manuale collegata e comunicata alle copie", adopt[0]["data"])
+
 
 async def follower():
     os.environ.update({"SYNC_FILE": SYNC_FILE, "SYNC_ROLE": "follower", "PUBLISH_TO_CHANNEL": "false"})
@@ -89,6 +106,28 @@ async def follower():
     await _pass(main.sync_follower_loop, 2.5)
     assert p10.sl == 4300.00
     print("OK - follower: chiusura, SL, BE (al proprio ingresso) e TP copiati; 0 messaggi nel canale.")
+
+    # Operazione manuale sulla copia SENZA SL, ingresso diverso: aperta solo dopo -> si collega appena compare
+    from types import SimpleNamespace
+    assert db.get_signal(20) is None
+    assert "20" in main._pending_adopts()          # l'ADOPT e' arrivato prima della posizione: in attesa
+    mt5.next_ticket += 1
+    t = mt5.next_ticket
+    mt5.positions[t] = SimpleNamespace(ticket=t, magic=0, symbol="XAUUSD", type=mt5.POSITION_TYPE_BUY, volume=0.01,
+                                       price_open=3897.63, price_current=3897.63, sl=0.0, tp=0.0, profit=0.0,
+                                       time=t, time_msc=t)
+    # una posizione di un ALTRO bot (magic diverso) nella stessa direzione non va toccata
+    mt5.next_ticket += 1
+    other = mt5.next_ticket
+    mt5.positions[other] = SimpleNamespace(ticket=other, magic=26090102, symbol="XAUUSD", type=mt5.POSITION_TYPE_BUY,
+                                           volume=0.01, price_open=3899.0, price_current=3899.0, sl=0.0, tp=0.0,
+                                           profit=0.0, time=other, time_msc=other)
+    await _pass(main.sync_follower_loop, 2.5)
+    r = db.get_signal(20)
+    assert r and r["status"] == "OPENED" and r["position_ticket"] == t, r
+    assert mt5.positions[t].sl == 3933.79 and mt5.positions[other].sl == 0.0
+    assert "20" not in main._pending_adopts()
+    print("OK - follower: operazione manuale senza SL collegata al segnale del principale e SL copiato.")
 
 
 if __name__ == "__main__":
