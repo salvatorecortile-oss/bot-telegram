@@ -126,6 +126,7 @@ TR = {
         "w_voted_only": "Market already voted -> skipping vote, buying only.",
         "w_need_pct": "Market NOT voted: enter the percentage to vote, then click Buy again.",
         "w_bad_pct": "Invalid percentage (e.g. 77).",
+        "w_pct_range": "Percentage must be between 1 and 100 (you typed {v}).",
         "w_vote_line": ">>> VOTE: opt{n} '{name}'  guess {pct}%",
         "w_vote_ok": "    VOTE ok ({ms} ms)",
         "w_vote_err": "    VOTE status {s} ({ms} ms): {t}",
@@ -171,6 +172,7 @@ TR = {
         "w_voted_only": "Mercato gia' votato -> salto il voto, solo acquisto.",
         "w_need_pct": "Mercato NON votato: inserisci la percentuale per votare, poi riclicca Buy.",
         "w_bad_pct": "Percentuale non valida (es. 77).",
+        "w_pct_range": "La percentuale deve essere tra 1 e 100 (hai scritto {v}).",
         "w_vote_line": ">>> VOTO: opz{n} '{name}'  consenso {pct}%",
         "w_vote_ok": "    VOTO ok ({ms} ms)",
         "w_vote_err": "    VOTO status {s} ({ms} ms): {t}",
@@ -425,6 +427,9 @@ class Worker(threading.Thread):
             except ValueError:
                 self.emit("log", text=tr("w_bad_pct"))
                 return
+            if not (1 <= pct <= 100):   # la percentuale del voto va da 1 a 100
+                self.emit("log", text=tr("w_pct_range", v=praw))
+                return
             vb = {"marketId": market_id, "optionId": option_id, "consensusGuess": int(round(pct))}
             self.emit("log", text=tr("w_vote_line", n=option_index, name=oname, pct=int(round(pct))))
             vres = self.api_post(VOTE_PATH, vb)
@@ -436,7 +441,9 @@ class Worker(threading.Thread):
             if vres["status"] == 200 and voted_ok:
                 self.emit("log", text=tr("w_vote_ok", ms=vres["ms"]))
             else:
+                # voto fallito: NON provare a comprare (darebbe "vote required")
                 self.emit("log", text=tr("w_vote_err", s=vres["status"], ms=vres["ms"], t=vres["text"][:200]))
+                return
 
         # --- 2) BUY ---
         buy_body = {
