@@ -15,6 +15,7 @@ Quando Salvatore incolla un prompt del calendario, segui questi passi. Lui lavor
 - Manda lo script in chat dentro un blocco da copiare, poi **fermati** e aspetta il suo MP3, registrato su ElevenLabs con la voce Enea.
 - **Mai** usare un'altra voce nel video.
 - Quando arriva l'MP3, ricava i tempi parola per parola con **`Y.words_aligned('voce.mp3', testo_script)`**: genera un audio di riferimento solo per il calcolo e lo allinea con DTW. È preciso, serve `pip install librosa`.
+- Se i crediti ElevenLabs sono finiti, usa **`Y.words_aligned_offline(mp3, testo)`**: il riferimento lo genera espeak-ng in locale (`apt-get install -y espeak-ng`), errore medio 0,07 s. Poi aggancia la prima parola di ogni paragrafo all'inizio del tratto di voce più vicino (`Y.speech_segments`), come in `esempi/recap.py`.
 - **Non usare `words_from_script`**: stima i tempi dalle pause e sbaglia di 1-2 s verso la fine.
 - Ogni scena inizia sulla **prima parola del suo paragrafo** e resta finché la voce non ha finito quel paragrafo.
 - Ogni scritta compare sulla parola che la nomina (`T(i)`). Se una scena sembra corta, non anticipare la successiva: il cambio scena lo decide la voce.

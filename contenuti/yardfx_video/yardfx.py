@@ -940,7 +940,11 @@ def captions_pop(img, t, words, groups, keys, dark, y=1585, end=None, size=78):
     if gi is None or t > (end if end is not None else words[-1][2] + 0.3): return img
     d = ImageDraw.Draw(img); f = F(COND, size); sp = 22
     txt = [words[i][0].upper().strip('.,:;') for i in gi]
-    ws = [d.textlength(w, font=f) for w in txt]; x = W / 2 - (sum(ws) + sp * (len(txt) - 1)) / 2
+    ws = [d.textlength(w, font=f) for w in txt]
+    tot = sum(ws) + sp * (len(txt) - 1)
+    if tot > W - 100:                                  # parole lunghe: rimpicciolisce il gruppo per stare nello schermo
+        size = int(size * (W - 100) / tot); f = F(COND, size); ws = [d.textlength(w, font=f) for w in txt]
+    x = W / 2 - (sum(ws) + sp * (len(txt) - 1)) / 2
     gstart = words[gi[0]][1]; lift = 30 * (1 - back((t - gstart + 0.05) / 0.25))
     for i, w, wd in zip(gi, txt, ws):
         k = (t - words[i][1]) / 0.22; said = k >= 0
@@ -1161,5 +1165,35 @@ def words_aligned(mp3, text, workdir=None):
         i = np.searchsorted(m1, tref); i = min(max(i, 0), len(m2) - 1); return float(m2[i])
     out = [[w, round(mp(a), 3), round(mp(b), 3)] for w, a, b in rw]
     for i in range(1, len(out)):                      # tempi sempre crescenti
+        out[i][1] = max(out[i][1], out[i - 1][1] + 0.02); out[i][2] = max(out[i][2], out[i][1] + 0.05)
+    return out
+
+def words_aligned_offline(mp3, text, workdir=None, voice='it', speed=165):
+    """Come words_aligned ma SENZA ElevenLabs (per quando i crediti sono finiti): il riferimento è generato in locale
+    con espeak-ng (apt-get install espeak-ng), parola per parola, quindi i confini delle parole sono esatti;
+    poi DTW sulle MFCC verso la voce di Salvatore. Precisione un po' inferiore a words_aligned."""
+    import numpy as np, librosa, tempfile
+    workdir = workdir or os.path.dirname(os.path.abspath(mp3)); sr = 16000; hop = 160
+    words = text.split(); pieces = []; ref = []; t = 0.0
+    tmp = os.path.join(workdir, '_espeak.wav')
+    paras = [len(p.split()) for p in text.strip().split('\n\n')]; ends = set(np.cumsum(paras) - 1)
+    for i, w in enumerate(words):
+        clean = w.strip('.,:;?!«»"')
+        subprocess.run(['espeak-ng', '-v', voice, '-s', str(speed), '-w', tmp, clean], check=True, capture_output=True)
+        y, _ = librosa.load(tmp, sr=sr); y, _ = librosa.effects.trim(y, top_db=35)
+        ref.append([w, t, t + len(y) / sr]); pieces.append(y); t += len(y) / sr
+        gap = 0.6 if i in ends else (0.3 if w[-1] in '.,:;?!' else 0.04)
+        pieces.append(np.zeros(int(sr * gap))); t += gap
+    y1 = np.concatenate(pieces); y2, _ = librosa.load(mp3, sr=sr)
+    def feat(y):
+        m = librosa.feature.mfcc(y=y, sr=sr, n_mfcc=20, hop_length=hop, n_fft=512)
+        m = (m - m.mean(axis=1, keepdims=True)) / (m.std(axis=1, keepdims=True) + 1e-6)
+        e = librosa.feature.rms(y=y, hop_length=hop, frame_length=512)
+        return np.vstack([m, 4 * (e - e.mean()) / (e.std() + 1e-6)])
+    _, wp = librosa.sequence.dtw(X=feat(y1), Y=feat(y2), metric='cosine', step_sizes_sigma=np.array([[1, 1], [0, 1], [1, 0]]), weights_mul=np.array([1, 1.3, 1.3]))
+    wp = wp[::-1]; m1 = wp[:, 0] * hop / sr; m2 = wp[:, 1] * hop / sr
+    mp = lambda tr: float(m2[min(max(np.searchsorted(m1, tr), 0), len(m2) - 1)])
+    out = [[w, round(mp(a), 3), round(mp(b), 3)] for w, a, b in ref]
+    for i in range(1, len(out)):
         out[i][1] = max(out[i][1], out[i - 1][1] + 0.02); out[i][2] = max(out[i][2], out[i][1] + 0.05)
     return out
