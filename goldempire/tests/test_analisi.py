@@ -110,3 +110,19 @@ off = A.simulate([
 assert off[0]["official"] and abs(off[0]["pips"] * A.USD_PER_PIP - 53.70) < 1e-9 and off[0]["label"] == "5.7", off[0]
 assert off[1]["status"] == "APERTA" and not off[1]["official"], off[1]
 print("OK - risultati ufficiali della sala e commenti dopo una chiusura ignorati.")
+
+# "Totale ... $" e chiusura senza reply riconosciuta dall'ingresso
+tot = A.simulate([
+    m(1, 0, T.SIGNAL_2_SELL.replace("4204,38", "4100,00").replace("4214,33", "4160,00").replace("4169,15", "4000,00")),
+    m(2, 5, T.SIGNAL_2_BUY_NEW),
+    m(3, 30, "🟣 SIGNAL 2 – ❌ STOP\n\nWeekly, 3 posizioni chiuse\n🏁 Uscita: 4019,99\nTotale      −111,0 pips   ·   −11,10 $",
+      reply=1),
+], [], now=base + 60 * 100)
+assert tot[0]["official"] and abs(tot[0]["pips"] * A.USD_PER_PIP + 11.10) < 1e-9, tot[0]
+entry2 = A.parse_signal(T.SIGNAL_2_BUY_NEW)["entry"]
+noreply = A.simulate([m(2, 5, T.SIGNAL_2_BUY_NEW),
+                      m(3, 60, f"🔴 CHIUDI ORA · SIGNAL 2 · COMPRA del 23/10 (ingresso {int(entry2)})\n"
+                               "Chiudete adesso: risultato circa +23 $ a 0,01 per posizione ✅")],
+                     [], now=base + 60 * 100)
+assert noreply[0]["official"] and abs(noreply[0]["pips"] * A.USD_PER_PIP - 23) < 1e-9, noreply[0]
+print("OK - 'Totale' e chiusura senza reply riconosciuta dall'ingresso.")

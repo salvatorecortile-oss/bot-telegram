@@ -220,7 +220,7 @@ def _label(signal_no):
     return str(signal_no) if isinstance(signal_no, float) else str(int(signal_no))
 
 
-_RESULT_USD = re.compile(r"RISULTATO[^\n]*?([-+−–]\s*\d+(?:[.,]\d+)?)\s*\$", re.IGNORECASE)
+_RESULT_USD = re.compile(r"(?:RISULTATO|TOTALE)[^\n]*?([-+−–]\s*\d+(?:[.,]\d+)?)\s*\$", re.IGNORECASE)
 _SUB_SIGNAL = re.compile(r"\bSIGNAL\s*(\d+[.,]\d+)", re.IGNORECASE)
 
 
@@ -233,7 +233,17 @@ def official_results(messages):
     out = {}
     for msg in sorted(messages, key=lambda m: (m["date"], m["id"])):
         reply = msg.get("reply_to")
-        if not reply or reply in out or "REPORT" in msg["text"].upper():
+        if "REPORT" in msg["text"].upper():
+            continue
+        if not reply:
+            # "CHIUDI ORA · SIGNAL 2 · COMPRA del 23/10 (ingresso 4001)": senza reply, si
+            # riconosce dal numero del segnale e dal prezzo d'ingresso.
+            ref = re.search(r"SIGNAL\s*(\d+(?:[.,]\d+)?)[^\n]*\(INGRESSO\s*(\d+(?:[.,]\d+)?)\)",
+                            msg["text"], re.IGNORECASE)
+            if not ref:
+                continue
+            reply = ("ENTRY", ref.group(1).replace(",", "."), float(ref.group(2).replace(",", ".")))
+        if reply in out:
             continue
         match = _RESULT_USD.search(msg["text"])
         if not match:
@@ -406,6 +416,12 @@ def simulate(messages, bars, now=None):
                     t["sl"] if action == "SL_HIT" else prices.at(ts)
             close(t, exit_price, ts, reason, pips=signal.get("pips"))
 
+    for key in [k for k in official if isinstance(k, tuple)]:
+        _, number, entry = key
+        for t in (trades[i] for i in order):
+            if t["family"] == number.split(".")[0] and abs(t["entry"] - entry) <= 2 and t["id"] not in official:
+                official[t["id"]] = official[key]
+                break
     for i in order:
         t = trades[i]
         if i in official:
