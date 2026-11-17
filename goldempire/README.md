@@ -108,3 +108,16 @@ python tests\test_parser.py
 python tests\test_flow.py
 python tests\test_reports.py
 ```
+
+## Analisi dei segnali (quali tenere e quali bloccare)
+
+Dalla cartella del bot, con MT5 aperto (per il profitto reale in $; senza MT5 usa una stima dai pips):
+
+```
+py analisi_segnali.py        (tutto lo storico)
+py analisi_segnali.py 30     (ultimi 30 giorni)
+```
+
+Mostra per ogni SIGNAL: operazioni, % vinte, netto $, profit factor, perdite di fila, drawdown, e il giudizio
+(TENERE / DEBOLE / BLOCCARE / POCHI DATI). Il dettaglio va in `data/analisi_segnali.csv`. Legge soltanto:
+non tocca operazioni né impostazioni. Per bloccare un segnale: `EXCLUDED_SIGNALS=7` nel `.env` del principale.
