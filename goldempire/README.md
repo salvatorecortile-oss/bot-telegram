@@ -111,13 +111,19 @@ python tests\test_reports.py
 
 ## Analisi dei segnali (quali tenere e quali bloccare)
 
-Dalla cartella del bot, con MT5 aperto (per il profitto reale in $; senza MT5 usa una stima dai pips):
+Dalla cartella del bot, con MT5 aperto (il bot può restare acceso):
 
 ```
-py analisi_segnali.py        (tutto lo storico)
-py analisi_segnali.py 30     (ultimi 30 giorni)
+py analisi_segnali.py                 (dal 15/10/2026)
+py analisi_segnali.py 2026-11-01      (da un'altra data)
+py analisi_segnali.py offline         (rifà l'analisi coi dati già scaricati)
 ```
 
-Mostra per ogni SIGNAL: operazioni, % vinte, netto $, profit factor, perdite di fila, drawdown, e il giudizio
-(TENERE / DEBOLE / BLOCCARE / POCHI DATI). Il dettaglio va in `data/analisi_segnali.csv`. Legge soltanto:
-non tocca operazioni né impostazioni. Per bloccare un segnale: `EXCLUDED_SIGNALS=7` nel `.env` del principale.
+Unisce due fonti: **la sala** (tutti i messaggi del canale sorgente, ogni segnale ricostruito con ingresso,
+SL/TP, BE, stop spostati, chiusure e inversioni, usando le candele M1 di MT5 per SL/TP toccati senza messaggio)
+e **il bot** (le operazioni vere del database, con il profitto reale MT5). Mostra i risultati per famiglia,
+per singolo segnale (5.1, 5.2 … separati), per direzione, per mese e per orario, come si chiudono, cosa
+succede escludendo un segnale, quali segnali il bot non ha aperto e perché, e il giudizio
+(TENERE / DEBOLE / BLOCCARE / POCHI DATI). Salva in `data/`: `analisi_segnali.txt`, `analisi_sala.csv`,
+`analisi_segnali.csv`, `sala_messaggi.json`, `sala_prezzi_m1.csv`. Legge soltanto: non tocca operazioni né
+impostazioni. Per bloccare una famiglia: `EXCLUDED_SIGNALS=7` nel `.env` del principale.
