@@ -62,8 +62,10 @@ MAX_PER_DIRECTION = int(os.getenv("MAX_PER_DIRECTION", "2") or 0)
 ONE_PER_FAMILY = _bool("ONE_PER_FAMILY", "true")
 # Segnali a priorita' bassa: si aprono solo se nella loro direzione non c'e' nulla di aperto.
 LOW_PRIORITY_SIGNALS = _families("LOW_PRIORITY_SIGNALS", "4")
-# Segnali da non aprire mai (es. EXCLUDED_SIGNALS=4).
-EXCLUDED_SIGNALS = _families("EXCLUDED_SIGNALS", "")
+# Segnali da non aprire mai. Numero intero = tutta la famiglia (5 = tutti i 5.x),
+# numero con decimale = solo quel segnale (5.6 = solo il SIGNAL 5.6).
+# Es. EXCLUDED_SIGNALS=5.4,5.5,5.6
+EXCLUDED_SIGNALS = {float(n) for n in os.getenv("EXCLUDED_SIGNALS", "").replace(";", ",").split(",") if n.strip()}
 
 # ---- Protezione del conto (pausa automatica; 0 = disattivata) ----
 RISK_DAILY_LOSS_PCT = float(os.getenv("RISK_DAILY_LOSS_PCT", "6") or 0)

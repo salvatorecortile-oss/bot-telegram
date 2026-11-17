@@ -25,12 +25,14 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
 - **Chiusure scritte a parole** ("Chiudiamo…", "Chiudete…", anche se il messaggio viene modificato): in reply a un segnale
   chiude quell'operazione; senza reply chiude l'operazione aperta **più recente**. Frasi con "non", "domani", "al TP", "se…"
   o domande vengono ignorate. Dopo una chiusura senza reply, per `FREE_CLOSE_COOLDOWN_MINUTES` (default 10) altri messaggi
-  simili senza reply vengono ignorati (il canale spesso scrive 2 messaggi per la stessa chiusura). I SIGNAL 5 e 6 non
-  vengono mai chiusi così.
+  simili senza reply vengono ignorati (il canale spesso scrive 2 messaggi per la stessa chiusura). Lo stesso vale nei
+  10 minuti dopo una **chiusura ufficiale** (CHIUDI ORA / STOP / OBIETTIVO): commenti come "Chiudiamo ora, portiamo a
+  casa" sono doppioni e non chiudono un'altra operazione. Vale per tutti i SIGNAL, anche 5 e 6.
 - **Regole di apertura** (conto principale): massimo `MAX_PER_DIRECTION` (2) operazioni BUY e 2 SELL insieme;
   una sola per famiglia e direzione (tutti i 5.x sono la famiglia 5, quindi max 1 BUY e 1 SELL del SIGNAL 5);
   il SIGNAL 4 (`LOW_PRIORITY_SIGNALS`) si apre solo se nella sua direzione non c'è niente, così non toglie mai il
-  posto a 5, 6 o 7; `EXCLUDED_SIGNALS` per non aprire mai un segnale. Non si apre se il prezzo è a più di
+  posto a 5, 6 o 7; `EXCLUDED_SIGNALS` per non aprire mai un segnale: un numero intero blocca tutta la famiglia
+  (`5` = tutti i 5.x), un numero con decimale solo quel segnale (`EXCLUDED_SIGNALS=5.4,5.5,5.6`). Non si apre se il prezzo è a più di
   `MAX_ENTRY_DISTANCE` $ dall'ingresso. Nel canale esce solo il segnale delle operazioni aperte davvero.
 - **Protezione del conto** (conto principale): equity a −`RISK_DAILY_LOSS_PCT`% (6) rispetto all'inizio della giornata →
   nuove aperture in pausa fino al giorno dopo; −`RISK_MONTHLY_LOSS_PCT`% (20) nel mese → pausa fino al mese dopo.
@@ -126,4 +128,5 @@ per singolo segnale (5.1, 5.2 … separati), per direzione, per mese e per orari
 succede escludendo un segnale, quali segnali il bot non ha aperto e perché, e il giudizio
 (TENERE / DEBOLE / BLOCCARE / POCHI DATI). Salva in `data/`: `analisi_segnali.txt`, `analisi_sala.csv`,
 `analisi_segnali.csv`, `sala_messaggi.json`, `sala_prezzi_m1.csv`. Legge soltanto: non tocca operazioni né
-impostazioni. Per bloccare una famiglia: `EXCLUDED_SIGNALS=7` nel `.env` del principale.
+impostazioni. Per bloccare: `EXCLUDED_SIGNALS=5.6` (solo il 5.6) o `EXCLUDED_SIGNALS=5` (tutti i 5.x) nel `.env` del
+principale.

@@ -95,6 +95,17 @@ async def master():
     decisions = {e["source_message_id"]: e["kind"] for e in sync.read_after(0) if e["kind"] in ("OPEN", "SKIP")}
     assert decisions == {1: "OPEN", 2: "SKIP", 3: "SKIP", 4: "OPEN", 5: "SKIP", 6: "OPEN", 7: "SKIP",
                          8: "OPEN", 9: "OPEN", 10: "SKIP", 11: "SKIP", 12: "OPEN"}, decisions
+    # EXCLUDED_SIGNALS: 5.6 blocca solo il 5.6 (gli altri 5.x si aprono), 7 blocca tutta la famiglia 7
+    main.EXCLUDED_SIGNALS = {5.6, 7.0}
+    assert main.excluded_reason(5.6) and main.excluded_reason(7) and main.excluded_reason(7.1)
+    assert main.excluded_reason(5.2) is None and main.excluded_reason(5) is None and main.excluded_reason(None) is None
+    for mid in [r["source_message_id"] for r in db.get_open_signals()]:
+        mt5.broker_close(db.get_signal(mid)["position_ticket"], 4100.0, mt5.DEAL_REASON_EXPERT)
+    task = asyncio.create_task(main.monitor_closures()); await asyncio.sleep(0.3); task.cancel()
+    await send(13, entra("5.6", "BUY", "4100,30", "4060,00"))
+    await send(14, entra("5.2", "BUY", "4100,30", "4060,00"))
+    assert status(13) == "SKIPPED_LIMIT" and status(14) == "OPENED", (status(13), status(14))
+    main.EXCLUDED_SIGNALS = set()
     print("OK - principale: limiti per direzione/famiglia, priorita' SIGNAL 4, distanza 2 $, "
           "protezione -6% e conferme scritte per le copie.")
 

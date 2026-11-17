@@ -143,6 +143,22 @@ def signal_family(signal_no):
     return None if signal_no is None else int(float(signal_no))
 
 
+def _fmt_signal_no(n):
+    return str(int(n)) if float(n) == int(n) else str(n)
+
+
+def excluded_reason(signal_no):
+    """Motivo se il segnale e' escluso da EXCLUDED_SIGNALS (famiglia intera o singolo 5.x)."""
+    if signal_no is None:
+        return None
+    family = signal_family(signal_no)
+    if float(family) in EXCLUDED_SIGNALS:
+        return f"SIGNAL {family} escluso (EXCLUDED_SIGNALS)"
+    if float(signal_no) in EXCLUDED_SIGNALS:
+        return f"SIGNAL {_fmt_signal_no(signal_no)} escluso (EXCLUDED_SIGNALS)"
+    return None
+
+
 def open_limit_reason(signal):
     """
     Regole di apertura (conto principale o bot senza SYNC). None = si puo' aprire.
@@ -153,8 +169,9 @@ def open_limit_reason(signal):
     """
     family = signal_family(signal.get("signal_no"))
     direction = signal["direction"]
-    if family in EXCLUDED_SIGNALS:
-        return f"SIGNAL {family} escluso (EXCLUDED_SIGNALS)"
+    excluded = excluded_reason(signal.get("signal_no"))
+    if excluded:
+        return excluded
     same_dir = [r for r in db.get_open_signals() + db.get_pending_signals() if r["direction"] == direction]
     if MAX_PER_DIRECTION and len(same_dir) >= MAX_PER_DIRECTION:
         return f"gia' {len(same_dir)} operazioni {direction} aperte (massimo {MAX_PER_DIRECTION})"
@@ -575,6 +592,9 @@ async def handle_update(message, signal, row=None):
 # ============================================================
 
 _last_free_close = {"at": 0.0}
+# Ultima chiusura ufficiale del canale (CHIUDI ORA / STOP / OBIETTIVO): i commenti
+# "chiudiamo, portiamo a casa" scritti subito dopo sono doppioni, non nuove chiusure.
+_last_official_close = {"at": 0.0}
 
 
 async def handle_free_close(message, reply_only=False, signal_no=None):
@@ -601,6 +621,11 @@ async def handle_free_close(message, reply_only=False, signal_no=None):
         if _last_free_close["at"] and elapsed < FREE_CLOSE_COOLDOWN_MINUTES * 60:
             logger.info("⏭️ CHIUSURA A PAROLE #%s ignorata: chiusura gia' fatta %.0f secondi fa.",
                         message.id, elapsed)
+            return
+        elapsed = time.monotonic() - _last_official_close["at"]
+        if _last_official_close["at"] and elapsed < FREE_CLOSE_COOLDOWN_MINUTES * 60:
+            logger.info("⏭️ CHIUSURA A PAROLE #%s ignorata: e' un commento alla chiusura ufficiale di %.0f "
+                        "secondi fa, non chiude altre operazioni.", message.id, elapsed)
             return
         candidates = db.get_open_signals()
         if signal_no is not None:
@@ -672,6 +697,8 @@ async def source_message_handler(event):
         elif signal["action"] == "OPEN":
             await handle_open(message, signal)
         else:
+            if signal["action"] in ("TP_HIT", "SL_HIT", "CLOSE"):
+                _last_official_close["at"] = time.monotonic()
             await handle_update(message, signal)
     except Exception:
         logger.exception("❌ ERRORE GESTIONE MESSAGGIO #%s", message.id)
@@ -1484,7 +1511,7 @@ async def main():
         logger.info("REGOLE      : max %s per direzione | 1 per famiglia: %s | priorita' bassa: %s | esclusi: %s",
                     MAX_PER_DIRECTION or "nessun limite", "si" if ONE_PER_FAMILY else "no",
                     ", ".join(map(str, sorted(LOW_PRIORITY_SIGNALS))) or "nessuno",
-                    ", ".join(map(str, sorted(EXCLUDED_SIGNALS))) or "nessuno")
+                    ", ".join(_fmt_signal_no(n) for n in sorted(EXCLUDED_SIGNALS)) or "nessuno")
         logger.info("PROTEZIONE  : pausa a -%g%% al giorno, -%g%% al mese (0 = disattivata)",
                     RISK_DAILY_LOSS_PCT, RISK_MONTHLY_LOSS_PCT)
     if sync.IS_MASTER:

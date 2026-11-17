@@ -487,6 +487,7 @@ async def scenario(trading):
     await main.source_message_handler(event(msg(151, T.SIGNAL_3_BUY.replace("4160,08", "4155,30"))))  # SIGNAL 3
     await main.source_message_handler(event(msg(152, strat(5, "BUY", "4155,30", "3900,00"))))  # SIGNAL 5, piu' recente
     main._last_free_close["at"] = 0.0
+    main._last_official_close["at"] = 0.0
     mt5.bid, mt5.ask = 4158.00, 4158.30
     n = len(tg.sent)
     await main.source_message_handler(event(msg(153, "CHIUDIAMO UN SEGNALE SENZA IL TP SEGNATO...")))
@@ -513,6 +514,7 @@ async def scenario(trading):
     # Frase che non e' una chiusura: niente
     m = len(tg.sent)
     main._last_free_close["at"] = 0.0
+    main._last_official_close["at"] = 0.0
     await main.source_message_handler(event(msg(157, "Non chiudiamo ancora, lasciamo correre")))
     assert len(tg.sent) == m
 
@@ -523,6 +525,7 @@ async def scenario(trading):
                                                 .replace("4131,13", "4090,00"))))
     assert db.get_signal(165)["status"] == "OPENED"
     main._last_free_close["at"] = 0.0
+    main._last_official_close["at"] = 0.0
     await main.source_message_handler(event(msg(166, "Non apriamo", reply_to=165)))
     assert db.get_signal(165)["status"] == "CLOSED_MANUAL", db.get_signal(165)
     m = len(tg.sent)
@@ -530,6 +533,7 @@ async def scenario(trading):
     assert db.get_signal(151)["status"] == "OPENED" and len(tg.sent) == m
     # "Non apriamo" senza reply: ignorato
     main._last_free_close["at"] = 0.0
+    main._last_official_close["at"] = 0.0
     await main.source_message_handler(event(msg(168, "Non apriamo")))
     assert db.get_signal(151)["status"] == "OPENED" and len(tg.sent) == m
 
@@ -543,8 +547,22 @@ async def scenario(trading):
     # "Chiudiamo il segnale 5" senza reply: chiude il SIGNAL 5, non la piu' recente in assoluto
     await main.source_message_handler(event(msg(173, T.SIGNAL_4_BUY.replace("4155,08", "4108,30"))))
     main._last_free_close["at"] = 0.0
+    main._last_official_close["at"] = 0.0
     await main.source_message_handler(event(msg(174, "Chiudiamo il segnale 5")))
     assert db.get_signal(172)["status"] == "CLOSED_MANUAL" and db.get_signal(173)["status"] == "OPENED"
+    # 21d) Commento "chiudiamo" subito dopo una chiusura ufficiale (CHIUDI ORA in reply): e' un doppione,
+    #      non chiude un'altra operazione aperta
+    main._last_free_close["at"] = 0.0
+    main._last_official_close["at"] = 0.0
+    await main.source_message_handler(event(msg(176, "🔴 CHIUDI ORA · SIGNAL 4 · BUY\n\n🏁 Uscita: 4110,00",
+                                                reply_to=173)))
+    assert db.get_signal(173)["status"] == "CLOSED_MANUAL"
+    await main.source_message_handler(event(msg(177, "CHIUDIAMO ORA RAGAZZI PORTIAMO A CASA")))
+    assert db.get_signal(151)["status"] == "OPENED", db.get_signal(151)
+    # passati i 10 minuti, una chiusura a parole torna a valere
+    main._last_official_close["at"] -= 11 * 60
+    await main.source_message_handler(event(msg(178, "Chiudo scarico per news")))
+    assert db.get_signal(151)["status"] == "CLOSED_MANUAL", db.get_signal(151)
     # Il blocco vale solo per oggi
     with db.get_connection() as conn:
         conn.execute("DELETE FROM sent_messages WHERE key LIKE 'block:%'")

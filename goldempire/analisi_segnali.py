@@ -631,7 +631,7 @@ def report(sala, bot_trades, profits, bot_signals, since):
         out.append("  DEBOLI:     " + (", ".join(sorted(weak)) or "-"))
         out.append("  BLOCCARE:   " + (", ".join(sorted(block)) or "-"))
         out.append("  POCHI DATI: " + (", ".join(sorted(few)) or "-"))
-        out.append("Nota: EXCLUDED_SIGNALS blocca una FAMIGLIA intera (es. 5 = tutti i 5.x).")
+        out.append("Per bloccare: EXCLUDED_SIGNALS=5.6 blocca solo il 5.6, EXCLUDED_SIGNALS=5 tutta la famiglia 5.")
     out.append(f"\nLegenda: PF = profitti / perdite (sopra 1,3 buono, sotto 1 perde). DD = calo massimo. "
                f"POCHI DATI = meno di {MIN_TRADES} operazioni: risultato non affidabile.")
     return "\n".join(out)
