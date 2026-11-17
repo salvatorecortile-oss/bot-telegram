@@ -99,3 +99,14 @@ A.write_sala_csv(sala, bot_signals, csv_path)
 assert open(csv_path, encoding="utf-8-sig").read().count("\n") == len(sala) + 1
 print(text)
 print("OK - analisi segnali.")
+
+# Risultato UFFICIALE scritto dalla sala (in reply) e commento "chiudiamo" subito dopo una chiusura
+off = A.simulate([
+    m(1, 0, T.ENTRA_53_SELL.replace("5.3", "5")),                     # vecchio "SIGNAL 5"
+    m(2, 10, T.ENTRA_56_BUY_REAL),                                    # resta aperto (nessuna chiusura)
+    m(3, 60, "🔴 CHIUDI ORA · SIGNAL 5.7 · SELL\n\n🏁 Uscita: 4050,00\n\n💰 Risultato con 0,01: +53,70 $", reply=1),
+    m(4, 61, "CHIUDIAMO ORA RAGAZZI PORTIAMO A CASA"),               # doppione: non chiude il 5.6
+], [], now=base + 60 * 100)
+assert off[0]["official"] and abs(off[0]["pips"] * A.USD_PER_PIP - 53.70) < 1e-9 and off[0]["label"] == "5.7", off[0]
+assert off[1]["status"] == "APERTA" and not off[1]["official"], off[1]
+print("OK - risultati ufficiali della sala e commenti dopo una chiusura ignorati.")

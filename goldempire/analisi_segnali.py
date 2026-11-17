@@ -27,6 +27,7 @@ import asyncio
 import bisect
 import csv
 import json
+import re
 import shutil
 import sqlite3
 import sys
@@ -219,6 +220,41 @@ def _label(signal_no):
     return str(signal_no) if isinstance(signal_no, float) else str(int(signal_no))
 
 
+_RESULT_USD = re.compile(r"RISULTATO[^\n]*?([-+−–]\s*\d+(?:[.,]\d+)?)\s*\$", re.IGNORECASE)
+_SUB_SIGNAL = re.compile(r"\bSIGNAL\s*(\d+[.,]\d+)", re.IGNORECASE)
+
+
+def official_results(messages):
+    """
+    Risultati UFFICIALI scritti dalla sala nei messaggi di chiusura in reply al segnale
+    ("Risultato con 0,01: +29,16 $"). {id segnale: (dollari, motivo, sotto-segnale, ts)}.
+    Conta il PRIMO messaggio di chiusura (es. "STOP COLPITO" della sala).
+    """
+    out = {}
+    for msg in sorted(messages, key=lambda m: (m["date"], m["id"])):
+        reply = msg.get("reply_to")
+        if not reply or reply in out or "REPORT" in msg["text"].upper():
+            continue
+        match = _RESULT_USD.search(msg["text"])
+        if not match:
+            continue
+        usd = float(match.group(1).replace("−", "-").replace("–", "-").replace(",", ".").replace(" ", ""))
+        upper = msg["text"].upper()
+        first = upper.splitlines()[0] if upper else ""
+        if "INVERSIONE" in first:
+            reason = "INVERSIONE"
+        elif "OBIETTIVO" in first or re.search(r"\bTP\b", first):
+            reason = "TP"
+        elif "STOP" in first and "CHIUDI" not in first:
+            reason = "SL"
+        else:
+            reason = "CHIUSA DALLA SALA"
+        sub = _SUB_SIGNAL.search(msg["text"])
+        out[reply] = (usd, reason, sub.group(1).replace(",", ".") if sub else None,
+                      datetime.fromisoformat(msg["date"]).timestamp())
+    return out
+
+
 def simulate(messages, bars, now=None):
     """
     Ricostruisce le operazioni della sala. Restituisce una lista di dict con
@@ -226,6 +262,8 @@ def simulate(messages, bars, now=None):
     """
     prices = Prices(bars)
     now = now or time.time()
+    official = official_results(messages)
+    last_official_close = None
     trades = {}
     order = []
     last_free_close = None
@@ -289,6 +327,8 @@ def simulate(messages, bars, now=None):
         if not signal:
             continue
         action = signal["action"]
+        if action in ("TP_HIT", "SL_HIT", "CLOSE"):
+            last_official_close = ts
 
         if action == "OPEN":
             fam = family(signal["signal_no"])
@@ -308,7 +348,7 @@ def simulate(messages, bars, now=None):
                 "entry": float(signal["entry"]), "sl": float(signal["sl"]),
                 "tp": float(signal["tp"]) if signal.get("tp") else None, "first_sl": float(signal["sl"]),
                 "status": "APERTA" if market or not prices else "PENDENTE",
-                "be": False, "exit": None, "exit_ts": None, "reason": None, "pips": None,
+                "be": False, "exit": None, "exit_ts": None, "reason": None, "pips": None, "official": False,
             }
             order.append(msg["id"])
             continue
@@ -324,7 +364,11 @@ def simulate(messages, bars, now=None):
                     continue
                 if last_free_close is not None and ts - last_free_close < FREE_CLOSE_COOLDOWN_MINUTES * 60:
                     continue
-                candidates = [x for x in open_trades() if x["status"] == "APERTA"]
+                # Commento subito dopo una chiusura ufficiale ("chiudiamo, portiamo a casa"): doppione.
+                if last_official_close is not None and ts - last_official_close < FREE_CLOSE_COOLDOWN_MINUTES * 60:
+                    continue
+                # Le operazioni con una chiusura ufficiale in reply non si toccano a parole.
+                candidates = [x for x in open_trades() if x["status"] == "APERTA" and x["id"] not in official]
                 if signal.get("signal_no") is not None:
                     candidates = [x for x in candidates if x["signal_no"] == signal["signal_no"]]
                 if not candidates:
@@ -364,6 +408,13 @@ def simulate(messages, bars, now=None):
 
     for i in order:
         t = trades[i]
+        if i in official:
+            # Il risultato scritto dalla sala vale piu' della ricostruzione.
+            usd, reason, sub, ts = official[i]
+            t.update(status="CHIUSA", pips=usd / USD_PER_PIP, reason=reason, exit_ts=ts, official=True)
+            if sub and t["label"] == t["family"] and sub.split(".")[0] == t["family"]:
+                t["label"] = sub  # vecchio "SIGNAL 5" che la sala chiude come "SIGNAL 5.7"
+            continue
         if t["status"] in ("APERTA", "PENDENTE"):
             advance(t, now)
         if t["status"] == "APERTA" and prices:
@@ -487,7 +538,8 @@ def report(sala, bot_trades, profits, bot_signals, since):
     no_price = [t for t in sala if t["status"] == "CHIUSA" and t["pips"] is None]
     out.append(f"\n### 1) LA SALA: {len(sala)} segnali di apertura letti "
                f"({len(closed)} chiusi, {len(still_open)} ancora aperti, {len(not_filled)} pendenti mai eseguiti "
-               f"o annullati, {len(no_price)} chiusi senza prezzo)")
+               f"o annullati, {len(no_price)} chiusi senza prezzo; "
+               f"{sum(1 for t in closed if t.get('official'))} col risultato ufficiale scritto dalla sala)")
     if sala:
         by_fam, by_label, by_dir, by_sess, by_month = (defaultdict(list) for _ in range(5))
         seq_fam, seq_label = [], []
@@ -573,7 +625,7 @@ def write_sala_csv(sala, bot_signals, path):
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.writer(f, delimiter=";")
         w.writerow(["data_utc", "messaggio", "signal", "famiglia", "direzione", "tipo", "ingresso", "sl_iniziale",
-                    "tp", "stato", "chiusura", "uscita", "pips", "dollari_001", "bot"])
+                    "tp", "stato", "chiusura", "uscita", "pips", "dollari_001", "bot", "fonte"])
         for t in sala:
             row = bot_signals.get(t["id"])
             bot = "APERTA" if row and row.get("position_ticket") else (row["status"] if row else "non visto")
@@ -581,7 +633,8 @@ def write_sala_csv(sala, bot_signals, path):
             w.writerow([t["date"][:16].replace("T", " "), t["id"], t["label"], t["family"], t["direction"],
                         t["order_type"], num(t["entry"]), num(t["first_sl"]), num(t["tp"]), t["status"],
                         t["reason"] or "", num(t["exit"]), num(t["pips"]),
-                        num(None if t["pips"] is None else t["pips"] * USD_PER_PIP), bot])
+                        num(None if t["pips"] is None else t["pips"] * USD_PER_PIP), bot,
+                        "ufficiale sala" if t.get("official") else "ricostruito"])
 
 
 def write_bot_csv(trades, profits, path):
