@@ -166,6 +166,13 @@ TikTok blocca i post che portano fuori dall'app: il 12/11 un carosello è stato 
 - **Su Instagram** resta la versione completa con "CERCAMI SU TELEGRAM".
 - Fai due render del video (o solo del finale), poi in Zernio passa `customMedia` e `tiktokSettings.description` diversi sulla piattaforma tiktok.
 
+## 3f. STRATEGIE: acquisto E vendita spiegati, trappola E come evitarla (regola fissa dal 18/11)
+Molti principianti non capiscono "per vendere, il contrario". Per questo, in ogni video o carosello di strategia:
+- **Spiega entrambi i sensi, uno per uno**: "Per comprare: … stop … obiettivo …" e poi "Per vendere: … stop … obiettivo …". Mai solo "per vendere, il contrario".
+  - A schermo: due blocchi distinti (es. riquadro verde ACQUISTO e riquadro rosso VENDITA), ognuno con le sue condizioni, comparsi sulle parole della voce. Se possibile mostra un esempio sul grafico per tutte e due le direzioni.
+- **La trappola non basta mostrarla: spiega come evitarla.** Dopo il timbro TRAPPOLA serve una frase "Come evitarla: …" con una regola pratica (es. "aspetta la chiusura della candela", "opera solo nella direzione di H1"), a schermo con una spunta verde o un timbro EVITALA.
+- Lo script può arrivare a 35-40 secondi per fare spazio a questi due punti.
+
 ## 4. Ricette per formato (mondi in ordine)
 | Formato | Sequenza dei mondi | Elementi suggeriti | Durata |
 |---|---|---|---|
@@ -173,7 +180,7 @@ TikTok blocca i post che portano fuori dall'app: il 12/11 un carosello è stato 
 | Reazione al dato | Notte → Terminale → Quaderno → Notte | number_roll del dato uscito; strike atteso → uscito + chip; grafico ricostruito con freccia e banner; cosa guardare adesso | 25-35 s |
 | Anteprima settimana | Notte → Terminale → Notte | timeline/week_strip; ui_card dei dati della settimana; grafico con livelli; follow_card | 25-30 s |
 | Recap / journal | Notte → Terminale → Quaderno → Notte | big_counter pips; trade_card (stop compresi) + notification; equity_curve; lezione in checklist o quote | 35-45 s |
-| Strategia base / lezione | Quaderno → Terminale → Notte | serif_heading numerati; phone con grafico + zone; dial del rischio; checklist | 40-60 s |
+| Strategia base / lezione | Quaderno → Terminale → Notte | serif_heading numerati; phone con grafico + zone; dial del rischio; checklist; regola ACQUISTO e regola VENDITA in due blocchi; TRAPPOLA + COME EVITARLA (sezione 3f) | 35-60 s |
 | Mindset | Quaderno (o crema) → Notte | quote; strike_swap; checklist; gold_candle in chiusura; `music_pad` | 10-15 s |
 | Meme | split_meme + shake | stamp, scrittura a mano, grafico che crolla; `music_pad` | 8-12 s |
 | Carosello (slide 1080x1350) | alterna Quaderno e Notte, slide dati in Terminale | stessi elementi, candeline = numero della slide, comment_cta sull'ultima | 6 slide |

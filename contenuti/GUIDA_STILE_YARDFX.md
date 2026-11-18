@@ -47,6 +47,9 @@ Font:
 
 ## Sempre / mai
 - Sempre: @yard.fx (col punto) in chiusura; "Contenuto informativo. Il trading comporta rischi." piccolo in basso.
+- Sempre, nei contenuti di strategia:
+  - spiega l'ACQUISTO e poi rispiega la VENDITA con le sue condizioni, il suo stop e il suo obiettivo (mai solo "per vendere, il contrario");
+  - quando mostri la trappola, spiega anche come evitarla con una regola pratica. Dettagli in `yardfx_video/README.md`, sezione 3f.
 - Mai:
   - barra del tempo in alto;
   - pillola "YARDFX · XAUUSD";
