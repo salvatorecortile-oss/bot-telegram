@@ -167,6 +167,9 @@ TikTok blocca i post che portano fuori dall'app: il 12/11 un carosello è stato 
 - **Su Instagram** resta la versione completa con "CERCAMI SU TELEGRAM".
 - Fai due render del video (o solo del finale), poi in Zernio passa `customMedia` e `tiktokSettings.description` diversi sulla piattaforma tiktok.
 
+## 3e-bis. CHIAREZZA (regola fissa dal 18/11)
+Quello che dice la voce e quello che è scritto a schermo deve permettere a un principiante di aprire il grafico e provarlo subito. Termini tecnici giusti spiegati in parole semplici; nelle strategie: time frame della direzione e dell'entrata, condizione esatta di entrata (tocco, chiusura, rifiuto con lo spike), BUY e SELL con i loro stop loss e take profit, quando non operare. Mai frasi vaghe. Strategie di circa 50-65 secondi. Dettagli in `../GUIDA_STILE_YARDFX.md`.
+
 ## 3f. STRATEGIE: acquisto E vendita spiegati, trappola E come evitarla (regola fissa dal 18/11)
 Molti principianti non capiscono "per vendere, il contrario". Per questo, in ogni video o carosello di strategia:
 - **Spiega entrambi i sensi, uno per uno**: "Per comprare: … stop … obiettivo …" e poi "Per vendere: … stop … obiettivo …". Mai solo "per vendere, il contrario".

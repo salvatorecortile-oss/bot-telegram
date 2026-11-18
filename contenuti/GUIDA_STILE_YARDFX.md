@@ -48,6 +48,10 @@ Font:
 ## Sempre / mai
 - Sempre: @yard.fx (col punto) in chiusura; "Contenuto informativo. Il trading comporta rischi." piccolo in basso.
 - Sempre: voce «salvatore» di Speechify generata da Claude (`Y.voice_speechify`, README sezione 2). Ogni tanto, senza strafare, cambia qualcosina prendendo spunto dalla libreria (README sezione 6): lo stile attuale piace.
+- Sempre, chiarezza prima di tutto (richiesta di Salvatore del 18/11, dopo la Strategia #5 «che non spiega nulla»): voce e scritte precise e complete, così chi guarda può provarlo subito sul grafico.
+  - Termini tecnici giusti (time frame H1/M15, time frame operativo, EMA 50, trend rialzista/ribassista, massimi e minimi crescenti/decrescenti, ritracciamento, tocco, rifiuto con lo spike, chiusura della candela, buy, sell, stop loss, take profit, laterale), spiegati in parole semplici la prima volta.
+  - Nelle strategie, passo per passo: time frame della direzione e time frame dell'entrata (e perché sono collegati); come si riconosce il trend; cosa deve fare il prezzo esattamente per entrare (es. la candela M15 tocca l'EMA 50 e la rifiuta con lo spike senza chiudere oltre); BUY e SELL ognuno con condizioni, stop loss e take profit; quando NON si opera.
+  - Mai frasi vaghe («guardo l'ora» → «guardo il time frame H1»). Strategie di circa 50-65 secondi: meglio chiaro che corto.
 - Sempre, appena un contenuto è pubblicato o programmato: segnalo come FATTO nel calendario del mese (artifact «Calendario YardFX», `done:true` sul giorno, poi ripubblica). Il giorno appare barrato con l'etichetta «✓ FATTO».
 - Sempre, quando un contenuto è preparato il giorno prima: scrivilo e montalo come se fosse il giorno di uscita indicato nel prompt (date, «oggi», «domani», «ieri», news, orari e prezzi riferiti a quel giorno) e programmalo per quel giorno.
 - Sempre, nei contenuti di strategia:
