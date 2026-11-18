@@ -47,6 +47,7 @@ Font:
 
 ## Sempre / mai
 - Sempre: @yard.fx (col punto) in chiusura; "Contenuto informativo. Il trading comporta rischi." piccolo in basso.
+- Sempre: voce «salvatore» di Speechify generata da Claude (`Y.voice_speechify`, README sezione 2). Ogni video ha almeno 3 tecniche della libreria del 18/11 (README sezione 6) e una base musicale diversa dal video precedente.
 - Sempre, appena un contenuto è pubblicato o programmato: segnalo come FATTO nel calendario del mese (artifact «Calendario YardFX», `done:true` sul giorno, poi ripubblica). Il giorno appare barrato con l'etichetta «✓ FATTO».
 - Sempre, quando un contenuto è preparato il giorno prima: scrivilo e montalo come se fosse il giorno di uscita indicato nel prompt (date, «oggi», «domani», «ieri», news, orari e prezzi riferiti a quel giorno) e programmalo per quel giorno.
 - Sempre, nei contenuti di strategia:
