@@ -187,13 +187,13 @@ Molti principianti non capiscono "per vendere, il contrario". Per questo, in ogn
 | Carosello (slide 1080x1350) | alterna Quaderno e Notte, slide dati in Terminale | stessi elementi, candeline = numero della slide, comment_cta sull'ultima | 6 slide |
 
 ## 3g. VARIARE: musica, mondi, elementi (regola fissa dal 18/11)
-Lo stile resta riconoscibile, ma i video non devono sembrare tutti uguali. Prima di ogni video:
+Lo stile attuale piace a Salvatore: non va stravolto. Ogni tanto, senza forzare, cambia qualcosina:
 - rileggi la libreria (https://claude.ai/artifact/6yztDxv7dCxcrsRM5jqtHc) e la tabella della sezione 6;
-- **musica**: mai la stessa base in due video di fila. Ci sono 5 basi:
+- **musica**: ruotala ogni tanto. Ci sono 5 basi:
   - `S.music(..., mood='tensione' | 'positivo' | 'calmo')`: trap;
   - `S.music_cinematic(out, dur)`: lenta e scura, per ganci drammatici, mindset e serie;
   - `S.music_minimal(out, dur)`: pad e tic regolare, per spiegoni con tanti numeri;
-- **elementi**: usa almeno un elemento (o un mondo) che non c'era nei 2 video precedenti;
+- **elementi**: ogni tanto uno sfondo, una freccia, un'animazione o un suono preso dalla libreria;
 - prendi spunto, non copiare: dai video di riferimento si prende il *come* (animazione, ritmo, suono, tipo di grafico), mai colori, font o grafiche.
 
 ## 5. Controllo e render
