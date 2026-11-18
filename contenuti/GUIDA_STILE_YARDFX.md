@@ -12,7 +12,7 @@ e, se ha una tecnica utile, rifatto da zero in stile YardFX. Mai copiare loghi, 
 Paletti fissi presi da questo video:
 1. **Sincronizzazione perfetta**: `Y.words_aligned(mp3, script)`. Ogni scena inizia sulla prima parola del suo paragrafo e resta finché la voce non l'ha finito. Ogni scritta compare sulla sua parola.
 2. **Montaggio** animato e dinamico: una scena per paragrafo, transizioni sempre diverse, camera viva, lampi.
-3. **Audio**: la voce Enea di Salvatore, una musica che si abbassa sotto la voce e circa 100 effetti sonori al minuto.
+3. **Audio**: la voce «salvatore» di Speechify (dal 18/11), una musica che si abbassa sotto la voce e circa 100 effetti sonori al minuto.
 4. **Sottotitoli** sempre visibili fino alla chiusura.
 5. **Chiusura**: i 4 paletti detti e animati, poi il logo animato e "CERCAMI SU TELEGRAM @yard_fx".
 6. **Copertina** diversa dal primo fotogramma, con il logo piccolo.
