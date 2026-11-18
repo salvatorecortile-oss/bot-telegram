@@ -1276,8 +1276,9 @@ async def check_account_risk():
         return
     day_start = float(db.get_setting("risk_day_start", balance))
     month_start = float(db.get_setting("risk_month_start", balance))
-    day_pct = (equity - day_start) / day_start * 100 if day_start else 0.0
-    month_pct = (equity - month_start) / month_start * 100 if month_start else 0.0
+    # Conta solo le operazioni CHIUSE (saldo): una perdita ancora aperta non ferma il bot.
+    day_pct = (balance - day_start) / day_start * 100 if day_start else 0.0
+    month_pct = (balance - month_start) / month_start * 100 if month_start else 0.0
     pause = None
     if (RISK_MONTHLY_LOSS_PCT and month_pct <= -RISK_MONTHLY_LOSS_PCT
             and db.get_setting("risk_ack_month") != month):
@@ -1289,7 +1290,7 @@ async def check_account_risk():
         db.set_setting("risk_pause", pause)
         text = (f"🛑 <b>PROTEZIONE CONTO: NUOVE APERTURE IN PAUSA</b>\n"
                 f"Motivo: {_risk_pause_label(pause)}\n"
-                f"Giornata: {day_pct:+.1f}% | Mese: {month_pct:+.1f}% (equity {equity:.2f})\n"
+                f"Giornata: {day_pct:+.1f}% | Mese: {month_pct:+.1f}% (saldo {balance:.2f}, solo operazioni chiuse)\n"
                 f"Le operazioni aperte restano gestite. Per ripartire subito: {COMMAND_PREFIX}play")
         logger.warning("🛑 PROTEZIONE CONTO ATTIVATA | %s | giorno %+.1f%% mese %+.1f%%",
                        pause, day_pct, month_pct)

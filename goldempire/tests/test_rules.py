@@ -73,10 +73,14 @@ async def master():
     await send(10, entra(6, "SELL", "4110,00", "4150,00", "4000,00"))
     assert status(10) == "SKIPPED", status(10)
 
-    # Protezione: equity -7% rispetto all'inizio della giornata -> pausa, poi play la toglie
+    # Protezione: conta solo il saldo (operazioni chiuse). Equity -7% con operazioni aperte: niente pausa
     mt5.balance, mt5.equity = 1000.0, 1000.0
     await main.check_account_risk()
     mt5.equity = 930.0
+    await main.check_account_risk()
+    assert main.risk_pause_reason() is None
+    # Operazioni chiuse in perdita: saldo -7% -> pausa, poi play la toglie
+    mt5.balance = 930.0
     await main.check_account_risk()
     assert main.risk_pause_reason() and "giornaliera" in main.risk_pause_reason()
     await send(11, entra(7, "SELL", "4100,00", "4140,00"))

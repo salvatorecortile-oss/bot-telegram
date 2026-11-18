@@ -34,8 +34,9 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
   posto a 5, 6 o 7; `EXCLUDED_SIGNALS` per non aprire mai un segnale: un numero intero blocca tutta la famiglia
   (`5` = tutti i 5.x), un numero con decimale solo quel segnale (`EXCLUDED_SIGNALS=5.4,5.5,5.6`). Non si apre se il prezzo è a più di
   `MAX_ENTRY_DISTANCE` $ dall'ingresso. Nel canale esce solo il segnale delle operazioni aperte davvero.
-- **Protezione del conto** (conto principale): equity a −`RISK_DAILY_LOSS_PCT`% (6) rispetto all'inizio della giornata →
-  nuove aperture in pausa fino al giorno dopo; −`RISK_MONTHLY_LOSS_PCT`% (20) nel mese → pausa fino al mese dopo.
+- **Protezione del conto** (conto principale): conta solo le operazioni **chiuse** (saldo, non equity). Saldo a
+  −`RISK_DAILY_LOSS_PCT`% (6) rispetto all'inizio della giornata → nuove aperture in pausa fino al giorno dopo;
+  −`RISK_MONTHLY_LOSS_PCT`% (20) nel mese → pausa fino al mese dopo. Una perdita ancora aperta non ferma il bot.
   Le aperte restano gestite; avviso nei Messaggi salvati; `play` la toglie.
 - **Copie (SYNC_ROLE=follower)**: aprono un segnale solo se il conto principale l'ha aperto (conferma nel file
   condiviso, attesa massima `FOLLOW_WAIT_SECONDS`); se il principale è in pausa, spento o salta il segnale, le copie
