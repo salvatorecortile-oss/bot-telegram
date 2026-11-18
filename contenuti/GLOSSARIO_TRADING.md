@@ -1,6 +1,6 @@
 # Glossario YardFX: i termini giusti da usare
 
-Richiesta di Salvatore (18/11/2026): nei contenuti usa sempre i termini tecnici giusti, così le persone imparano a usarli.
+Richiesta di Salvatore (18/11/2026): quando il contenuto è tecnico (strategie, esempi di trade, journal, regole) usa i termini tecnici giusti, così le persone imparano a usarli. Nei contenuti leggeri (mindset, meme, news per tutti) basta un linguaggio semplice: non serve forzarli.
 - I termini **facili** (lateralizzare, entrare a mercato, trend, stop loss…) si usano e basta, senza spiegarli.
 - I termini **difficili** (ATR, divergenza, order block…) si spiegano in una frase la prima volta che compaiono.
 - Mai giri di parole vaghi al posto del termine (non «guardo l'ora», ma «guardo il time frame H1»).
