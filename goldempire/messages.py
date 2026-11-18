@@ -268,6 +268,15 @@ HELP_MESSAGE_TEMPLATE = (
     "❓ <b>{p}comandi</b> — Mostra questo elenco"
 )
 
+# Nel canale, quando scatta la protezione del conto (-6% giorno / -20% mese).
+# {reason} = motivo, {until} = "domani" oppure "inizio del prossimo mese".
+RISK_PAUSE_CHANNEL_MESSAGE_TEMPLATE = (
+    "🛑 <b>PROTEZIONE CONTO</b>\n\n"
+    "Operazioni in pausa: {reason}.\n"
+    "Nessuna nuova operazione fino a {until}.\n"
+    "Le operazioni già aperte restano gestite."
+)
+
 PLAY_MESSAGE_TEMPLATE = (
     "✅ <b>{name} ATTIVO AL 100%</b>\n"
     "Ascolto segnali e apro nuovi trade normalmente."

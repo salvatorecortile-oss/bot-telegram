@@ -95,6 +95,7 @@ from telegram_sender import (  # noqa: E402
     send_tp_updated_message,
 )
 import reports  # noqa: E402
+import messages  # noqa: E402
 from messages import GOOD_MORNING_MESSAGE_TEMPLATE  # noqa: E402
 import mt5_executor as mt5x  # noqa: E402
 import sync  # noqa: E402
@@ -1248,6 +1249,28 @@ def _risk_pause_label(pause):
     return f"perdita mensile oltre il {RISK_MONTHLY_LOSS_PCT:g}% (fino al mese prossimo o {COMMAND_PREFIX}play)"
 
 
+# Messaggio nel canale quando scatta la protezione. Si puo' personalizzare in messages.py
+# con RISK_PAUSE_CHANNEL_MESSAGE_TEMPLATE ({reason} = motivo, {until} = fino a quando).
+_RISK_PAUSE_CHANNEL_DEFAULT = (
+    "🛑 <b>PROTEZIONE CONTO</b>\n\n"
+    "Operazioni in pausa: {reason}.\n"
+    "Nessuna nuova operazione fino a {until}.\n"
+    "Le operazioni già aperte restano gestite."
+)
+
+
+def risk_pause_channel_text(pause):
+    kind, _, _ = pause.partition(":")
+    if kind == "daily":
+        reason = f"raggiunta la perdita giornaliera del {RISK_DAILY_LOSS_PCT:g}%"
+        until = "domani"
+    else:
+        reason = f"raggiunta la perdita mensile del {RISK_MONTHLY_LOSS_PCT:g}%"
+        until = "inizio del prossimo mese"
+    template = getattr(messages, "RISK_PAUSE_CHANNEL_MESSAGE_TEMPLATE", _RISK_PAUSE_CHANNEL_DEFAULT)
+    return template.format(reason=reason, until=until)
+
+
 def risk_pause_reason():
     """Motivo della pausa automatica in corso, None se non c'e'."""
     pause = db.get_setting("risk_pause", "")
@@ -1315,6 +1338,14 @@ async def check_account_risk():
             await client.send_message("me", text, parse_mode="html")
         except Exception:
             logger.exception("❌ ERRORE AVVISO PROTEZIONE CONTO")
+        # Avviso anche nel canale dei segnali (solo il bot che pubblica, una volta per pausa).
+        if PUBLISH_TO_CHANNEL and not db.was_sent(f"riskpause:{pause}"):
+            db.mark_sent(f"riskpause:{pause}")
+            try:
+                sent = await send_text(risk_pause_channel_text(pause))
+                logger.info("📨 PROTEZIONE CONTO PUBBLICATA NEL CANALE | Destination #%s", sent.id)
+            except Exception:
+                logger.exception("❌ ERRORE MESSAGGIO PROTEZIONE CONTO NEL CANALE")
 
 
 async def risk_loop():

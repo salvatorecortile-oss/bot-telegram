@@ -88,7 +88,10 @@ async def master():
     assert main.risk_pause_reason() is None
     # Operazioni chiuse in perdita: -7% del saldo rimasto dopo il prelievo (800 -> 744) -> pausa
     mt5.balance = 744.0
+    n = len(tg.sent)
     await main.check_account_risk()
+    channel = [m.text for m in tg.sent[n:] if "Le operazioni già aperte" in m.text]
+    assert len(channel) == 1 and "perdita giornaliera del 6%" in channel[0] and "domani" in channel[0], tg.sent[n:]
     assert main.risk_pause_reason() and "giornaliera" in main.risk_pause_reason()
     await send(11, entra(7, "SELL", "4100,00", "4140,00"))
     assert status(11) == "PAUSED_RISK"
