@@ -47,6 +47,7 @@ Font:
 
 ## Sempre / mai
 - Sempre: @yard.fx (col punto) in chiusura; "Contenuto informativo. Il trading comporta rischi." piccolo in basso.
+- Sempre, quando un contenuto è preparato il giorno prima: scrivilo e montalo come se fosse il giorno di uscita indicato nel prompt (date, «oggi», «domani», «ieri», news, orari e prezzi riferiti a quel giorno) e programmalo per quel giorno.
 - Sempre, nei contenuti di strategia:
   - spiega l'ACQUISTO e poi rispiega la VENDITA con le sue condizioni, il suo stop e il suo obiettivo (mai solo "per vendere, il contrario");
   - quando mostri la trappola, spiega anche come evitarla con una regola pratica. Dettagli in `yardfx_video/README.md`, sezione 3f.
