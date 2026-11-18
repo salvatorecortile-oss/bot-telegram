@@ -8,6 +8,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 try:
     import MetaTrader5 as mt5
@@ -465,6 +466,20 @@ def account_snapshot():
         if account is None:
             raise RuntimeError(f"Account MT5 non disponibile: {mt5.last_error()}")
         return float(account.balance), float(account.equity)
+
+
+def balance_operations_total():
+    """
+    Somma di tutti i depositi (+) e prelievi (-) dello storico del conto
+    (deal di tipo BALANCE). None se lo storico non e' disponibile.
+    """
+    _require_mt5()
+    with _MT5_LOCK:
+        deals = mt5.history_deals_get(datetime(2000, 1, 1), datetime.now() + timedelta(days=2))
+        if deals is None:
+            return None
+        balance_type = getattr(mt5, "DEAL_TYPE_BALANCE", 2)
+        return round(sum(float(d.profit) for d in deals if int(getattr(d, "type", -1)) == balance_type), 2)
 
 
 def server_time():

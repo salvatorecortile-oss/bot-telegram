@@ -79,8 +79,15 @@ async def master():
     mt5.equity = 930.0
     await main.check_account_risk()
     assert main.risk_pause_reason() is None
-    # Operazioni chiuse in perdita: saldo -7% -> pausa, poi play la toglie
-    mt5.balance = 930.0
+    # Prelievo di 200 $: il saldo scende a 800 ma non e' una perdita -> niente pausa
+    from types import SimpleNamespace as NS
+    mt5.deals.append(NS(ticket=1, order=0, position_id=0, entry=0, price=0, reason=0, time_msc=0, volume=0,
+                        type=2, profit=-200.0))
+    mt5.balance = mt5.equity = 800.0
+    await main.check_account_risk()
+    assert main.risk_pause_reason() is None
+    # Operazioni chiuse in perdita: -7% del saldo rimasto dopo il prelievo (800 -> 744) -> pausa
+    mt5.balance = 744.0
     await main.check_account_risk()
     assert main.risk_pause_reason() and "giornaliera" in main.risk_pause_reason()
     await send(11, entra(7, "SELL", "4100,00", "4140,00"))

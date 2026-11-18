@@ -1263,19 +1263,36 @@ def risk_pause_reason():
 
 async def check_account_risk():
     balance, equity = await asyncio.to_thread(mt5x.account_snapshot)
+    # Depositi e prelievi: non sono guadagni o perdite di trading.
+    try:
+        cash = await asyncio.to_thread(mt5x.balance_operations_total)
+    except Exception:
+        logger.exception("❌ Storico depositi/prelievi non leggibile")
+        cash = None
     today = reports.now_italy().date().isoformat()
     month = today[:7]
     # Saldo di partenza del giorno e del mese (registrato al primo controllo).
     if db.get_setting("risk_day") != today:
         db.set_setting("risk_day", today)
         db.set_setting("risk_day_start", balance)
+        db.set_setting("risk_day_cash", "" if cash is None else cash)
     if db.get_setting("risk_month") != month:
         db.set_setting("risk_month", month)
         db.set_setting("risk_month_start", balance)
+        db.set_setting("risk_month_cash", "" if cash is None else cash)
+    if cash is not None:
+        for key in ("risk_day_cash", "risk_month_cash"):
+            if db.get_setting(key) in (None, ""):
+                db.set_setting(key, cash)  # prima volta (bot aggiornato a giornata gia' iniziata)
     if risk_pause_reason():
         return
     day_start = float(db.get_setting("risk_day_start", balance))
     month_start = float(db.get_setting("risk_month_start", balance))
+    if cash is not None:
+        # Un prelievo abbassa il punto di partenza (un deposito lo alza): la regola vale
+        # sul saldo rimasto, e il prelievo non conta come perdita.
+        day_start += cash - float(db.get_setting("risk_day_cash") or cash)
+        month_start += cash - float(db.get_setting("risk_month_cash") or cash)
     # Conta solo le operazioni CHIUSE (saldo): una perdita ancora aperta non ferma il bot.
     day_pct = (balance - day_start) / day_start * 100 if day_start else 0.0
     month_pct = (balance - month_start) / month_start * 100 if month_start else 0.0

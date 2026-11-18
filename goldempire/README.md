@@ -37,6 +37,7 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
 - **Protezione del conto** (conto principale): conta solo le operazioni **chiuse** (saldo, non equity). Saldo a
   −`RISK_DAILY_LOSS_PCT`% (6) rispetto all'inizio della giornata → nuove aperture in pausa fino al giorno dopo;
   −`RISK_MONTHLY_LOSS_PCT`% (20) nel mese → pausa fino al mese dopo. Una perdita ancora aperta non ferma il bot.
+  Depositi e prelievi non contano: un prelievo abbassa il punto di partenza e la regola vale sul saldo rimasto.
   Le aperte restano gestite; avviso nei Messaggi salvati; `play` la toglie.
 - **Copie (SYNC_ROLE=follower)**: aprono un segnale solo se il conto principale l'ha aperto (conferma nel file
   condiviso, attesa massima `FOLLOW_WAIT_SECONDS`); se il principale è in pausa, spento o salta il segnale, le copie

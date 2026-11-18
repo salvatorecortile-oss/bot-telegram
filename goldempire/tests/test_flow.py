@@ -34,6 +34,7 @@ class FakeMT5(types.ModuleType):
     TRADE_RETCODE_DONE = 10009
     DEAL_ENTRY_IN, DEAL_ENTRY_OUT = 0, 1
     DEAL_REASON_SL, DEAL_REASON_TP, DEAL_REASON_EXPERT = 4, 5, 3
+    DEAL_TYPE_BALANCE = 2
     ACCOUNT_MARGIN_MODE_RETAIL_HEDGING = 2
 
     def __init__(self):
@@ -75,7 +76,9 @@ class FakeMT5(types.ModuleType):
         o = self.history_orders.get(int(ticket))
         return (o,) if o else ()
 
-    def history_deals_get(self, ticket=None, position=None):
+    def history_deals_get(self, *dates, ticket=None, position=None):
+        if dates:  # storico per date: tutti i deal (anche depositi/prelievi)
+            return tuple(self.deals)
         if ticket is not None:  # ticket = ordine che ha generato il deal
             return tuple(d for d in self.deals if d.order == ticket)
         return tuple(d for d in self.deals if d.position_id == position)
