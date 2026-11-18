@@ -1388,3 +1388,37 @@ def red_silhouette_bg(t):
     for x in range(0, W, 90): d.line([(x, 0), (x, H)], fill=(40 + int(20 * p), 8, 8), width=2)
     for y in range(0, H, 90): d.line([(0, y), (W, y)], fill=(40 + int(20 * p), 8, 8), width=2)
     return img.filter(ImageFilter.GaussianBlur(3))
+
+# ---------------- VOCE con Speechify (dal 18/11/2026: voce «salvatore») ----------------
+def voice_speechify(script_path, out_dir, voice='salvatore', gap=0.45, model='simba-3.5'):
+    """Genera voce.mp3 e words.json in out_dir leggendo script.txt (paragrafi separati da riga vuota).
+    Una richiesta per paragrafo (pausa naturale di `gap` secondi tra i paragrafi); i tempi di ogni parola
+    arrivano da Speechify (speech marks), quindi niente allineamento da fare.
+    La chiave API NON sta qui: la mette il proxy della sessione sulle richieste a api.speechify.ai."""
+    txt = open(script_path).read().strip(); paras = txt.split('\n\n'); words = []; t = 0.0; files = []; used = 0
+    for k, p in enumerate(paras):
+        body = json.dumps({"input": p, "voice_id": voice, "audio_format": "wav", "language": "it-IT", "model": model})
+        r = subprocess.run(['curl', '-sS', '-X', 'POST', 'https://api.speechify.ai/v1/audio/speech', '-H', 'Content-Type: application/json', '-d', body], capture_output=True, text=True)
+        j = json.loads(r.stdout); used += j.get('billable_characters_count', 0)
+        wav = os.path.join(out_dir, f'_p{k}.wav'); open(wav, 'wb').write(base64.b64decode(j['audio_data']))
+        ws = []
+        def walk(n):
+            if n.get('type') == 'word': ws.append(n)
+            for c in n.get('chunks', []) or []: walk(c)
+        walk(j['speech_marks'])
+        toks = p.split()
+        if len(ws) != len(toks): raise ValueError(f'paragrafo {k}: {len(ws)} parole da Speechify, {len(toks)} nello script')
+        dur = float(subprocess.run(['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', wav], capture_output=True, text=True).stdout)
+        for tok, w in zip(toks, ws): words.append([tok, round(t + w['start_time'] / 1000, 3), round(t + w['end_time'] / 1000, 3)])
+        files.append(wav); t += dur + gap
+    sil = os.path.join(out_dir, '_sil.wav')
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=mono', '-t', str(gap), sil], check=True)
+    lst = []
+    for i, f in enumerate(files):
+        n = os.path.join(out_dir, f'_n{i}.wav'); subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', f, '-ar', '44100', '-ac', '1', n], check=True)
+        lst.append(f"file '{n}'")
+        if i < len(files) - 1: lst.append(f"file '{sil}'")
+    lp = os.path.join(out_dir, '_list.txt'); open(lp, 'w').write('\n'.join(lst))
+    subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lp, '-c:a', 'libmp3lame', '-q:a', '2', os.path.join(out_dir, 'voce.mp3')], check=True)
+    json.dump(words, open(os.path.join(out_dir, 'words.json'), 'w'), ensure_ascii=False)
+    return words, used
