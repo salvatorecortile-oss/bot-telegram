@@ -111,6 +111,41 @@ def music(out, dur, bpm=96, mood='tensione', seed=1):
     _write(out, mix / (np.max(np.abs(mix)) + 1e-9) * 0.8)
     return out
 
+def music_cinematic(out, dur, bpm=76, seed=2):
+    """base CINEMATICA lenta (dal video 'poster' del 18/11): drone scuro, sub-basso lungo, cassa rada e pianoforte a gocce.
+    Per ganci drammatici, strategie 'serie', mindset. Meno ritmo della trap: lascia spazio alla voce."""
+    beat = 60 / bpm; n = int(SR * (dur + 1)); mix = np.zeros(n); r = random.Random(seed)
+    def add(sig, at, g=1.0):
+        i = int(at * SR); j = min(n, i + len(sig))
+        if i < n: mix[i:j] += g * sig[:j - i]
+    prog = [[-12, -9, -5], [-17, -12, -8], [-14, -10, -7], [-19, -15, -12]]; bar = 4 * beat
+    for b in range(int(dur / bar) + 2):
+        t0 = b * bar; ch = prog[b % 4]
+        for s in ch: add(_note(_hz(s), bar * 1.1, 'pad'), t0, 0.3)
+        add(_note(_hz(ch[0] - 24), bar, 'bass'), t0, 0.55)
+        if b > 0: add(_kick(), t0, 0.9); add(_kick(), t0 + 2.5 * beat, 0.5)
+        for k in range(3): add(_note(_hz(ch[r.randrange(3)] + 24), beat * 1.5, 'pluck'), t0 + r.choice([0.5, 1.5, 2, 3]) * beat, 0.16)
+        if b > 1:
+            for k in range(8): add(_hat(False), t0 + k * beat / 2, 0.18)
+    mix = mix[:int(SR * dur)]; fade = int(SR * 1.5); mix[-fade:] *= np.linspace(1, 0, fade)
+    _write(out, mix / (np.max(np.abs(mix)) + 1e-9) * 0.8); return out
+
+def music_minimal(out, dur, bpm=104, seed=3):
+    """base MINIMAL (dai video 'analista' del 18/11): solo un pad morbido e un tic regolare tipo orologio.
+    Per spiegoni con tanti numeri e grafici (cascata, griglia 10x10): la voce è protagonista."""
+    beat = 60 / bpm; n = int(SR * (dur + 1)); mix = np.zeros(n)
+    def add(sig, at, g=1.0):
+        i = int(at * SR); j = min(n, i + len(sig))
+        if i < n: mix[i:j] += g * sig[:j - i]
+    prog = [[-12, -8, -5], [-10, -7, -3]]; bar = 4 * beat
+    for b in range(int(dur / bar) + 2):
+        t0 = b * bar; ch = prog[b % 2]
+        for s in ch: add(_note(_hz(s + 12), bar, 'pad'), t0, 0.2)
+        for k in range(4): add(_hat(False), t0 + k * beat, 0.35 if k % 2 == 0 else 0.2)
+        add(_note(_hz(ch[0] - 12), beat, 'bass'), t0, 0.25)
+    mix = mix[:int(SR * dur)]; fade = int(SR * 1.5); mix[-fade:] *= np.linspace(1, 0, fade)
+    _write(out, mix / (np.max(np.abs(mix)) + 1e-9) * 0.7); return out
+
 def _write(path, x):
     x = np.clip(x, -1, 1); d = (x * 32767).astype(np.int16)
     with wave.open(path, 'wb') as w: w.setnchannels(1); w.setsampwidth(2); w.setframerate(SR); w.writeframes(d.tobytes())

@@ -1197,3 +1197,194 @@ def words_aligned_offline(mp3, text, workdir=None, voice='it', speed=165):
     for i in range(1, len(out)):
         out[i][1] = max(out[i][1], out[i - 1][1] + 0.02); out[i][2] = max(out[i][2], out[i][1] + 0.05)
     return out
+
+# =====================================================================================
+# STUDIO 18/11/2026 — tecniche prese da 7 video di riferimento (rifatte in stile YardFX,
+# niente colori/font/grafiche copiate). Schede e quando usarle: README, sezione 6.
+# =====================================================================================
+
+# ---------- 4° MONDO: POSTER (carta bianca editoriale) ----------
+_POSTER = None
+def poster_bg(t=0.0, dark=False):
+    """mondo POSTER: carta bianca con grana, codice a barre in alto, righelli/crocini ai lati e due archi sottili
+    che ruotano piano (stile rivista). dark=True: versione nera con grana per i momenti 'drammatici'."""
+    global _POSTER
+    if _POSTER is None:
+        r = random.Random(5); base = {}
+        for k, (c0, c1) in {'l': ((246, 245, 242), (232, 231, 227)), 'd': ((18, 16, 15), (8, 8, 8))}.items():
+            im = _vgrad(c0, c1); px = im.load()
+            for _ in range(60000):
+                x, y = r.randrange(W), r.randrange(H); v = r.randint(-14, 14); c = px[x, y]
+                px[x, y] = tuple(max(0, min(255, a + v)) for a in c)
+            base[k] = im
+        _POSTER = base
+    img = _POSTER['d' if dark else 'l'].copy(); d = ImageDraw.Draw(img)
+    ink = (60, 58, 54) if not dark else (120, 116, 108)
+    for i, wdt in enumerate([3, 1, 2, 1, 4, 1, 1, 3, 2, 1, 1, 4, 2, 1, 3]):          # codice a barre
+        x = 470 + sum([3, 1, 2, 1, 4, 1, 1, 3, 2, 1, 1, 4, 2, 1, 3][:i]) * 4 + i * 4
+        d.rectangle((x, 60, x + wdt * 3, 110), fill=ink)
+    for x in (34, W - 34):                                                          # righelli laterali
+        for k in range(18): d.line([(x - 6, 300 + k * 70), (x + 6, 300 + k * 70)], fill=ink, width=2)
+        d.line([(x - 14, 260), (x + 14, 260)], fill=ink, width=2); d.line([(x, 246), (x, 274)], fill=ink, width=2)
+    a = t * 0.05
+    for cx, cy, rr, a0 in [(-300, 1500, 1200, 300 + a * 40), (1500, 300, 1000, 120 - a * 40)]:  # archi sottili
+        d.arc((cx - rr, cy - rr, cx + rr, cy + rr), a0, a0 + 80, fill=ink, width=2)
+    return img
+
+def word_stack(img, parts, cx, y, t, col_small=INK, col_big=GOLDK, blur=True):
+    """titolo a pila (video 1 e 3): parola piccola sopra + parola GRANDE sotto, ognuna compare sulla sua parola della voce
+    passando da sfocata e trasparente a nitida. parts=[('forex moves','small',t0),('TRILIONI','big',t1),('al giorno','small',t2)]"""
+    yy = y; prev = None
+    for s, kind, t0 in parts:
+        size = 58 if kind == 'small' else 150
+        if prev is not None: yy += prev * 0.55 + size * 0.55 + 6
+        prev = size; a = ease((t - t0) / 0.35)
+        if a <= 0: continue
+        f = F(SERIF if kind == 'small' else BIG, size)
+        lay = Image.new('RGBA', (W, size + 80), (0, 0, 0, 0)); ImageDraw.Draw(lay).text((cx, (size + 80) // 2), s, font=f, fill=(col_small if kind == 'small' else col_big) + (int(255 * a),), anchor='mm')
+        if blur and a < 1: lay = lay.filter(ImageFilter.GaussianBlur(10 * (1 - a)))
+        img.paste(lay, (0, int(yy - (size + 80) / 2 + 30 * (1 - a))), lay)
+    return img
+
+# ---------- HUD del trade dal vivo (video 4) ----------
+def trade_hud(img, side, r_now, t, t0, y=150, r_stop=-1.0, r_tp=2.0, closed=False):
+    """barra in alto 'TRADE IN CORSO · BUY' con la pallina che scorre tra STOP e TP e il valore in R che conta.
+    r_now: R attuale (es. 0.8). closed=True: diventa 'CHIUSO IN TP'."""
+    a = ease((t - t0) / 0.4)
+    if a <= 0: return img
+    d = ImageDraw.Draw(img); x0, x1 = 80, W - 80; yy = y - 60 * (1 - a)
+    d.rounded_rectangle((x0, yy - 70, x1, yy + 70), radius=22, fill=CARD, outline=CARD_LINE, width=2)
+    col = GREEN if side.upper() == 'BUY' else RED
+    d.text((x0 + 30, yy - 32), ('CHIUSO IN TP' if closed else 'TRADE IN CORSO') + ' · ' + side.upper(), font=F(COND, 36), fill=GOLD if closed else MUTE, anchor='lm')
+    rv = f"{r_now:+.1f}R".replace('.', ',')
+    d.text((x1 - 30, yy - 32), rv, font=F(BIG, 48), fill=GREEN if r_now >= 0 else RED, anchor='rm')
+    bx0, bx1, by = x0 + 30, x1 - 30, yy + 28; d.rounded_rectangle((bx0, by - 6, bx1, by + 6), radius=6, fill=(46, 48, 56))
+    px = lambda r: bx0 + (bx1 - bx0) * (r - r_stop) / (r_tp - r_stop)
+    d.rounded_rectangle((px(0), by - 6, max(px(0) + 1, px(r_now)), by + 6), radius=6, fill=col if r_now >= 0 else RED) if r_now >= 0 else d.rounded_rectangle((px(r_now), by - 6, px(0), by + 6), radius=6, fill=RED)
+    for r, lab in [(r_stop, 'STOP'), (0, '0'), (r_tp, f'TP {r_tp:g}R')]:
+        d.text((px(r), by + 30), lab, font=F(MONO, 22), fill=MUTE, anchor='mm')
+    m = px(r_now); d.ellipse((m - 13, by - 13, m + 13, by + 13), fill=WHITE)
+    return img
+
+def confetti(img, t, t0, cx, cy, n=46, col=GOLD, dur=1.6, seed=3):
+    """esplosione di monete/coriandoli (video 4: '+2R TAKE PROFIT PIENO'). Usa con 'coin' + 'boom'."""
+    s = t - t0
+    if s < 0 or s > dur: return img
+    r = random.Random(seed); d = ImageDraw.Draw(img)
+    for i in range(n):
+        ang = r.uniform(0, 2 * math.pi); sp = r.uniform(380, 900); sz = r.uniform(8, 20)
+        x = cx + math.cos(ang) * sp * s; y = cy + math.sin(ang) * sp * s + 900 * s * s
+        a = 1 - s / dur; c = fade(col if i % 3 else WHITE, a, (20, 18, 14))
+        w = sz * abs(math.cos(s * 9 + i))
+        d.ellipse((x - w, y - sz, x + w, y + sz), fill=c)
+    return img
+
+# ---------- etichetta con linea guida (video 4 e 6: 'ULTIMA ROSSA', 'APERTURA', 'OMBRA') ----------
+def tag_pointer(d, s, target, label_xy, prog, col=GOLD, txt=DARK, size=38):
+    """pillola con testo e linea che va a toccare il punto (target) con un pallino: per l'anatomia della candela,
+    l'ultimo minimo, l'order block… Compare allungandosi (prog 0..1)."""
+    if prog <= 0: return
+    a = ease(prog); (tx, ty), (lx, ly) = target, label_xy
+    ex, ey = lx + (tx - lx) * a, ly + (ty - ly) * a
+    d.line([(lx, ly), (ex, ey)], fill=col, width=4)
+    if a > 0.9: d.ellipse((tx - 9, ty - 9, tx + 9, ty + 9), fill=col)
+    f = F(COND, size); tw = d.textlength(s, font=f)
+    d.rounded_rectangle((lx - tw / 2 - 18, ly - size * 0.75, lx + tw / 2 + 18, ly + size * 0.75), radius=10, fill=col)
+    d.text((lx, ly), s, font=f, fill=txt, anchor='mm')
+
+def number_badge(d, n, xy, prog, col=GOLD):
+    """numero cerchiato '1', '2'… sopra un punto del grafico (video 4) o per i passi 1-2-3 (video 7)"""
+    if prog <= 0: return
+    r = 30 * ease(prog); x, y = xy
+    d.ellipse((x - r, y - r, x + r, y + r), outline=col, width=5)
+    if prog > 0.5: d.text((x, y), str(n), font=F(BIG, 38), fill=col, anchor='mm')
+
+# ---------- tre percorsi possibili (video 5) ----------
+def scenario_paths(d, start, paths, t, t0, dt=0.6):
+    """dal punto 'start' partono le frecce tratteggiate dei possibili percorsi del prezzo, una alla volta.
+    paths=[((x,y), 'SOPRA 4.010', GREEN), ((x,y), 'LATERALE', MUTE), ((x,y), 'SOTTO 3.870', RED)]"""
+    for i, (end, lab, col) in enumerate(paths):
+        a = ease((t - t0 - i * dt) / 0.6)
+        if a <= 0: continue
+        dashed_arrow(d, start[0], start[1], end[0], end[1], a, col, 5, 16)
+        if a >= 1:
+            f = F(COND, 36); tw = d.textlength(lab, font=f); x, y = end
+            d.rounded_rectangle((x - tw - 30, y - 50, x + 4, y - 6), radius=8, fill=CARD, outline=col, width=2)
+            d.text((x - 13, y - 28), lab, font=f, fill=col, anchor='rm')
+
+# ---------- grafici "da analista" (video 7) ----------
+def waterfall(d, steps, box, t, t0, dt=0.7, dark=False, unit='€'):
+    """grafico a cascata: steps=[('Utile', 35000), ('Ammortamenti', 30000), ('Investimenti', -60000), ...]
+    ogni barra parte dalla fine della precedente; l'ultima colonna è il totale. Perfetto per pips/R della settimana."""
+    x0, y0, x1, y1 = box; n = len(steps) + 1; bw = (x1 - x0) / n * 0.62; gap = (x1 - x0) / n
+    run = [0]; [run.append(run[-1] + v) for _, v in steps]
+    lo, hi = min(min(run), 0), max(run); sc = (y1 - y0) / ((hi - lo) or 1); py = lambda v: y1 - (v - lo) * sc
+    ink = WHITE if dark else INK; d.line([(x0, py(0)), (x1, py(0))], fill=MUTE, width=2)
+    for i, (lab, v) in enumerate(steps + [('Totale', None)]):
+        a = ease((t - t0 - i * dt) / 0.5)
+        if a <= 0: continue
+        x = x0 + i * gap + (gap - bw) / 2
+        if v is None: a0, a1, col = 0, run[-1], GOLD
+        else: a0, a1 = run[i], run[i] + v * a; col = ink if (i == 0) else (GREEN_K if v >= 0 else RED)
+        d.rectangle((x, min(py(a0), py(a1)), x + bw, max(py(a0), py(a1))), fill=col)
+        if a >= 1:
+            val = run[-1] if v is None else v
+            d.text((x + bw / 2, min(py(a0), py(a1)) - 26), f"{val:+,.0f}".replace(',', '.') + (' ' + unit if unit else ''), font=F(COND, 30), fill=col if v is not None else GOLDK, anchor='mm')
+            d.text((x + bw / 2, y1 + 34), lab, font=F(SANS, 26), fill=MUTE, anchor='mm')
+
+def waffle(d, filled, box, t, t0, dur=1.2, col=GOLD, off=(50, 52, 60), cols=10, label=None, dark=True):
+    """griglia 10x10 che si riempie (video 7: '79 su 100'): percentuali e probabilità a colpo d'occhio"""
+    x0, y0, x1, y1 = box; cs = (x1 - x0) / cols; k = int(filled * ease((t - t0) / dur))
+    for i in range(100):
+        r, c = divmod(i, cols); x, y = x0 + c * cs, y0 + r * cs
+        d.rectangle((x + 3, y + 3, x + cs - 3, y + cs - 3), fill=col if i < k else off)
+    if label and k >= filled: d.text(((x0 + x1) / 2, y1 + 60), label, font=F(BIG, 64), fill=WHITE if dark else INK, anchor='mm')
+
+def h_bars(d, items, box, t, t0, dt=0.4, dark=True):
+    """barre orizzontali di posizionamento (video 5: 'chi è già dentro il mercato'): items=[('ORO', 0.9, GOLD, 'pieno'), ...]"""
+    x0, y0, x1, y1 = box; h = (y1 - y0) / len(items)
+    for i, (lab, v, col, tag) in enumerate(items):
+        a = ease((t - t0 - i * dt) / 0.6)
+        if a <= 0: continue
+        y = y0 + i * h + h / 2
+        d.text((x0, y), lab, font=F(COND, 44), fill=WHITE if dark else INK, anchor='lm')
+        bx = x0 + 230; d.rounded_rectangle((bx, y - 18, bx + (x1 - bx) * v * a, y + 18), radius=8, fill=col)
+        if a >= 1 and tag: d.text((bx + (x1 - bx) * v + 16, y), tag, font=F(MONO, 26), fill=col, anchor='lm')
+
+# ---------- il "pallino protagonista" (video 2) ----------
+def hero_dot(img, xy, t, beam_to=None, r=26, col=GOLD):
+    """pallino dorato luminoso che 'è' lo spettatore/trader: si muove tra le scene (saltella sui gradini,
+    illumina con un fascio di luce la cosa giusta). beam_to=(x,y): fascio dal pallino verso quel punto."""
+    x, y = xy; y += 4 * math.sin(t * 5)
+    if beam_to:
+        m = Image.new('L', (W, H), 0); md = ImageDraw.Draw(m); bx, by = beam_to
+        ang = math.atan2(by - y, bx - x); L = math.dist((x, y), beam_to); sp = 0.22
+        md.polygon([(x, y), (x + L * math.cos(ang - sp), y + L * math.sin(ang - sp)), (x + L * math.cos(ang + sp), y + L * math.sin(ang + sp))], fill=110)
+        img = Image.composite(Image.new('RGB', (W, H), (200, 150, 50)), img, m.filter(ImageFilter.GaussianBlur(30)))
+    img = pulse_rings(img, x, y, t, col, 1.4, 2, r * 4, 3)
+    m = Image.new('L', (W, H), 0); ImageDraw.Draw(m).ellipse((x - r * 1.8, y - r * 1.8, x + r * 1.8, y + r * 1.8), fill=150)
+    img = Image.composite(Image.new('RGB', (W, H), (150, 110, 30)), img, m.filter(ImageFilter.GaussianBlur(18)))
+    ImageDraw.Draw(img).ellipse((x - r, y - r, x + r, y + r), fill=col); return img
+
+def hop(p0, p1, prog, height=160):
+    """posizione del pallino che salta da p0 a p1 (parabola, con atterraggio morbido)"""
+    a = ease(prog); x = p0[0] + (p1[0] - p0[0]) * a; y = p0[1] + (p1[1] - p0[1]) * a - height * math.sin(math.pi * min(1, prog))
+    return x, y
+
+# ---------- testo che si ricompone lettera per lettera (video 1 'Because they don't understand Price') ----------
+def letter_rise(img, s, xy, size, col, t, t0, per=0.035, font=BIG):
+    """ogni lettera sale da sotto con un piccolo ritardo: più elegante del pop per le frasi chiave"""
+    if t < t0: return img
+    d = ImageDraw.Draw(img); f = F(font, size); tw = d.textlength(s, font=f); x = xy[0] - tw / 2
+    for i, ch in enumerate(s):
+        a = ease((t - t0 - i * per) / 0.3); cw = d.textlength(ch, font=f)
+        if a > 0: d.text((x, xy[1] + 40 * (1 - a)), ch, font=f, fill=fade(col, a, (0, 0, 0)) if a < 1 else col, anchor='lm')
+        x += cw
+    return img
+
+def red_silhouette_bg(t):
+    """sfondo 'drammatico' (video 1: 'ma i trader perdono'): nero con griglia rossa sfocata che pulsa, per il momento del problema"""
+    img = Image.new('RGB', (W, H), (10, 6, 6)); d = ImageDraw.Draw(img); p = 0.5 + 0.5 * math.sin(t * 2)
+    for x in range(0, W, 90): d.line([(x, 0), (x, H)], fill=(40 + int(20 * p), 8, 8), width=2)
+    for y in range(0, H, 90): d.line([(0, y), (W, y)], fill=(40 + int(20 * p), 8, 8), width=2)
+    return img.filter(ImageFilter.GaussianBlur(3))

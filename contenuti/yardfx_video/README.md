@@ -185,8 +185,45 @@ Molti principianti non capiscono "per vendere, il contrario". Per questo, in ogn
 | Meme | split_meme + shake | stamp, scrittura a mano, grafico che crolla; `music_pad` | 8-12 s |
 | Carosello (slide 1080x1350) | alterna Quaderno e Notte, slide dati in Terminale | stessi elementi, candeline = numero della slide, comment_cta sull'ultima | 6 slide |
 
+## 3g. VARIARE: musica, mondi, elementi (regola fissa dal 18/11)
+Lo stile resta riconoscibile, ma i video non devono sembrare tutti uguali. Prima di ogni video:
+- rileggi la libreria (https://claude.ai/artifact/6yztDxv7dCxcrsRM5jqtHc) e la tabella della sezione 6;
+- **musica**: mai la stessa base in due video di fila. Ci sono 5 basi:
+  - `S.music(..., mood='tensione' | 'positivo' | 'calmo')`: trap;
+  - `S.music_cinematic(out, dur)`: lenta e scura, per ganci drammatici, mindset e serie;
+  - `S.music_minimal(out, dur)`: pad e tic regolare, per spiegoni con tanti numeri;
+- **elementi**: usa almeno un elemento (o un mondo) che non c'era nei 2 video precedenti;
+- prendi spunto, non copiare: dai video di riferimento si prende il *come* (animazione, ritmo, suono, tipo di grafico), mai colori, font o grafiche.
+
 ## 5. Controllo e render
 1. Guarda `Y.contact_sheet` con un fotogramma per scena, più t=0 e la chiusura. Correggi testi sovrapposti, tagliati o in conflitto con i sottotitoli.
 2. Fai il render con `Y.render(frame, durata_voce + 2.5, 'voce.mp3', 'video.mp4')`. Per mindset e meme usa `Y.music_pad(durata, 'base.m4a')` come audio.
 3. Fai la copertina 1080x1920 con le scritte nella fascia centrale.
 4. Manda tutti i file in chat e pubblica con Zernio, come chiede il prompt.
+
+## 6. Libreria delle tecniche (studio del 18/11/2026, 7 video di riferimento)
+Schede complete con i fotogrammi nella libreria artifact. Qui: cosa c'è nel kit e quando usarlo.
+
+| Funzione | Cosa fa | Quando usarla | Suoni consigliati |
+|---|---|---|---|
+| `poster_bg(t, dark=False)` | 4° mondo POSTER: carta bianca con grana, codice a barre, righelli, archi sottili | ganci, mindset, serie; alternalo ai 3 mondi | `music_cinematic`, whoosh lenti |
+| `word_stack(img, parts, cx, y, t)` | pila di parole: piccola sopra, ENORME sotto, da sfocata a nitida | una frase forte per scena | pop sulla parola grande |
+| `red_silhouette_bg(t)` | nero con griglia rossa che pulsa | il momento del «problema» («ma perdono») | boom basso, glitch |
+| `letter_rise(img, s, xy, size, col, t, t0)` | lettere che salgono una alla volta | frasi chiave, al posto del pop | swoosh_up |
+| `trade_hud(img, side, r_now, t, t0, closed=False)` | barra «TRADE IN CORSO · BUY» con cursore STOP→TP e R che contano | esempi didattici, journal di un trade | tick mentre sale, ding al TP |
+| `confetti(img, t, t0, cx, cy)` | pioggia di monete/coriandoli | take profit, record della settimana | coin + boom |
+| `tag_pointer(d, s, target, label_xy, prog)` | pillola con linea guida che tocca un punto | anatomia candela, ultimo minimo, zona | click |
+| `number_badge(d, n, xy, prog)` | numero cerchiato 1-2-3 | punti sul grafico, passi di una regola | pop_hi |
+| `scenario_paths(d, start, paths, t, t0)` | 3 frecce tratteggiate: sopra / laterale / sotto con livelli | anteprima, news, «cosa guardare» | swipe per ognuna |
+| `h_bars(d, items, box, t, t0)` | barre orizzontali di confronto | posizionamento, chi è più forte | swoosh |
+| `waterfall(d, steps, box, t, t0, unit='pips')` | grafico a cascata che si costruisce | recap: pips giorno per giorno → totale | bubble per barra, coin sul totale |
+| `waffle(d, filled, box, t, t0, label=...)` | griglia 10x10 che si riempie | probabilità, «7 trade su 11» | tick veloci |
+| `hero_dot(img, xy, t, beam_to)` + `hop(p0, p1, prog)` | pallino dorato protagonista che salta e illumina | metafore semplici (livelli, scelta giusta) — NON è una mascotte | pop a ogni salto |
+| `S.music_cinematic(out, dur)` / `S.music_minimal(out, dur)` | due basi nuove | vedi sezione 3g | — |
+
+Altre idee annotate (da usare quando servono):
+- **Pillola-regola in alto** (rif. C): mentre il grafico avanza, in alto cambia la regola del momento («MASSIMI PIÙ BASSI», «STOP SOTTO IL MINIMO»). Fai: `key_box` in alto nel mondo Terminale.
+- **Riassunto in due righe** (rif. F): chiudi la spiegazione con due righe bianco/oro («Il corpo: chi ha vinto. / Le ombre: chi ci ha provato.»).
+- **Frase-firma finale** (rif. E): prima della CTA una frase breve che resta («Il contesto orienta. Il prezzo conferma.»).
+- **Teaser della prossima puntata** (rif. G): nelle serie, dopo la CTA, «Prossimo video: …» con freccia, prima del logo.
+- **Alternanza crema/nero a ogni concetto** (rif. G): per i video lunghi con molti numeri.
