@@ -158,6 +158,9 @@ Dopo la call to action con i 4 paletti:
 - **Candeline dei capitoli**: non metterle, a meno che abbiano un senso preciso detto dalla voce (es. numero della puntata).
 - Esempio completo: `esempi/strategia1_rsi.py`.
 
+## 3d-bis. LOGO SU FONDO CHIARO (regola fissa dal 21/11)
+Su bianco, carta o poster il logo argento/oro da solo non si legge: va nel medaglione scuro con anello oro. `Y.logo_reveal` lo fa da solo quando lo sfondo sotto è chiaro; per le copertine `Y.logo_badge(img, cx, cy, size)`; per caroselli/HTML/immagini il file `logo_yardfx_badge.png`.
+
 ## 3e. VERSIONE TIKTOK (senza la parola Telegram)
 TikTok blocca i post che portano fuori dall'app: il 12/11 un carosello è stato rimosso. Per questo:
 - **Su TikTok** non compare mai la parola "Telegram" né "cercami su…":

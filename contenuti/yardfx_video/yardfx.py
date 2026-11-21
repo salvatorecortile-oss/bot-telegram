@@ -1112,6 +1112,13 @@ def logo_reveal(img, t, t0, cx, cy, size=380):
     sc = max(0.05, 0.3 + 0.7 * a) * (1 + 0.025 * math.sin(s * 2.4)); rot = -200 * (1 - ease(s / 0.6)) + 1.5 * math.sin(s * 1.7)
     lo = lo.resize((max(1, int(lo.width * sc)), max(1, int(lo.height * sc))), Image.BICUBIC).rotate(rot, expand=True, resample=Image.BICUBIC)
     if s < 0.25: lo.putalpha(lo.getchannel('A').point(lambda v: int(v * s / 0.25)))
+    # sfondo chiaro sotto il logo (carta, poster, bianco): medaglione scuro con anello oro, così il logo si legge sempre
+    reg = img.crop((max(0, int(cx - size / 2)), max(0, int(cy - size / 2)), min(W, int(cx + size / 2)), min(H, int(cy + size / 2)))).convert('L')
+    if reg.width and reg.height and sum(reg.getdata()) / (reg.width * reg.height) > 140:
+        rb = size * 0.62 * max(0.05, 0.3 + 0.7 * a)
+        shd = Image.new('L', (W, H), 0); ImageDraw.Draw(shd).ellipse((cx - rb, cy - rb + 14, cx + rb, cy + rb + 14), fill=int(150 * min(1, s / 0.25)))
+        img = Image.composite(Image.new('RGB', (W, H), (60, 50, 35)), img, shd.filter(ImageFilter.GaussianBlur(18)))
+        dd = ImageDraw.Draw(img); dd.ellipse((cx - rb, cy - rb, cx + rb, cy + rb), fill=(14, 13, 12), outline=GOLD, width=max(2, int(8 * size / 250)))
     glow = Image.new('L', (W, H), 0); r = size * 0.55 * sc
     ImageDraw.Draw(glow).ellipse((cx - r, cy - r, cx + r, cy + r), fill=int(110 * min(1, s / 0.4)))
     img = Image.composite(Image.new('RGB', (W, H), (120, 90, 25)), img, glow.filter(ImageFilter.GaussianBlur(70)))

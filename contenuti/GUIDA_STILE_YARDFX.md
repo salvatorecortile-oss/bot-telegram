@@ -53,7 +53,10 @@ Font:
   - Nelle strategie, passo per passo: time frame della direzione e time frame dell'entrata (e perché sono collegati); come si riconosce il trend; cosa deve fare il prezzo esattamente per entrare (es. la candela M15 tocca l'EMA 50 e la rifiuta con lo spike senza chiudere oltre); BUY e SELL ognuno con condizioni, stop loss e take profit; quando NON si opera.
   - Nei contenuti tecnici (strategie, esempi di trade, journal, regole) termini giusti, con il nome esatto dell'ordine (entro a mercato, piazzo un ordine buy limit / sell limit / buy stop / sell stop, ordine pendente) e ritracciamento, lateralizzazione, rottura, retest, rifiuto con lo spike, break-even: glossario in `GLOSSARIO_TRADING.md`. Facili senza spiegazione, difficili spiegati in una frase.
   - Mai frasi vaghe («guardo l'ora» → «guardo il time frame H1»). Strategie di circa 50-65 secondi: meglio chiaro che corto.
-- Sempre, sulle copertine chiare (carta a quadretti, poster): il logo va nel medaglione scuro con anello oro, `Y.logo_badge(img, W//2, 255, 250)`. Da solo sulla carta non si legge (segnalato da Salvatore il 21/11). Sulle copertine scure va bene `Y.logo_reveal`.
+- Sempre, quando sotto il logo c'è uno sfondo chiaro (bianco, carta a quadretti, poster, crema), il logo va nel medaglione scuro con anello oro, in video, copertine, caroselli e immagini (segnalato da Salvatore il 21/11):
+  - video: `Y.logo_reveal` lo fa da solo (se lo sfondo sotto è chiaro disegna il medaglione);
+  - copertine: `Y.logo_badge(img, W//2, 255, 250)`;
+  - caroselli, HTML e altre immagini: usa il file pronto `yardfx_video/logo_yardfx_badge.png` (medaglione con sfondo trasparente), mai `logo_yardfx.png` su fondo chiaro.
 - Sempre, appena un contenuto è pubblicato o programmato: segnalo come FATTO nel calendario del mese (artifact «Calendario YardFX», `done:true` sul giorno, poi ripubblica). Il giorno appare barrato con l'etichetta «✓ FATTO».
 - Sempre, quando un contenuto è preparato il giorno prima: scrivilo e montalo come se fosse il giorno di uscita indicato nel prompt (date, «oggi», «domani», «ieri», news, orari e prezzi riferiti a quel giorno) e programmalo per quel giorno.
 - Sempre, nei contenuti di strategia:
