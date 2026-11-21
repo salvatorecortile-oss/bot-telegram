@@ -234,3 +234,21 @@ Altre idee annotate (da usare quando servono):
 - **Frase-firma finale** (rif. E): prima della CTA una frase breve che resta («Il contesto orienta. Il prezzo conferma.»).
 - **Teaser della prossima puntata** (rif. G): nelle serie, dopo la CTA, «Prossimo video: …» con freccia, prima del logo.
 - **Alternanza crema/nero a ogni concetto** (rif. G): per i video lunghi con molti numeri.
+
+### Studio del 21/11/2026 (4 video: formato «dossier», metafore fisiche, notizia in 5 giorni, cicli di mercato)
+La lezione più utile: **spiegare un livello con un oggetto** (asse, diga, molla) invece che solo con un grafico: chi inizia capisce al volo.
+
+| Funzione | Cosa fa | Quando usarla | Suoni consigliati |
+|---|---|---|---|
+| `sunburst_bg(t, col, col2)` | sfondo a raggi che ruotano (oro scuro; blu con `col=(20,50,120), col2=(8,18,50)`) | il numero del giorno, la CTA community a metà video | boom sul numero |
+| `masthead(d, 'Dossier Oro', 'MINIMO 3.515', dark)` | testata da giornale con un dato a destra che cambia con la voce | news, anteprime, «dossier» del giorno (il dato va detto dalla voce) | click a ogni cambio |
+| `chapter_tabs(d, 3, attivo)` | caselle 1-2-3 in alto, quella in corso rossa | «tre motivi», «tre cose da guardare» | pop |
+| `level_plank(img, t, t_break, '3.515')` | moneta ORO su un'asse con due gambe = il livello che regge; a `t_break` l'asse si spezza e la moneta cade | supporti, «il minimo tiene / cede» | click, poi glitch + boom |
+| `level_dam(img, t, '3.500', water, t_crack)` | diga = livello, l'acqua che preme = chi vende; crepe a `t_crack` | supporto forte sotto pressione | riser, crack (glitch) |
+| `spring_coin(img, t, t0)` | moneta su una molla che si carica e salta | rimbalzo possibile sul supporto | swoosh_up al salto |
+| `tear_wipe(prima, dopo, prog)` | transizione carta strappata rossa | apertura di una notizia, cambio di capitolo | swipe + glitch leggero |
+| `letter_tiles(img, 'MOSSA', t, t0)` | parola in tessere che si girano una alla volta | parola chiave della CTA, titoli | tick per tessera |
+| `day_pills(d, ['LUN',…], y, attivo, giorni_rossi)` | fila dei giorni, quello di cui parla la voce in oro, quelli passati in rosso | anteprime, recap, «il minimo tiene da 5 giorni» | tick |
+| `drawdown_chart(img, prezzi, box, prog, '-50%', 'RECUPERO: 7 ANNI')` | linea del prezzo con area rossa del calo dal massimo e risalita | rischio, drawdown, storia dei crolli | riser, ding al recupero |
+
+Altre idee annotate: palloncino ORO tenuto giù dai pesi (dollaro, rendimenti); calamita per una correlazione (Nasdaq); due palline legate che si staccano (correlazione rotta, timbro NO); saracinesca del mercato che chiude/riapre nel weekend; anno gigante sopra il grafico di un crollo; colonne di spunte per confrontare periodi; riepilogo finale a tessere («5 giorni · 5 allarmi»).

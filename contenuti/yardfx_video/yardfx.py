@@ -1442,3 +1442,143 @@ def logo_badge(img, cx, cy, size=260):
     lo = Image.open(os.path.join(D, 'logo_yardfx.png')).convert('RGBA'); lo = lo.resize((size, int(size * lo.height / lo.width)), Image.LANCZOS)
     img.paste(lo.convert('RGB'), (int(cx - lo.width / 2), int(cy - lo.height / 2)), lo)
     return img
+
+# =====================================================================================
+# STUDIO 21/11/2026 — 4 video di riferimento (formato «dossier», metafore fisiche dei livelli,
+# fatti in 5 giorni, cicli di mercato). Rifatti in stile YardFX. Schede: README sezione 6.
+# =====================================================================================
+
+def sunburst_bg(t, col=(40, 30, 14), col2=(16, 13, 10), rays=28, cx=W // 2, cy=H // 2 - 200):
+    """sfondo a raggi che ruotano piano (rif. «dossier»): per il NUMERO del giorno o la CTA di metà video.
+    Oro scuro di default; col=(20,50,120) per la versione blu della CTA community."""
+    img = Image.new('RGB', (W, H), col2); d = ImageDraw.Draw(img); R = 2600; a0 = t * 0.06
+    for k in range(rays):
+        a = a0 + k * 2 * math.pi / rays; b = a + math.pi / rays
+        d.polygon([(cx, cy), (cx + R * math.cos(a), cy + R * math.sin(a)), (cx + R * math.cos(b), cy + R * math.sin(b))], fill=col)
+    m = Image.new('L', (W, H), 0); ImageDraw.Draw(m).ellipse((cx - 900, cy - 900, cx + 900, cy + 900), fill=120)
+    img = Image.composite(Image.new('RGB', (W, H), tuple(min(255, int(v * 1.6)) for v in col)), img, m.filter(ImageFilter.GaussianBlur(220)))
+    v = Image.new('L', (W, H), 0); ImageDraw.Draw(v).rectangle((0, 0, W, H), fill=160); ImageDraw.Draw(v).ellipse((-200, cy - 1100, W + 200, cy + 1300), fill=0)
+    return Image.composite(Image.new('RGB', (W, H), (5, 5, 5)), img, v.filter(ImageFilter.GaussianBlur(160)))
+
+def masthead(d, title, ticker, dark=False, y=118):
+    """testata da giornale in alto (rif. «dossier»): nome della rubrica a sinistra in corsivo, a destra un
+    dato che cambia con la voce (es. 'ORO 3.560', 'MINIMO 3.515'), doppia riga sotto. Il ticker va detto dalla voce."""
+    ink = WHITE if dark else INK
+    d.text((60, y), title, font=F(SERIF, 52), fill=ink, anchor='ls')
+    if ticker:
+        lab, val = (ticker.split(' ', 1) + [''])[:2]
+        f1, f2 = F(COND, 30), F(COND, 34); w2 = d.textlength(val, font=f2)
+        d.text((W - 60, y - 4), val, font=f2, fill=RED, anchor='rs'); d.text((W - 60 - w2 - 12, y - 4), lab, font=f1, fill=ink, anchor='rs')
+    d.line([(50, y + 18), (W - 50, y + 18)], fill=ink, width=4); d.line([(50, y + 28), (W - 50, y + 28)], fill=ink, width=1)
+
+def chapter_tabs(d, n, active, xy=(W - 70, 230), size=46, dark=False):
+    """caselle numerate 1-2-3 in alto a destra (rif. «dossier»): quella del capitolo in corso è rossa piena,
+    le altre bordate. Si usano quando la voce dice «tre motivi», «tre cose da guardare»…"""
+    x1, y = xy
+    for i in range(n, 0, -1):
+        x = x1 - (n - i) * (size + 10); on = i == active
+        d.rectangle((x - size, y - size / 2, x, y + size / 2), fill=RED if on else (WHITE if not dark else (30, 30, 30)), outline=RED if on else (INK if not dark else MUTE), width=3)
+        d.text((x - size / 2, y), str(i), font=F(BIG, int(size * 0.7)), fill=WHITE if on else (INK if not dark else WHITE), anchor='mm')
+
+def gold_coin(d, cx, cy, r=42, label='ORO'):
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=GOLD, outline=GOLDK, width=4)
+    d.ellipse((cx - r + 8, cy - r + 8, cx + r - 8, cy + r - 8), outline=GOLD_SOFT, width=2)
+    d.text((cx, cy), label, font=F(BIG, int(r * 0.55)), fill=INK, anchor='mm')
+
+def level_plank(img, t, t_break, level_label, cx=W // 2, y=900, wdt=620, col=INK):
+    """METAFORA DEL LIVELLO (rif. «palazzo dell'oro» / «il minimo tiene»): la moneta ORO appoggiata su un'asse
+    sorretta da due gambe = il livello che regge. A t_break l'asse si spezza al centro e la moneta cade.
+    t_break=None: l'asse regge (la moneta oscilla appena). Suoni: click all'appoggio, 'glitch'+'boom' alla rottura."""
+    d = ImageDraw.Draw(img); x0, x1 = cx - wdt / 2, cx + wdt / 2
+    br = 0 if (t_break is None or t < t_break) else ease((t - t_break) / 0.5)
+    for x in (x0 + 40, x1 - 40): d.line([(x, y + 14), (x, y + 260)], fill=col, width=12)
+    if br <= 0:
+        d.rectangle((x0, y - 8, x1, y + 14), fill=col)
+        sag = 6 * math.sin(t * 3); gold_coin(d, cx, y - 52 + sag, 46)
+    else:
+        a = 0.6 * br
+        for s in (-1, 1):
+            px = cx + s * wdt / 2 - s * 40; L = wdt / 2 - 40
+            ex = px - s * L * math.cos(a); ey = y + L * math.sin(a)
+            d.line([(px, y + 3), (ex, ey)], fill=col, width=20)
+        gold_coin(d, cx, y - 52 + 420 * br * br, 46)
+    if level_label: d.rounded_rectangle((x0 - 10, y - 70, x0 + 150, y - 26), radius=8, fill=RED); d.text((x0 + 70, y - 48), level_label, font=F(COND, 34), fill=WHITE, anchor='mm')
+    return img
+
+def level_dam(img, t, level_label, water=0.75, t_crack=None, cx=W // 2 - 60, y_base=1300, h=520):
+    """METAFORA DEL LIVELLO (rif. «oro: la diga»): il muro è il livello, l'acqua che spinge è la pressione di chi vende.
+    water 0..1 = quanto è alta l'acqua; a t_crack compaiono le crepe nel muro. Per supporti forti / a rischio."""
+    d = ImageDraw.Draw(img); wl = y_base - h * water + 10 * math.sin(t * 2)
+    lay = Image.new('RGBA', (W, H), (0, 0, 0, 0)); ImageDraw.Draw(lay).rectangle((0, wl, cx - 40, y_base), fill=(70, 130, 200, 220)); img.paste(lay, (0, 0), lay)
+    d = ImageDraw.Draw(img); d.polygon([(cx - 50, y_base), (cx - 30, y_base - h), (cx + 30, y_base - h), (cx + 50, y_base)], fill=(150, 146, 140), outline=INK)
+    d.text((cx, y_base - h / 2), level_label, font=F(BIG, 40), fill=INK, anchor='mm')
+    d.line([(0, y_base), (W, y_base)], fill=INK, width=6)
+    if t_crack is not None and t > t_crack:
+        k = ease((t - t_crack) / 0.5); pts = [(cx - 10, y_base - h + 40), (cx + 12, y_base - h + 120), (cx - 8, y_base - h + 200), (cx + 14, y_base - h + 300)]
+        stroke(d, pts, k, INK, 4, 9)
+    return img
+
+def spring_coin(img, t, t0, cx=W // 2, y_base=1100, label='ORO'):
+    """METAFORA DEL RIMBALZO (rif. «oro: la molla»): la moneta su una molla che si comprime e poi spinge su.
+    Da t0 la molla si carica e rilascia con un salto: perfetto per «rimbalzo possibile sul supporto»."""
+    d = ImageDraw.Draw(img); s = t - t0
+    comp = 0.4 + 0.25 * math.sin(t * 2.2) if s < 0 else (0.85 * ease(s / 0.6) if s < 0.6 else max(0.2, 0.85 - 3 * (s - 0.6)))
+    top = y_base - 180 * (1 - comp)
+    for k in range(7):
+        yy = y_base - (y_base - top) * k / 6; d.ellipse((cx - 60, yy - 10, cx + 60, yy + 10), outline=(110, 110, 120), width=6)
+    jump = 0 if s < 0.6 else 160 * math.sin(min(math.pi, (s - 0.6) * 3.2))
+    gold_coin(d, cx, top - 44 - jump, 46, label)
+    d.line([(cx - 260, y_base + 14), (cx + 260, y_base + 14)], fill=INK, width=8)
+    return img
+
+def tear_wipe(img_from, img_to, prog, col=RED):
+    """transizione «carta strappata» (rif. «dossier»): una striscia colorata con bordo frastagliato attraversa lo schermo
+    da destra a sinistra e lascia la scena nuova. Suono: 'swipe' + 'glitch' leggero."""
+    p = ease(prog); x = W - (W + 300) * p; r = random.Random(4)
+    edge = [(x + 300 + r.uniform(-30, 30), y) for y in range(0, H + 40, 40)]
+    m = Image.new('L', (W, H), 0); ImageDraw.Draw(m).polygon([(W, 0)] + edge + [(W, H)], fill=255)
+    out = Image.composite(img_to, img_from, m)
+    band = Image.new('L', (W, H), 0); ImageDraw.Draw(band).polygon(edge + [(e[0] - 90 + r.uniform(-20, 20), e[1]) for e in reversed(edge)], fill=255)
+    return Image.composite(Image.new('RGB', (W, H), col), out, band)
+
+def letter_tiles(img, word, t, t0, y=1180, size=110, col=GOLD, ink=INK, dt=0.12):
+    """parola in tessere che si girano una alla volta (rif. «SEGUIMI per la prossima MOSSA»): per la parola chiave
+    della CTA o un titolo. Una tessera ogni dt secondi, suono 'tick' per tessera."""
+    d = ImageDraw.Draw(img); n = len(word); gap = 10; tw = size * 0.86; x0 = W / 2 - (n * tw + (n - 1) * gap) / 2
+    for i, ch in enumerate(word):
+        a = ease((t - t0 - i * dt) / 0.25)
+        if a <= 0: continue
+        x = x0 + i * (tw + gap); hh = size * abs(math.cos((1 - a) * math.pi / 2))
+        d.rectangle((x, y - hh / 2, x + tw, y + hh / 2), fill=col, outline=GOLDK, width=4)
+        if a > 0.6: d.text((x + tw / 2, y), ch, font=F(BIG, int(size * 0.7)), fill=ink, anchor='mm')
+    return img
+
+def day_pills(d, days, y, active=None, marked=(), t=0, t0=0, dark=False):
+    """fila di giorni in alto (rif. «5 giorni, 5 allarmi» / «il minimo tiene»): days=['LUN','MAR',...];
+    active = indice del giorno di cui parla la voce (oro pieno), marked = giorni già «bruciati» (rossi)."""
+    n = len(days); wdt = 150; gap = 16; x0 = W / 2 - (n * wdt + (n - 1) * gap) / 2
+    for i, g in enumerate(days):
+        a = ease((t - t0 - i * 0.06) / 0.3)
+        if a <= 0: continue
+        x = x0 + i * (wdt + gap); on = i == active; red = i in marked
+        fill = GOLD if on else (RED if red else ((40, 40, 46) if dark else WHITE)); fg = INK if on else (WHITE if (red or dark) else INK)
+        d.rounded_rectangle((x, y - 34, x + wdt, y + 34), radius=10, fill=fill, outline=GOLDK if on else (RED if red else MUTE), width=3)
+        d.text((x + wdt / 2, y), g, font=F(COND, 40), fill=fg, anchor='mm')
+
+def drawdown_chart(img, prices, box, prog, dd_label=None, rec_label=None, col=GOLD):
+    """grafico «-X% dal massimo» (rif. cicli di mercato): linea del prezzo, area rossa tra il massimo precedente
+    e il prezzo durante il calo, e il tratto di risalita evidenziato fino al nuovo massimo. prog 0..1 disegna la linea."""
+    x0, y0, x1, y1 = box; n = len(prices); lo, hi = min(prices), max(prices)
+    X = lambda i: x0 + (x1 - x0) * i / (n - 1); Yp = lambda v: y1 - (v - lo) / (hi - lo or 1) * (y1 - y0)
+    k = max(2, int(n * ease(prog))); peak_i = max(range(k), key=lambda i: prices[i] if i < n // 2 else -1e9)
+    d = ImageDraw.Draw(img); pk = prices[peak_i]
+    d.line([(x0, Yp(pk)), (x1, Yp(pk))], fill=MUTE, width=2)
+    lay = Image.new('RGBA', (W, H), (0, 0, 0, 0)); ld = ImageDraw.Draw(lay)
+    under = [(X(i), Yp(prices[i])) for i in range(peak_i, k) if prices[i] <= pk]
+    if len(under) > 2: ld.polygon([(under[0][0], Yp(pk))] + under + [(under[-1][0], Yp(pk))], fill=RED + (70,))
+    img.paste(lay, (0, 0), lay); d = ImageDraw.Draw(img)
+    d.line([(X(i), Yp(prices[i])) for i in range(k)], fill=col, width=6, joint='curve')
+    low_i = min(range(k), key=lambda i: prices[i])
+    if dd_label and k > low_i: d.text((X(low_i) + 20, Yp(prices[low_i])), dd_label, font=F(BIG, 54), fill=RED, anchor='lm')
+    if rec_label and prog >= 1: d.text((x1, Yp(pk) - 40), rec_label, font=F(COND, 40), fill=GREEN, anchor='rs')
+    return img
