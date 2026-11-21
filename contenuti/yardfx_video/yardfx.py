@@ -1422,3 +1422,16 @@ def voice_speechify(script_path, out_dir, voice='salvatore', gap=0.45, model='si
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', lp, '-c:a', 'libmp3lame', '-q:a', '2', os.path.join(out_dir, 'voce.mp3')], check=True)
     json.dump(words, open(os.path.join(out_dir, 'words.json'), 'w'), ensure_ascii=False)
     return words, used
+
+def logo_badge(img, cx, cy, size=260):
+    """logo per le COPERTINE chiare (carta, poster): dentro un medaglione scuro con anello oro e ombra,
+    così si legge bene anche in piccolo (sulla carta il logo argento/oro da solo si perde)."""
+    r = size * 0.62
+    sh = Image.new('L', (W, H), 0); ImageDraw.Draw(sh).ellipse((cx - r, cy - r + 14, cx + r, cy + r + 14), fill=150)
+    img = Image.composite(Image.new('RGB', (W, H), (60, 50, 35)), img, sh.filter(ImageFilter.GaussianBlur(18)))
+    d = ImageDraw.Draw(img)
+    d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=(14, 13, 12), outline=GOLD, width=8)
+    d.ellipse((cx - r + 14, cy - r + 14, cx + r - 14, cy + r - 14), outline=(90, 70, 25), width=2)
+    lo = Image.open(os.path.join(D, 'logo_yardfx.png')).convert('RGBA'); lo = lo.resize((size, int(size * lo.height / lo.width)), Image.LANCZOS)
+    img.paste(lo.convert('RGB'), (int(cx - lo.width / 2), int(cy - lo.height / 2)), lo)
+    return img
