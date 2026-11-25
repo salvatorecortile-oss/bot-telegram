@@ -1,0 +1,86 @@
+# Kronos – previsioni sulle candele (XAUUSD da MT5)
+
+Servizio **indipendente** dagli altri bot. Legge le ultime candele da MetaTrader 5,
+le passa a **Kronos** (modello AI open source addestrato su 12 miliardi di candele,
+[GitHub shiyu-coder/Kronos](https://github.com/shiyu-coder/Kronos), licenza MIT)
+e restituisce una **previsione delle prossime candele**.
+
+**Non apre ordini.** Restituisce solo numeri e un testo. Collegarlo a un bot che opera
+è un passo successivo, da fare solo dopo averlo verificato su conto demo.
+
+## Cosa calcola
+
+Kronos genera tanti **scenari** possibili per le prossime candele (di default 20 scenari
+per 12 candele). Da questi scenari ricava:
+
+| Campo | Significato |
+|---|---|
+| `upside_probability` | % di scenari che chiudono **sopra** l'ultimo prezzo |
+| `volatility_up_probability` | % di scenari con volatilità **più alta** delle ultime candele |
+| `mean_final_close` | prezzo medio previsto alla fine |
+| `p10_final_close` / `p90_final_close` | intervallo "probabile" (10% – 90%) |
+| `bias` | `RIALZO` se rialzo ≥ 65%, `RIBASSO` se ≤ 35%, altrimenti `NEUTRO` |
+
+Il calcolo si rifà solo quando chiude una nuova candela. Fino ad allora il servizio
+risponde subito con l'ultimo risultato (`"cached": true`).
+
+## Installazione (una volta sola, nel CMD di Windows)
+
+```
+cd C:\percorso\bot-telegram\kronos
+pip install -r requirements.txt
+git clone https://github.com/shiyu-coder/Kronos.git Kronos
+copy .env.example .env
+```
+
+Al primo avvio i pesi del modello (alcune centinaia di MB) vengono scaricati da
+HuggingFace e poi restano salvati sul PC.
+
+## Uso
+
+Con MetaTrader 5 aperto:
+
+```
+python main.py --once
+```
+stampa una sola previsione e chiude. Fai questo per la prima prova.
+
+```
+python main.py
+```
+avvia il **servizio** (lascia la finestra aperta). Gli altri bot del PC lo interrogano a:
+
+- `http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15` → risposta JSON
+- `http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15&format=text` → testo pronto per Telegram
+- `http://127.0.0.1:8765/health` → controlla che sia acceso
+
+Parametri facoltativi: `pred_len` (candele future, 1-120), `samples` (scenari, 1-100),
+`force=1` (ricalcola anche se la candela non è cambiata).
+Timeframe accettati: M1, M5, M15, M30, H1, H4, D1.
+
+Come leggerlo da un altro programma Python: vedi `client_example.py`.
+
+Il servizio ascolta **solo sul tuo PC** (127.0.0.1). Non è raggiungibile da internet.
+
+## Impostazioni (`.env`)
+
+Vedi `.env.example`. Le più utili:
+- `KRONOS_TIMEFRAME` (default M15), `KRONOS_PRED_LEN` (12), `KRONOS_SAMPLES` (20)
+- `KRONOS_MODEL`: `NeoQuasar/Kronos-small` (default) o `NeoQuasar/Kronos-base` (più lento)
+- `KRONOS_BULLISH_THRESHOLD` / `KRONOS_BEARISH_THRESHOLD`: soglie per RIALZO/RIBASSO
+
+Senza scheda video NVIDIA il calcolo gira sul processore e può richiedere da qualche
+secondo a un minuto. Se è troppo lento, abbassa `KRONOS_SAMPLES`.
+
+## Test (senza MT5 e senza modello)
+
+```
+python tests/test_forecast.py
+```
+
+## Avvertenze
+
+- È una **previsione statistica**: Kronos non "sa" dove andrà l'oro. Nei test degli
+  autori è buono soprattutto su volatilità e andamento generale, non sulla singola candela.
+- Il modello è addestrato soprattutto su azioni e cripto. Su XAUUSD va verificato con i
+  tuoi dati prima di fidarsi.

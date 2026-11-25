@@ -15,6 +15,7 @@ Leggi questo file all'inizio di ogni sessione. Contiene il contesto del progetto
 | radice (`main.py`, `signal_parser.py`, `bltech_parser.py`, `mt5_executor.py`, `telegram_sender.py`, `database.py`) | **TelegramMT5Bot1**: copia i messaggi da canali sorgente (anche BL Tech Pro) al mio canale e apre gli ordini XAUUSD su MT5. Regole in `README.md`. |
 | `goldempire/` | **Bot Gold Empire** (indipendente: suo `.env`, sua sessione, suo DB `data/goldempire.db`, suo MAGIC NUMBER). Legge il canale "Gold empire signals room", apre/gestisce le operazioni su MT5 e pubblica nel mio canale. Testi dei messaggi in `messages.py`, report in `reports.py`. Regole in `goldempire/README.md`. |
 | `ea/` | Expert Advisor MT5 in MQL5 (`ScalperM1_XAU`, `StraddleM1`) e i loro file `.set`. |
+| `kronos/` | **Servizio previsioni Kronos** (indipendente): legge le candele da MT5, usa il modello open source Kronos e risponde agli altri bot su `http://127.0.0.1:8765`. **Non apre ordini.** Regole in `kronos/README.md`. |
 | `factmachine/` | Bot per alpha.factmachine.com (Playwright): vota e apre l'operazione. |
 
 ## Regole importanti
@@ -40,6 +41,12 @@ Gold Empire (dalla cartella `goldempire`):
 python tests/test_parser.py
 python tests/test_flow.py
 python tests/test_reports.py
+```
+
+Kronos (dalla cartella `kronos`):
+
+```
+python tests/test_forecast.py
 ```
 
 Lancia i test del bot che hai modificato prima di fare commit.

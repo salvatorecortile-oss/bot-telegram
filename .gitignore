@@ -5,3 +5,8 @@ __pycache__/
 *.pyc
 data/*.db
 logs/*.log
+
+# Kronos: codice ufficiale scaricato a parte, pesi del modello e log
+kronos/Kronos/
+kronos/.env
+kronos/logs/
