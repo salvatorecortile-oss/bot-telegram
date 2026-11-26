@@ -137,8 +137,10 @@ Si apre una finestra nera con scritto `Servizio Kronos attivo su http://127.0.0.
 
 - **Non chiudere quella finestra** (puoi ridurla a icona).
 - Se Kronos si blocca, la finestra lo **riavvia da sola** dopo 30 secondi.
+- Ogni volta che chiude una candela (ogni 15 minuti) fa da solo una previsione e la salva nel registro.
 - Per controllare che funzioni, apri il browser della VPS su:
   `http://127.0.0.1:8765/forecast?format=text`
+- Per vedere quanto ci prende: `http://127.0.0.1:8765/stats` (oppure `python report.py` nel CMD).
 
 ### Quando esci dalla VPS
 Chiudi la finestra di Desktop remoto con la **X in alto** (questo "disconnette" e i programmi restano accesi).

@@ -10,3 +10,4 @@ logs/*.log
 kronos/Kronos/
 kronos/.env
 kronos/logs/
+kronos/data/

@@ -146,6 +146,82 @@ def test_symbol_not_found_message():
     assert "GOLDmicro, XAUUSD.m" in msg and "Broker-Live" in msg and "EURUSD" not in msg
 
 
+def _tmp_journal():
+    import tempfile
+    from journal import Journal
+    d = tempfile.mkdtemp()
+    return Journal(Path(d) / "test.db")
+
+
+def test_journal_save_and_evaluate():
+    j = _tmp_journal()
+    c, p = FakeCandles(), FakePredictor()
+    f = Forecaster(c, predictor=p)
+    r = f.forecast("XAUUSD", "M15", pred_len=4, samples=8)   # 75% rialzo -> RIALZO
+    assert j.save(r) and not j.save(r)                       # niente doppioni
+    full = fake_history(n=60)                                # dopo arrivano 10 candele che salgono
+    hist_part = full.iloc[:52]                               # solo 2 candele dopo: troppo presto
+    assert j.evaluate("XAUUSD", "M15", hist_part) == 0 and len(j.pending()) == 1
+    assert j.evaluate("XAUUSD", "M15", full) == 1 and not j.pending()
+    s = j.stats()
+    assert s["verificate"] == 1 and s["RIALZO"]["corretti"] == 1
+    assert s["RIALZO"]["percentuale"] == 100.0 and s["direzione_maggioranza_pct"] == 100.0
+    # 4 candele dopo l'ultima (indice 49): chiusura vera = close dell'indice 53
+    assert abs(s["errore_medio"] - abs(float(full["close"].iloc[53]) - r["mean_final_close"])) < 0.01
+    from journal import format_stats
+    assert "RIALZO: 1/1 corretti" in format_stats(s)
+
+
+def test_journal_expired_and_weekend_gap():
+    j = _tmp_journal()
+    h = fake_history(n=50)
+    r = summarize(h, [path(h["close"].iloc[-1] - np.arange(1, 4),
+                           future_timestamps(h["timestamps"].iloc[-1], "M15", 3))] * 5)
+    r.update(symbol="XAUUSD", timeframe="M15", model="x")
+    assert r["bias"] == "RIBASSO"
+    j.save(r)
+    # 3 candele dopo un "weekend" di 2 giorni: conta le candele, non le ore
+    later = pd.DataFrame({"timestamps": pd.date_range(h["timestamps"].iloc[-1] + pd.Timedelta(days=2),
+                                                      periods=3, freq="15min"),
+                          "open": 1.0, "high": 1.0, "low": 1.0, "close": [2000.0, 1990.0, 1980.0]})
+    assert j.evaluate("XAUUSD", "M15", pd.concat([h, later], ignore_index=True)) == 1
+    assert j.stats()["RIBASSO"]["corretti"] == 1
+    # previsione troppo vecchia rispetto alle candele disponibili -> scaduta
+    j2 = _tmp_journal()
+    j2.save(r)
+    assert j2.evaluate("XAUUSD", "M15", later) == 0 and j2.stats()["scadute"] == 1
+
+
+def test_auto_runner_step():
+    from auto import AutoRunner
+    j = _tmp_journal()
+    c = FakeCandles()
+    f = Forecaster(c, predictor=FakePredictor())
+    f.forecast("XAUUSD", "M15")             # un "altro bot" la chiede per primo
+    runner = AutoRunner(f, j, "XAUUSD", "M15")
+    runner.step()
+    assert j.stats()["totale"] == 1         # salvata lo stesso
+    runner.step()
+    assert j.stats()["totale"] == 1         # stessa candela: niente doppione
+    c.history = fake_history(n=51)
+    runner.step()
+    assert j.stats()["totale"] == 2
+
+
+def test_http_stats():
+    j = _tmp_journal()
+    f = Forecaster(FakeCandles(), predictor=FakePredictor())
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(f, j))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        txt = urllib.request.urlopen(base + "/stats").read().decode("utf-8")
+        assert "Registro Kronos" in txt
+        assert json.load(urllib.request.urlopen(base + "/stats?format=json"))["totale"] == 0
+    finally:
+        srv.shutdown()
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:

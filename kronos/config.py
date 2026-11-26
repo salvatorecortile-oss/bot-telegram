@@ -20,6 +20,10 @@ LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 LOG_FILE = LOG_DIR / "kronos.log"
 
+DATA_DIR = BASE_DIR / "data"
+DATA_DIR.mkdir(exist_ok=True)
+DB_PATH = DATA_DIR / "kronos.db"
+
 # Cartella dove hai scaricato il codice ufficiale di Kronos
 # (git clone https://github.com/shiyu-coder/Kronos.git dentro questa cartella)
 KRONOS_REPO_DIR = Path(os.getenv("KRONOS_REPO_DIR", str(BASE_DIR / "Kronos")))
@@ -52,3 +56,10 @@ BEARISH_THRESHOLD = float(os.getenv("KRONOS_BEARISH_THRESHOLD", "0.35"))
 # Servizio locale per gli altri bot: solo dal tuo PC (127.0.0.1)
 HOST = os.getenv("KRONOS_HOST", "127.0.0.1")
 PORT = int(os.getenv("KRONOS_PORT", "8765"))
+
+# Previsioni automatiche + registro di verifica (solo con "python main.py")
+AUTO_ENABLED = os.getenv("KRONOS_AUTO", "true").strip().lower() in {"1", "true", "yes", "on"}
+# Ogni quanti secondi controlla se e' chiusa una nuova candela
+AUTO_CHECK_SECONDS = int(os.getenv("KRONOS_AUTO_CHECK_SECONDS", "30"))
+# Quante candele leggere per verificare le previsioni passate
+EVAL_LOOKBACK = int(os.getenv("KRONOS_EVAL_LOOKBACK", "2000"))

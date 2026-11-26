@@ -24,6 +24,41 @@ per 12 candele). Da questi scenari ricava:
 Il calcolo si rifà solo quando chiude una nuova candela. Fino ad allora il servizio
 risponde subito con l'ultimo risultato (`"cached": true`).
 
+## Quando fa le previsioni
+
+- **`python main.py --once`**: una sola previsione, poi si chiude.
+- **`python main.py`** (o `avvia_kronos.bat`): servizio sempre acceso. Ogni 30 secondi controlla
+  se è chiusa una nuova candela del timeframe scelto (M15 di default). Quando succede, fa
+  **da solo** la previsione e la salva nel **registro di verifica**. Con M15 sono circa 4
+  previsioni all'ora, 96 al giorno. Nel weekend, a mercato chiuso, non fa nulla.
+  Si spegne con `KRONOS_AUTO=false` nel `.env`.
+- Gli altri bot possono comunque chiedere una previsione quando vogliono (vedi sotto).
+
+## Registro di verifica
+
+Ogni previsione automatica viene salvata in `data/kronos.db`. Quando sono passate le
+candele previste (12 candele = 3 ore su M15), il servizio legge il prezzo vero da MT5
+e controlla se Kronos ci aveva preso. Le candele si contano una per una, quindi il weekend
+non falsa il conto.
+
+Per vedere i risultati:
+```
+python report.py
+python report.py --giorni 7
+```
+oppure nel browser: `http://127.0.0.1:8765/stats`
+
+| Riga del report | Come leggerla |
+|---|---|
+| RIALZO / RIBASSO x/y corretti | quante volte, quando ha dato quel segnale, il prezzo è andato davvero in quella direzione |
+| Direzione della maggioranza | precisione su tutte le previsioni; **50% = come tirare una moneta** |
+| Dentro il range 10-90% | quante volte il prezzo vero è finito nell'intervallo previsto (ideale circa 80%) |
+| Errore medio | distanza media in $ tra il prezzo medio previsto e il prezzo vero |
+| Brier | qualità delle probabilità: più basso è meglio, 0.25 = moneta |
+
+Servono **almeno 100-200 previsioni verificate** (2-3 giorni di mercato su M15) prima di
+trarre conclusioni.
+
 ## Installazione (una volta sola, nel CMD di Windows)
 
 > **Sulla VPS** segui la guida completa: [`GUIDA_VPS.md`](GUIDA_VPS.md).
@@ -55,6 +90,7 @@ avvia il **servizio** (lascia la finestra aperta). In alternativa fai doppio cli
 
 - `http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15` → risposta JSON
 - `http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15&format=text` → testo pronto per Telegram
+- `http://127.0.0.1:8765/stats` → risultati del registro di verifica
 - `http://127.0.0.1:8765/health` → controlla che sia acceso
 
 Parametri facoltativi: `pred_len` (candele future, 1-120), `samples` (scenari, 1-100),

@@ -8,6 +8,10 @@ Il servizio risponde solo sul tuo PC:
     http://127.0.0.1:8765/health
     http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15
     http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15&format=text
+    http://127.0.0.1:8765/stats     -> risultati del registro di verifica
+
+Con KRONOS_AUTO=true fa anche una previsione a ogni candela chiusa e la
+salva nel registro (data/kronos.db), poi la confronta con il prezzo vero.
 
 NON apre ordini: restituisce solo la previsione.
 """
@@ -19,7 +23,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import config
+from auto import AutoRunner
 from forecast import Forecaster, format_text
+from journal import Journal, format_stats
 from mt5_data import MT5Candles
 
 log = logging.getLogger("kronos")
@@ -34,7 +40,7 @@ def setup_logging():
     )
 
 
-def make_handler(forecaster):
+def make_handler(forecaster, journal=None):
     class Handler(BaseHTTPRequestHandler):
         def _send(self, status, body, content_type="application/json; charset=utf-8"):
             data = body.encode("utf-8")
@@ -52,8 +58,16 @@ def make_handler(forecaster):
             q = {k: v[-1] for k, v in parse_qs(url.query).items()}
             if url.path == "/health":
                 return self._json(200, {"ok": True})
+            if url.path == "/stats":
+                if journal is None:
+                    return self._json(404, {"ok": False, "error": "registro non attivo"})
+                days = q.get("giorni")
+                s = journal.stats(days=int(days) if days and days.isdigit() else None)
+                if q.get("format") == "json":
+                    return self._json(200, dict(s, ok=True))
+                return self._send(200, format_stats(s), "text/plain; charset=utf-8")
             if url.path != "/forecast":
-                return self._json(404, {"ok": False, "error": "usa /forecast o /health"})
+                return self._json(404, {"ok": False, "error": "usa /forecast, /stats o /health"})
             try:
                 r = forecaster.forecast(
                     symbol=q.get("symbol"),
@@ -94,13 +108,20 @@ def main(argv=None):
 
     # Carico subito il modello, cosi' la prima richiesta non aspetta
     _ = forecaster.predictor
-    server = ThreadingHTTPServer((config.HOST, config.PORT), make_handler(forecaster))
+    journal = Journal()
+    runner = None
+    if config.AUTO_ENABLED:
+        runner = AutoRunner(forecaster, journal)
+        runner.start()
+    server = ThreadingHTTPServer((config.HOST, config.PORT), make_handler(forecaster, journal))
     log.info("Servizio Kronos attivo su http://%s:%s  (CTRL+C per fermare)", config.HOST, config.PORT)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         log.info("Fermato")
     finally:
+        if runner:
+            runner.stop()
         server.server_close()
         forecaster.candles.shutdown()
 

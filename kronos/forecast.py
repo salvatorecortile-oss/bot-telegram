@@ -114,7 +114,7 @@ class Forecaster:
         self.candles = candles
         self._predictor = predictor
         self._loader = predictor_loader
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._cache = {}
 
     @property
@@ -122,6 +122,11 @@ class Forecaster:
         if self._predictor is None:
             self._predictor = self._loader()
         return self._predictor
+
+    def get_history(self, symbol, timeframe, count):
+        """Candele chiuse da MT5 (un accesso a MT5 alla volta)."""
+        with self._lock:
+            return self.candles.get_candles(symbol, normalize_timeframe(timeframe), count)
 
     def forecast(self, symbol=None, timeframe=None, pred_len=None, samples=None, force=False):
         symbol = (symbol or config.DEFAULT_SYMBOL).strip()
