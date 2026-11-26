@@ -180,7 +180,7 @@ Poi chiudi la finestra di `avvia_kronos.bat` e riaprila.
 | `'git' non è riconosciuto...` | Installa Git (Parte 1) e riapri il CMD |
 | `Codice Kronos non trovato` | Manca la Parte 3, punto 3 (`git clone ... Kronos`), oppure l'hai lanciato da un'altra cartella |
 | `MT5 initialize fallito` | MetaTrader 5 è chiuso, o `MT5_PATH` nel `.env` è sbagliato |
-| `Simbolo XAUUSD non trovato` | Il broker usa un altro nome (es. `XAUUSD.m`, `GOLD`): mettilo in `.env` alla riga `KRONOS_SYMBOL=` |
+| `Simbolo ... non trovato` | Il messaggio dice a quale MT5 si è collegato e quali nomi dell'oro ci sono. Se il MT5 è quello giusto, metti uno di quei nomi in `.env` alla riga `KRONOS_SYMBOL=`. Se è quello sbagliato, metti il percorso del MT5 giusto alla riga `MT5_PATH=` |
 | VPS lentissima o bloccata | Troppa poca RAM: in `.env` metti `KRONOS_SAMPLES=8` |
 
 Per qualsiasi altro errore, copia il messaggio intero e incollalo a Claude.

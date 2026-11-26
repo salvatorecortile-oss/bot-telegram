@@ -32,6 +32,25 @@ def rates_to_dataframe(rates):
     return df[["timestamps", "open", "high", "low", "close", "volume", "amount"]].reset_index(drop=True)
 
 
+def describe_terminal(mt5):
+    """Quale MT5 e' collegato: cartella del programma e server del broker."""
+    term = mt5.terminal_info()
+    acc = mt5.account_info()
+    path = getattr(term, "path", "?") if term else "?"
+    server = getattr(acc, "server", "?") if acc else "nessun conto collegato"
+    return f"cartella {path}, server {server}"
+
+
+def similar_symbols(mt5, keywords=("XAU", "GOLD")):
+    """Nomi dei simboli che contengono XAU o GOLD (per suggerire quello giusto)."""
+    found = []
+    for s in mt5.symbols_get() or []:
+        name = getattr(s, "name", "")
+        if any(k in name.upper() for k in keywords):
+            found.append(name)
+    return sorted(found)[:20]
+
+
 class MT5Candles:
     """Collegamento a MT5 che si riconnette da solo se cade."""
 
@@ -48,7 +67,7 @@ class MT5Candles:
         if not ok:
             raise RuntimeError(f"MT5 initialize fallito: {mt5.last_error()}. MetaTrader 5 e' aperto?")
         self._mt5 = mt5
-        log.info("Collegato a MT5")
+        log.info("Collegato a MT5: %s", describe_terminal(mt5))
         return mt5
 
     def get_candles(self, symbol, timeframe, count):
@@ -56,7 +75,13 @@ class MT5Candles:
         mt5 = self._connect()
         tf = getattr(mt5, f"TIMEFRAME_{normalize_timeframe(timeframe)}")
         if not mt5.symbol_select(symbol, True):
-            raise RuntimeError(f"Simbolo {symbol} non trovato in MT5")
+            similar = similar_symbols(mt5)
+            hint = (f"Nomi simili presenti: {', '.join(similar)}" if similar
+                    else "Nessun simbolo con XAU o GOLD in questo terminale")
+            raise RuntimeError(
+                f"Simbolo {symbol} non trovato nel MT5 collegato ({describe_terminal(mt5)}). "
+                f"{hint}. Metti il nome giusto in .env alla riga KRONOS_SYMBOL=, "
+                "oppure scegli il terminale giusto con MT5_PATH=")
         # posizione 1 = salta la candela ancora aperta
         rates = mt5.copy_rates_from_pos(symbol, tf, 1, count)
         if rates is None or len(rates) == 0:

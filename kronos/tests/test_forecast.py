@@ -124,6 +124,28 @@ def test_http_server():
         srv.shutdown()
 
 
+def test_symbol_not_found_message():
+    import types
+    import mt5_data
+
+    sym = lambda n: types.SimpleNamespace(name=n)
+    fake = types.SimpleNamespace(
+        terminal_info=lambda: types.SimpleNamespace(path=r"C:\\MT5 Broker"),
+        account_info=lambda: types.SimpleNamespace(server="Broker-Live"),
+        symbol_select=lambda name, on: False,
+        symbols_get=lambda: [sym("EURUSD"), sym("XAUUSD.m"), sym("GOLDmicro")],
+        TIMEFRAME_M15=15,
+    )
+    c = mt5_data.MT5Candles(path="")
+    c._connect = lambda: fake
+    try:
+        c.get_candles("XAUUSD-P", "M15", 10)
+        raise AssertionError("doveva fallire")
+    except RuntimeError as e:
+        msg = str(e)
+    assert "GOLDmicro, XAUUSD.m" in msg and "Broker-Live" in msg and "EURUSD" not in msg
+
+
 if __name__ == "__main__":
     tests = [v for k, v in list(globals().items()) if k.startswith("test_")]
     for t in tests:
