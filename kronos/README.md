@@ -26,6 +26,8 @@ risponde subito con l'ultimo risultato (`"cached": true`).
 
 ## Installazione (una volta sola, nel CMD di Windows)
 
+> **Sulla VPS** segui la guida completa: [`GUIDA_VPS.md`](GUIDA_VPS.md).
+
 ```
 cd C:\percorso\bot-telegram\kronos
 pip install -r requirements.txt
@@ -48,7 +50,8 @@ stampa una sola previsione e chiude. Fai questo per la prima prova.
 ```
 python main.py
 ```
-avvia il **servizio** (lascia la finestra aperta). Gli altri bot del PC lo interrogano a:
+avvia il **servizio** (lascia la finestra aperta). In alternativa fai doppio clic su
+`avvia_kronos.bat`, che lo riavvia da solo se si ferma. Gli altri bot del PC lo interrogano a:
 
 - `http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15` → risposta JSON
 - `http://127.0.0.1:8765/forecast?symbol=XAUUSD&timeframe=M15&format=text` → testo pronto per Telegram
