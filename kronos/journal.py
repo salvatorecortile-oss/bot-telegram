@@ -146,6 +146,14 @@ def compute_stats(rows):
                      "percentuale": round(100 * len(ok) / len(sel), 1) if sel else None}
     out["NEUTRO"] = {"segnali": sum(r["bias"] == "NEUTRO" for r in ver)}
 
+    # movimento medio a favore per segnale (in $, senza spread): positivo = il segnale "rendeva"
+    sig = [r for r in ver if r["bias"] in ("RIALZO", "RIBASSO")]
+    if sig:
+        moves = [(r["actual_close"] - r["last_close"]) * (1 if r["bias"] == "RIALZO" else -1) for r in sig]
+        out["movimento_medio_segnali"] = round(sum(moves) / len(moves), 2)
+    else:
+        out["movimento_medio_segnali"] = None
+
     # direzione della maggioranza degli scenari (tutte le previsioni)
     maj = [r for r in ver if r["upside_probability"] != 0.5]
     maj_ok = [r for r in maj if went_up(r) == (r["upside_probability"] > 0.5)]
@@ -173,6 +181,9 @@ def format_stats(s, title="Registro Kronos"):
         pct = f"{d['percentuale']}%" if d["percentuale"] is not None else "-"
         lines.append(f"{icon} {b}: {d['corretti']}/{d['segnali']} corretti ({pct})")
     lines.append(f"⚪ NEUTRO (nessun segnale): {s['NEUTRO']['segnali']}")
+    if s.get("movimento_medio_segnali") is not None:
+        lines.append(f"Movimento medio a favore per segnale: {s['movimento_medio_segnali']} $ "
+                     "(senza spread: deve stare chiaramente sopra lo spread del broker)")
     lines.append(f"Direzione della maggioranza degli scenari: {s['direzione_maggioranza_pct']}% corretta "
                  "(50% = come tirare una moneta)")
     lines.append(f"Prezzo vero dentro il range 10-90%: {s['dentro_range_pct']}% (ideale circa 80%)")

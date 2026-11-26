@@ -163,6 +163,20 @@ Il servizio ascolta solo su `127.0.0.1`, cioè **solo dentro la VPS**.
 
 ---
 
+## Backtest (quanto ci prende sul passato)
+
+Dal CMD, nella cartella `kronos`:
+```
+python backtest.py
+```
+Fa 300 previsioni nel passato e le confronta con quello che è successo davvero. Può
+richiedere da qualche minuto a mezz'ora: la finestra mostra quanto manca. Alla fine
+stampa il report e salva un file Excel nella cartella `kronos\data`.
+
+Si può lanciare mentre `avvia_kronos.bat` è acceso: legge soltanto da MT5.
+
+---
+
 ## Aggiornare Kronos in futuro
 
 Quando ti dico che c'è una modifica nuova:

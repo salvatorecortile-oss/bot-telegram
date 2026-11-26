@@ -54,9 +54,9 @@ class FakePredictor:
 
     def predict_batch(self, df_list, x_timestamp_list, y_timestamp_list, pred_len, **kw):
         self.calls += 1
-        last = float(df_list[0]["close"].iloc[-1])
         out = []
         for i in range(len(df_list)):
+            last = float(df_list[i]["close"].iloc[-1])
             step = -1.0 if i % 4 == 0 else 1.0
             out.append(path(last + step * np.arange(1, pred_len + 1), y_timestamp_list[i]))
         return out
@@ -220,6 +220,41 @@ def test_http_stats():
         assert json.load(urllib.request.urlopen(base + "/stats?format=json"))["totale"] == 0
     finally:
         srv.shutdown()
+
+
+def test_backtest():
+    import tempfile
+    from backtest import run_backtest, save_csv, test_points
+    from journal import compute_stats, format_stats
+
+    # nessuna prova "vede" il futuro: servono lookback candele prima e pred_len dopo
+    pts = test_points(100, lookback=20, pred_len=5, prove=50, passo=3)
+    assert pts and pts[0] >= 19 and pts[-1] <= 100 - 5 - 1 and pts == sorted(pts)
+
+    h = fake_history(n=120)                      # prezzo sempre in salita
+    seen = []
+
+    class Spy(FakePredictor):
+        def predict_batch(self, df_list, **kw):
+            seen.extend(float(d["close"].iloc[-1]) for d in df_list)
+            return super().predict_batch(df_list, **kw)
+
+    rows, base = run_backtest(h, Spy(), "M15", pred_len=4, samples=4, prove=10, passo=5,
+                              batch=3, lookback=30, progress=lambda m: None)
+    assert len(rows) == 10
+    for r in rows:                               # la previsione parte dall'ultima candela vista
+        i = h.index[h["timestamps"].astype(str) == r["last_candle_time"]][0]
+        assert r["last_close"] == float(h["close"].iloc[i])
+        assert r["actual_close"] == float(h["close"].iloc[i + 4])
+    assert max(seen) <= float(h["close"].iloc[-5])   # mai usate le ultime candele "future"
+    s = compute_stats(rows)
+    assert s["RIALZO"]["percentuale"] == 100.0 and base == 100.0
+    assert s["movimento_medio_segnali"] == 2.0       # 4 candele x 0,5 $
+    assert "Movimento medio a favore" in format_stats(s)
+    out = Path(tempfile.mkdtemp()) / "bt.csv"
+    save_csv(rows, out)
+    text = out.read_text(encoding="utf-8-sig")
+    assert text.startswith("ora candela;") and ";SI" in text and "," in text
 
 
 if __name__ == "__main__":

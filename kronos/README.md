@@ -59,6 +59,28 @@ oppure nel browser: `http://127.0.0.1:8765/stats`
 Servono **almeno 100-200 previsioni verificate** (2-3 giorni di mercato su M15) prima di
 trarre conclusioni.
 
+## Backtest (verifica sul passato)
+
+Per non aspettare giorni, `backtest.py` usa le candele passate di MT5. In tanti
+momenti del passato fa fare a Kronos la previsione usando **solo** le candele fino a
+quel momento, e la confronta subito con quello che è successo dopo. Non apre ordini.
+
+```
+python backtest.py                 (300 prove, una ogni ora su M15)
+python backtest.py --prove 100     (prova veloce)
+python backtest.py --prove 1000    (più affidabile, più lento)
+```
+
+Opzioni: `--passo` (ogni quante candele fare una prova, default 4), `--scenari` (default 10),
+`--candele-future` (default 12), `--symbol`, `--timeframe`.
+
+Alla fine stampa lo stesso report del registro, più due confronti:
+- la regola semplice "continua come le ultime 12 candele": Kronos deve fare **meglio** di questa;
+- quante volte l'oro è salito nel periodo: se è molto lontano dal 50%, il periodo era in forte
+  tendenza e i numeri vanno presi con cautela.
+
+Salva anche tutte le prove, una per una, in `data/backtest_....csv`, da aprire con Excel.
+
 ## Installazione (una volta sola, nel CMD di Windows)
 
 > **Sulla VPS** segui la guida completa: [`GUIDA_VPS.md`](GUIDA_VPS.md).

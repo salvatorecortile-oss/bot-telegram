@@ -83,6 +83,33 @@ def summarize(history, paths, bullish=None, bearish=None):
     }
 
 
+def run_forecasts(predictor, histories, timeframe, pred_len, samples):
+    """
+    Previsione per uno o piu' storici in un colpo solo (piu' veloce).
+    Ogni storico viene ripetuto `samples` volte = `samples` scenari indipendenti.
+    Ritorna una lista di riassunti (vedi summarize), uno per storico.
+    """
+    df_list, x_list, y_list = [], [], []
+    for h in histories:
+        x_df = h[["open", "high", "low", "close", "volume", "amount"]].reset_index(drop=True)
+        x_ts = h["timestamps"].reset_index(drop=True)
+        y_ts = future_timestamps(x_ts.iloc[-1], timeframe, pred_len)
+        df_list += [x_df] * samples
+        x_list += [x_ts] * samples
+        y_list += [y_ts] * samples
+    paths = predictor.predict_batch(
+        df_list=df_list,
+        x_timestamp_list=x_list,
+        y_timestamp_list=y_list,
+        pred_len=pred_len,
+        T=config.TEMPERATURE,
+        top_p=config.TOP_P,
+        sample_count=1,
+        verbose=False,
+    )
+    return [summarize(h, paths[i * samples:(i + 1) * samples]) for i, h in enumerate(histories)]
+
+
 def load_predictor():
     """Carica il modello Kronos ufficiale (cartella KRONOS_REPO_DIR)."""
     repo = config.KRONOS_REPO_DIR
@@ -146,21 +173,8 @@ class Forecaster:
             if cached and not force and cached["last_candle_time"] == str(last_ts):
                 return dict(cached, cached=True)
 
-            x_df = history[["open", "high", "low", "close", "volume", "amount"]]
-            x_ts = history["timestamps"]
             y_ts = future_timestamps(last_ts, timeframe, pred_len)
-            # stesso storico ripetuto N volte = N scenari indipendenti in parallelo
-            paths = self.predictor.predict_batch(
-                df_list=[x_df] * samples,
-                x_timestamp_list=[x_ts] * samples,
-                y_timestamp_list=[y_ts] * samples,
-                pred_len=pred_len,
-                T=config.TEMPERATURE,
-                top_p=config.TOP_P,
-                sample_count=1,
-                verbose=False,
-            )
-            result = summarize(history, paths)
+            result = run_forecasts(self.predictor, [history], timeframe, pred_len, samples)[0]
             result.update({
                 "symbol": symbol,
                 "timeframe": timeframe,
