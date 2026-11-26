@@ -81,6 +81,40 @@ Alla fine stampa lo stesso report del registro, più due confronti:
 
 Salva anche tutte le prove, una per una, in `data/backtest_....csv`, da aprire con Excel.
 
+## Backtest della strategia (cambio di tendenza + TP/SL)
+
+`strategia.py` simula un bot che opera **solo quando Kronos cambia tendenza**
+(RIBASSO → RIALZO = BUY, RIALZO → RIBASSO = SELL). Usa le previsioni già calcolate da
+`backtest.py`, quindi richiede pochi secondi. Non apre ordini.
+
+```
+python strategia.py
+python strategia.py --spread 0.4 --conferma 1 --tp 0.5
+```
+
+| Regola | Default | Opzione |
+|---|---|---|
+| Il cambio vale dopo N previsioni di fila con la nuova tendenza (NEUTRO non conta) | 2 | `--conferma` |
+| Entrata | chiusura della candela che conferma | |
+| TP | entrata → 90% degli scenari favorevoli (p90 per BUY, p10 per SELL) × moltiplicatore | `--tp` (1) |
+| SL | entrata → 10% degli scenari sfavorevoli × moltiplicatore | `--sl` (1) |
+| Distanza minima TP e SL | 2 $ | `--min-dist` |
+| Scarta il segnale se TP/SL è sotto | 1 | `--min-rr` |
+| Chiusura a mercato se non tocca nulla dopo | 24 candele | `--max-candele` |
+| Spread tolto a ogni operazione | 0,30 $ | `--spread` |
+
+Altre regole: con un'operazione aperta, il cambio opposto la chiude e apre quella nuova.
+Se nella stessa candela il prezzo tocca sia TP sia SL, conta come SL (ipotesi pessimista).
+La prima tendenza del periodo è il punto di partenza, non un segnale.
+
+Il report mostra operazioni vinte e perse, il risultato in $ con 0,01 lotti, il profit factor,
+il peggior calo e la peggior serie di perdite. Salva anche un file Excel con le operazioni una
+per una in `data/strategia_....csv`.
+
+Attenzione: le previsioni di `backtest.py` sono una ogni 4 candele (`--passo 4`), quindi il
+cambio viene visto con al massimo 1 ora di ritardo rispetto al servizio dal vivo. E più
+combinazioni si provano, più è facile trovarne una che "funzionava per caso" nel passato.
+
 ## Installazione (una volta sola, nel CMD di Windows)
 
 > **Sulla VPS** segui la guida completa: [`GUIDA_VPS.md`](GUIDA_VPS.md).
@@ -137,6 +171,7 @@ secondo a un minuto. Se è troppo lento, abbassa `KRONOS_SAMPLES`.
 
 ```
 python tests/test_forecast.py
+python tests/test_strategia.py
 ```
 
 ## Avvertenze

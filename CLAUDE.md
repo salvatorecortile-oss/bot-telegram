@@ -47,6 +47,7 @@ Kronos (dalla cartella `kronos`):
 
 ```
 python tests/test_forecast.py
+python tests/test_strategia.py
 ```
 
 Lancia i test del bot che hai modificato prima di fare commit.
