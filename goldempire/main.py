@@ -418,6 +418,23 @@ async def refresh_pending(row):
 # AGGIORNAMENTI (TP / BE / STOP / CHIUSA)
 # ============================================================
 
+async def reply_is_unknown_open(reply_to):
+    """
+    True se il messaggio a cui si risponde e' un'APERTURA che questo bot non ha
+    (es. segnale arrivato mentre la VPS era spenta): in quel caso l'aggiornamento
+    riguarda quel segnale e non va applicato a un'altra operazione dello stesso SIGNAL.
+    """
+    try:
+        original = await client.get_messages(SOURCE_CHAT, ids=int(reply_to))
+    except Exception:
+        logger.exception("❌ Messaggio #%s (a cui si risponde) non leggibile: aggiornamento ignorato", reply_to)
+        return True
+    if original is None:
+        return False
+    parsed = parse_signal(getattr(original, "raw_text", "") or "")
+    return bool(parsed and parsed["action"] == "OPEN")
+
+
 def find_signal_row(message, signal):
     reply_to = getattr(message, "reply_to_msg_id", None)
     if reply_to:
@@ -473,6 +490,12 @@ async def finalize_if_closed_on_mt5(row):
 async def handle_update(message, signal, row=None):
     action = signal["action"]
     if row is None:
+        reply_to = getattr(message, "reply_to_msg_id", None)
+        if reply_to and db.get_signal(reply_to) is None and await reply_is_unknown_open(reply_to):
+            logger.info("⏭️ %s SIGNAL %s ignorato | #%s | e' in risposta al segnale #%s, che questo bot "
+                        "non ha aperto: non tocca altre operazioni.", action, signal.get("signal_no"),
+                        message.id, reply_to)
+            return
         row = find_signal_row(message, signal)
     if row is None or row["status"] not in (db.OPEN_STATUS, db.PENDING_STATUS):
         logger.info(
@@ -614,6 +637,10 @@ async def handle_free_close(message, reply_only=False, signal_no=None):
     reply_to = getattr(message, "reply_to_msg_id", None)
     if reply_to:
         row = db.get_signal(reply_to)
+        if row is None and await reply_is_unknown_open(reply_to):
+            logger.info("⏭️ CHIUSURA A PAROLE #%s ignorata: e' in risposta al segnale #%s, che questo bot "
+                        "non ha aperto.", message.id, reply_to)
+            return
     if row is None:
         if reply_only:
             logger.info("⏭️ 'NON APRIAMO' #%s ignorato: non e' in risposta a un segnale.", message.id)

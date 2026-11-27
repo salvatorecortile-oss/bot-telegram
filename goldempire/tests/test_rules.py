@@ -109,6 +109,19 @@ async def master():
     decisions = {e["source_message_id"]: e["kind"] for e in sync.read_after(0) if e["kind"] in ("OPEN", "SKIP")}
     assert decisions == {1: "OPEN", 2: "SKIP", 3: "SKIP", 4: "OPEN", 5: "SKIP", 6: "OPEN", 7: "SKIP",
                          8: "OPEN", 9: "OPEN", 10: "SKIP", 11: "SKIP", 12: "OPEN"}, decisions
+    # CHIUDI ORA in risposta a un SIGNAL 4 che il bot NON ha (VPS spenta): non chiude l'altro SIGNAL 4 aperto
+    open4 = [r for r in db.get_open_signals() if r["signal_no"] == 4]
+    assert open4, db.get_open_signals()
+    missed = F.msg(900, entra(4, "BUY", "4100,30", "4060,00", "4300,00"))
+    tg.history = [missed]
+    close_txt = "🔴 CHIUDI ORA · SIGNAL 4 · BUY\n\n🏁 Uscita: 4105,00"
+    await main.source_message_handler(F.event(F.msg(901, close_txt, reply_to=900)))
+    assert db.get_signal(open4[0]["source_message_id"])["status"] == "OPENED"
+    # Senza reply (o in reply a un messaggio che non e' un segnale) la riserva vale ancora
+    tg.history = [F.msg(902, "Ragazzi attenzione")]
+    await main.source_message_handler(F.event(F.msg(903, close_txt, reply_to=902)))
+    assert db.get_signal(open4[0]["source_message_id"])["status"] == "CLOSED_MANUAL"
+
     # EXCLUDED_SIGNALS: 5.6 blocca solo il 5.6 (gli altri 5.x si aprono), 7 blocca tutta la famiglia 7
     main.EXCLUDED_SIGNALS = {5.6, 7.0}
     assert main.excluded_reason(5.6) and main.excluded_reason(7) and main.excluded_reason(7.1)

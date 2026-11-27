@@ -51,7 +51,8 @@ Bot **indipendente**: ha il suo `.env`, la sua sessione Telegram, il suo databas
   chiuso (preferendo quelli aperti anche sul principale, poi il più recente) e mette SL/TP: quelli più
   aggiornati del principale (SL spostato, BE, TP) o, se mancano, quelli del segnale Telegram.
 - Gli aggiornamenti vengono collegati al segnale tramite la **reply** di Telegram
-  (riserva: ultimo `SIGNAL N` ancora aperto). Nel tuo canale escono in reply al segnale copiato.
+  (riserva: ultimo `SIGNAL N` ancora aperto, ma **non** se la reply è a un segnale che il bot non ha aperto,
+  es. arrivato a VPS spenta: in quel caso l'aggiornamento viene ignorato). Nel tuo canale escono in reply al segnale copiato.
 - BUY e SELL possono essere aperti **contemporaneamente** (serve un conto MT5 *hedging*).
 - Se MT5 chiude da solo (TP/SL raggiunto) il bot se ne accorge e pubblica il messaggio, senza doppioni.
 - I pip sono calcolati dai prezzi reali MT5 (1 pip = 0,10 $, come il canale).

@@ -145,6 +145,9 @@ class FakeClient:
         for m in sorted(source, key=lambda m: m.id, reverse=True)[:limit]:
             yield m
 
+    async def get_messages(self, chat, ids=None):
+        return next((m for m in self.history if m.id == ids), None)
+
     async def send_message(self, chat, text, parse_mode=None, silent=None, reply_to=None):
         msg = SimpleNamespace(id=500 + len(self.sent), text=text, reply_to=reply_to)
         self.sent.append(msg)
