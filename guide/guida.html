@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Guida MetaTrader 5 da telefono</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Liberation Sans", "DejaVu Sans", Arial, sans-serif; color: #1c2430; background: #fff; }
+  .page { width: 210mm; height: 297mm; padding: 16mm 16mm 14mm; position: relative; page-break-after: always; overflow: hidden; }
+  .page:last-child { page-break-after: auto; }
+  .foot { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; font-size: 9pt; color: #8a94a3; display: flex; justify-content: space-between; border-top: 1px solid #e3e7ec; padding-top: 3mm; }
+
+  /* Copertina */
+  .cover { background: linear-gradient(160deg, #0b3d91 0%, #1565c0 55%, #1e88e5 100%); color: #fff; }
+  .cover h1 { font-size: 34pt; margin: 30mm 0 4mm; line-height: 1.1; }
+  .cover .sub { font-size: 15pt; opacity: .92; max-width: 150mm; line-height: 1.4; }
+  .cover .badge { display: inline-block; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.4); border-radius: 20px; padding: 2mm 5mm; font-size: 11pt; }
+  .cover .list { margin-top: 14mm; font-size: 12.5pt; line-height: 2; }
+  .cover .list span { display: inline-block; width: 8mm; height: 8mm; border-radius: 50%; background: #fff; color: #0b3d91; text-align: center; line-height: 8mm; font-weight: bold; margin-right: 3mm; font-size: 11pt; }
+  .cover .phones { position: absolute; right: 14mm; bottom: 22mm; }
+  .cover .foot { color: rgba(255,255,255,.7); border-color: rgba(255,255,255,.25); }
+
+  h2 { font-size: 20pt; color: #0b3d91; margin: 0 0 3mm; display: flex; align-items: center; gap: 4mm; }
+  h2 .n { flex: none; width: 12mm; height: 12mm; border-radius: 50%; background: #1565c0; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 17pt; }
+  p, li { font-size: 12pt; line-height: 1.5; }
+  .lead { font-size: 12.5pt; color: #3a4554; margin: 0 0 5mm; }
+
+  .step { display: flex; gap: 9mm; align-items: flex-start; margin-bottom: 8mm; }
+  .step .txt { flex: 1; }
+  .step .txt ol { padding-left: 6mm; margin: 2mm 0; }
+  .step .txt li { margin-bottom: 2mm; }
+  .tip { background: #fff8e1; border-left: 4px solid #f9a825; padding: 3mm 4mm; border-radius: 2mm; font-size: 11pt; line-height: 1.45; margin-top: 3mm; }
+  .warn { background: #fdecea; border-left: 4px solid #d32f2f; padding: 3mm 4mm; border-radius: 2mm; font-size: 11pt; line-height: 1.45; margin-top: 3mm; }
+  .ok { background: #e8f5e9; border-left: 4px solid #2e7d32; padding: 3mm 4mm; border-radius: 2mm; font-size: 11pt; line-height: 1.45; margin-top: 3mm; }
+  .pill { display: inline-block; background: #e3eefc; color: #0b3d91; border-radius: 3px; padding: 0 2mm; font-weight: bold; }
+  .two { display: flex; gap: 6mm; }
+  .two > div { flex: 1; }
+  .os { font-weight: bold; font-size: 11pt; color: #fff; background: #3a4554; border-radius: 3px; padding: .5mm 2mm; margin-right: 1mm; }
+  .os.and { background: #2e7d32; } .os.ios { background: #1c2430; }
+
+  /* ----- Telefono finto ----- */
+  .phone { width: 62mm; height: 124mm; background: #111; border-radius: 9mm; padding: 2.6mm; flex: none; box-shadow: 0 2mm 6mm rgba(0,0,0,.25); position: relative; }
+  .phone.small { transform: scale(.82); transform-origin: top center; }
+  .scr { width: 100%; height: 100%; background: #fff; border-radius: 6.6mm; overflow: hidden; position: relative; font-size: 8.5pt; color: #222; }
+  .sbar { height: 6mm; display: flex; justify-content: space-between; align-items: center; padding: 0 4mm; font-size: 7pt; font-weight: bold; }
+  .notch { position: absolute; top: 1.4mm; left: 50%; transform: translateX(-50%); width: 16mm; height: 3.6mm; background: #111; border-radius: 2mm; }
+  .topbar { height: 10mm; display: flex; align-items: center; padding: 0 3mm; gap: 2.5mm; border-bottom: 1px solid #e6e6e6; font-weight: bold; font-size: 9.5pt; }
+  .topbar.blue { background: #1565c0; color: #fff; border: none; }
+  .row { padding: 2.6mm 3.5mm; border-bottom: 1px solid #efefef; display: flex; align-items: center; gap: 2.5mm; }
+  .row small { display: block; color: #888; font-size: 7pt; font-weight: normal; }
+  .ico { width: 7mm; height: 7mm; border-radius: 1.6mm; flex: none; }
+  .mt5 { background: linear-gradient(135deg, #1e88e5, #0d47a1); position: relative; }
+  .mt5::after { content: "5"; color: #fff; font-weight: bold; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 11pt; }
+  .btn { background: #1565c0; color: #fff; border-radius: 1.6mm; padding: 2.2mm 0; text-align: center; font-weight: bold; margin: 2mm 3.5mm; font-size: 9pt; }
+  .btn.green { background: #2e7d32; }
+  .btn.ghost { background: #fff; color: #1565c0; border: 1px solid #1565c0; }
+  .field { margin: 2mm 3.5mm; border: 1px solid #c9ced6; border-radius: 1.4mm; padding: 1.6mm 2.4mm; }
+  .field label { display: block; font-size: 6.5pt; color: #777; }
+  .field div { font-size: 9pt; }
+  .search { margin: 2.5mm 3.5mm; background: #f0f2f5; border-radius: 4mm; padding: 2mm 3mm; color: #555; }
+  .tabs { position: absolute; bottom: 0; left: 0; right: 0; height: 11mm; border-top: 1px solid #e6e6e6; display: flex; justify-content: space-around; align-items: center; font-size: 6.5pt; color: #888; background: #fafafa; }
+  .tabs b { display: block; width: 4mm; height: 4mm; margin: 0 auto .8mm; border-radius: 1mm; background: #c3c9d1; }
+  .tabs .on { color: #1565c0; font-weight: bold; } .tabs .on b { background: #1565c0; }
+  .hl { position: absolute; border: 2.6px solid #e53935; border-radius: 3mm; box-shadow: 0 0 0 2mm rgba(229,57,53,.18); }
+  .tap { position: absolute; background: #e53935; color: #fff; font-size: 7pt; font-weight: bold; padding: .8mm 2mm; border-radius: 2mm; white-space: nowrap; }
+  .check { display: inline-block; width: 3.4mm; height: 3.4mm; border-radius: .7mm; background: #1565c0; color: #fff; font-size: 7pt; text-align: center; line-height: 3.4mm; margin-right: 1.5mm; }
+  .modal-bg { position: absolute; inset: 6mm 0 0 0; background: rgba(0,0,0,.45); }
+  .modal { position: absolute; left: 4mm; right: 4mm; top: 30mm; background: #fff; border-radius: 3mm; padding: 4mm; }
+  .stars { color: #f9a825; letter-spacing: .5mm; }
+  .num { font-family: "Liberation Mono", monospace; }
+  .pos { color: #2e7d32; } .neg { color: #c62828; }
+
+  table.fill { width: 100%; border-collapse: collapse; margin-top: 4mm; }
+  table.fill td { border: 1.5px solid #9aa5b4; padding: 5mm 4mm; font-size: 12.5pt; }
+  table.fill td:first-child { width: 42%; background: #f3f6fa; font-weight: bold; }
+  .faq h3 { font-size: 13pt; margin: 5mm 0 1mm; color: #1c2430; }
+  .faq p { margin: 0 0 1mm; }
+  .mark { outline: 2.6px solid #e53935; outline-offset: .8mm; border-radius: 1.6mm; position: relative; z-index: 2; }
+  .tapin { display: table; margin: 2mm auto 0; background: #e53935; color: #fff; font-size: 7pt; font-weight: bold; padding: .8mm 2.4mm; border-radius: 2mm; position: relative; z-index: 2; }
+</style>
+</head>
+<body>
+
+<!-- ============ COPERTINA ============ -->
+<section class="page cover">
+  <span class="badge">Guida per principianti</span>
+  <h1>MetaTrader 5<br>sul telefono</h1>
+  <div class="sub">Come scaricare l'app e accedere al tuo conto per la prima volta, passo dopo passo. Ti servono circa 10 minuti.</div>
+  <div class="list">
+    <div><span>1</span>Scarica l'app</div>
+    <div><span>2</span>Apri l'app la prima volta</div>
+    <div><span>3</span>Aggiungi il tuo conto</div>
+    <div><span>4</span>Cerca il broker e il server</div>
+    <div><span>5</span>Inserisci login e password</div>
+    <div><span>6</span>Controlla di essere entrato</div>
+  </div>
+  <div class="phones">
+    <div class="phone">
+      <div class="scr" style="background:linear-gradient(180deg,#e9f1fc,#fff)">
+        <div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>5G</span></div>
+        <div style="text-align:center;margin-top:24mm">
+          <div class="ico mt5" style="width:22mm;height:22mm;border-radius:5mm;margin:0 auto"></div>
+          <div style="font-weight:bold;font-size:12pt;margin-top:4mm;color:#0b3d91">MetaTrader 5</div>
+          <div style="color:#667;margin-top:1mm">MetaQuotes Ltd.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Le schermate in questa guida sono disegni illustrativi: l'app vera può avere colori o scritte un po' diversi.</span></div>
+</section>
+
+<!-- ============ PRIMA DI INIZIARE ============ -->
+<section class="page">
+  <h2>Prima di iniziare</h2>
+  <p class="lead">Per entrare nel conto ti servono <b>3 dati</b> che ti ha dato il broker (o la persona che ti ha aperto il conto). Di solito arrivano per email. Scrivili qui sotto, così li hai sotto mano.</p>
+
+  <table class="fill">
+    <tr><td>Login (numero del conto)<br><span style="font-weight:normal;font-size:10pt;color:#667">solo numeri, es. 51234567</span></td><td></td></tr>
+    <tr><td>Password<br><span style="font-weight:normal;font-size:10pt;color:#667">attenzione a maiuscole e minuscole</span></td><td></td></tr>
+    <tr><td>Server<br><span style="font-weight:normal;font-size:10pt;color:#667">es. NomeBroker-Live</span></td><td></td></tr>
+    <tr><td>Nome del broker</td><td></td></tr>
+  </table>
+
+  <div class="tip" style="margin-top:7mm"><b>Il "Server" è importantissimo.</b> Molti broker hanno più server con nomi quasi uguali (per esempio <i>-Live</i>, <i>-Real</i>, <i>-Demo</i>, <i>-Live2</i>). Devi scegliere <b>esattamente</b> quello scritto nell'email. Se sbagli server, l'app dirà "Conto non valido" anche se la password è giusta.</div>
+
+  <div class="warn"><b>Sicurezza.</b> Non mandare mai la password via chat a sconosciuti e non fare screenshot della password. Scarica l'app solo dagli store ufficiali (Google Play o App Store), mai da link ricevuti in chat.</div>
+
+  <h3 style="font-size:14pt;margin-top:9mm;color:#0b3d91">Cosa ti serve</h3>
+  <ul>
+    <li>Un telefono <b>Android</b> o un <b>iPhone</b> connesso a internet</li>
+    <li>Il tuo account Google (per Android) o Apple ID (per iPhone) per scaricare app</li>
+    <li>I 3 dati della tabella qui sopra</li>
+  </ul>
+  <p>In questa guida, dove i passaggi cambiano tra i due telefoni, trovi l'indicazione <span class="os and">Android</span> o <span class="os ios">iPhone</span>.</p>
+
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>2</span></div>
+</section>
+
+<!-- ============ PASSO 1 ============ -->
+<section class="page">
+  <h2><span class="n">1</span>Scarica l'app</h2>
+  <div class="step">
+    <div class="txt">
+      <ol>
+        <li>Apri lo store del telefono:<br><span class="os and">Android</span> <b>Google Play Store</b><br><span class="os ios">iPhone</span> <b>App Store</b></li>
+        <li>Tocca la barra di ricerca e scrivi <span class="pill">MetaTrader 5</span></li>
+        <li>Controlla che lo sviluppatore sia <b>MetaQuotes Ltd.</b> e che l'icona sia blu con il numero 5.</li>
+        <li>Tocca <b>Installa</b> (Android) oppure <b>Ottieni</b> (iPhone) e aspetta che finisca.</li>
+        <li>Tocca <b>Apri</b>.</li>
+      </ol>
+      <div class="warn"><b>Attenzione alle copie.</b> Esistono app con nomi simili ("MT5 Trading", "Meta Trader Pro"...). Quella giusta è solo quella di <b>MetaQuotes Ltd.</b> Non scaricare la versione 4 (MetaTrader 4): è un'altra app e il tuo conto non funziona lì.</div>
+    </div>
+    <div class="phone">
+      <div class="scr">
+        <div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>5G</span></div>
+        <div class="search">&#x2315;&nbsp; MetaTrader 5</div>
+        <div class="tapin" style="margin-top:3mm">Controlla: MetaQuotes Ltd.</div>
+        <div class="row mark" style="border:none;padding-top:3mm;margin:1.5mm 2.5mm 0">
+          <div class="ico mt5" style="width:15mm;height:15mm;border-radius:3.4mm"></div>
+          <div><b style="font-size:10.5pt">MetaTrader 5</b><small style="color:#2e7d32;font-size:8pt">MetaQuotes Ltd.</small><small><span class="stars">&#9733;&#9733;&#9733;&#9733;&#9733;</span> Finanza</small></div>
+        </div>
+        <div class="btn green" style="margin-top:3mm">Installa</div>
+        <div style="display:flex;gap:2mm;margin:4mm 3.5mm">
+          <div style="flex:1;height:38mm;border-radius:2mm;background:linear-gradient(180deg,#0d47a1,#1e88e5)"></div>
+          <div style="flex:1;height:38mm;border-radius:2mm;background:linear-gradient(180deg,#263238,#455a64)"></div>
+        </div>
+        <div style="padding:0 3.5mm;color:#666;font-size:7.5pt">Trading sui mercati finanziari: Forex, azioni, futures...</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>3</span></div>
+</section>
+
+<!-- ============ PASSO 2 ============ -->
+<section class="page">
+  <h2><span class="n">2</span>Apri l'app la prima volta</h2>
+  <div class="step">
+    <div class="txt">
+      <p>Alla prima apertura l'app ti mostra alcune schermate di benvenuto:</p>
+      <ol>
+        <li>Se compare il <b>contratto di licenza</b> o le condizioni d'uso, tocca <b>Accetta</b>.</li>
+        <li>Se ti chiede di permettere le <b>notifiche</b>, puoi toccare <b>Consenti</b> (utile per avvisi su ordini e messaggi).</li>
+        <li>L'app potrebbe proporti di <b>aprire un conto demo</b> o mostrarti un elenco di broker. <b>Non serve</b>: tu hai già un conto. Chiudi questa schermata (freccia indietro o <b>X</b>) oppure scegli l'opzione per <b>accedere a un conto esistente</b>.</li>
+      </ol>
+      <div class="tip">Se per sbaglio hai aperto un conto demo, nessun problema: è un conto finto, con soldi virtuali. Prosegui con il passo 3 e aggiungi il tuo conto vero.</div>
+    </div>
+    <div class="phone">
+      <div class="scr">
+        <div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>5G</span></div>
+        <div style="text-align:center;padding-top:10mm">
+          <div class="ico mt5" style="width:14mm;height:14mm;border-radius:3.4mm;margin:0 auto"></div>
+          <div style="font-weight:bold;margin-top:2mm">MetaTrader 5</div>
+        </div>
+        <div class="modal-bg"></div>
+        <div class="modal">
+          <div style="font-weight:bold;font-size:10pt;margin-bottom:2mm">Contratto di licenza</div>
+          <div style="height:2mm;background:#eee;margin:1.2mm 0;border-radius:1mm"></div>
+          <div style="height:2mm;background:#eee;margin:1.2mm 0;border-radius:1mm;width:90%"></div>
+          <div style="height:2mm;background:#eee;margin:1.2mm 0;border-radius:1mm;width:95%"></div>
+          <div style="height:2mm;background:#eee;margin:1.2mm 0 4mm;border-radius:1mm;width:70%"></div>
+          <div style="display:flex;justify-content:flex-end;gap:5mm;font-weight:bold;color:#1565c0">
+            <span style="color:#888">Rifiuta</span><span class="mark" style="padding:.5mm 1.5mm">ACCETTA</span>
+          </div>
+          <div class="tapin" style="margin:3mm 0 0 auto">Tocca qui</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>4</span></div>
+</section>
+
+<!-- ============ PASSO 3 ============ -->
+<section class="page">
+  <h2><span class="n">3</span>Aggiungi il tuo conto</h2>
+  <p class="lead">Ora devi dire all'app che vuoi entrare in un conto che <b>hai già</b>.</p>
+  <div class="two">
+    <div>
+      <p><span class="os and">Android</span></p>
+      <ol>
+        <li>Tocca il menu <b>&#9776;</b> (tre righe) in alto a sinistra.</li>
+        <li>Tocca <b>Gestisci conti</b>.</li>
+        <li>Tocca il <b>+</b> in alto a destra.</li>
+        <li>Scegli <b>Accedi a un conto esistente</b>.</li>
+      </ol>
+    </div>
+    <div>
+      <p><span class="os ios">iPhone</span></p>
+      <ol>
+        <li>Tocca <b>Impostazioni</b> nella barra in basso.</li>
+        <li>Tocca <b>Nuovo conto</b> (in alto).</li>
+        <li>Scegli <b>Accedi a un conto esistente</b>.</li>
+      </ol>
+    </div>
+  </div>
+  <div style="display:flex;gap:10mm;justify-content:center;margin-top:5mm">
+    <!-- Android gestisci conti -->
+    <div>
+      <div class="phone">
+        <div class="scr">
+          <div class="notch"></div>
+          <div class="sbar"><span>9:41</span><span>5G</span></div>
+          <div class="topbar"><span>&#8592;</span><span style="flex:1">Conti</span><span class="mark" style="font-size:15pt;font-weight:normal;padding:0 1.5mm;line-height:1">+</span></div>
+          <div class="tapin" style="margin:2mm 2mm 0 auto">Tocca il +</div>
+          <div style="padding:6mm 4mm;color:#888;text-align:center">Nessun conto collegato</div>
+        </div>
+      </div>
+      <p style="text-align:center;font-size:10pt;color:#667;margin-top:2mm">Android: schermata "Gestisci conti"</p>
+    </div>
+    <!-- scelta -->
+    <div>
+      <div class="phone">
+        <div class="scr">
+          <div class="notch"></div>
+          <div class="sbar"><span>9:41</span><span>5G</span></div>
+          <div class="topbar"><span>&#8592;</span><span>Nuovo conto</span></div>
+          <div class="row" style="padding:4mm 3.5mm"><div class="ico" style="background:#e3eefc"></div><div><b>Apri un conto demo</b><small>Soldi virtuali, per provare</small></div></div>
+          <div class="row" style="padding:4mm 3.5mm"><div class="ico" style="background:#e3eefc"></div><div><b>Apri un conto reale</b><small>Registrazione presso un broker</small></div></div>
+          <div class="row mark" style="padding:4mm 3.5mm;margin:0 1.5mm"><div class="ico" style="background:#1565c0"></div><div><b>Accedi a un conto esistente</b><small>Hai già login e password</small></div></div>
+          <div class="tapin">Scegli questa</div>
+        </div>
+      </div>
+      <p style="text-align:center;font-size:10pt;color:#667;margin-top:2mm">Android e iPhone: scelta del tipo di conto</p>
+    </div>
+  </div>
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>5</span></div>
+</section>
+
+<!-- ============ PASSO 4 ============ -->
+<section class="page">
+  <h2><span class="n">4</span>Cerca il broker e scegli il server</h2>
+  <div class="step">
+    <div class="txt">
+      <ol>
+        <li>Nella barra di ricerca in alto scrivi il <b>nome del broker</b> (oppure direttamente il nome del server che hai nell'email).</li>
+        <li>Compare un elenco: tocca il nome del broker.</li>
+        <li>Se vedi più server, tocca quello <b>identico</b> a quello dell'email (es. <span class="pill">NomeBroker-Live</span>).</li>
+      </ol>
+      <div class="tip"><b>Non trovi il broker?</b><br>
+        &bull; Controlla di averlo scritto bene (prova anche solo la prima parola).<br>
+        &bull; Prova a scrivere il nome completo del server, esattamente come nell'email.<br>
+        &bull; Controlla di essere connesso a internet.</div>
+      <div class="warn"><b>Demo o Live?</b> Se il tuo conto è reale, <b>non</b> scegliere un server con scritto "Demo".</div>
+    </div>
+    <div class="phone">
+      <div class="scr">
+        <div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>5G</span></div>
+        <div class="topbar"><span>&#8592;</span><span>Trova il broker</span></div>
+        <div class="search" style="border:1.5px solid #1565c0;background:#fff;color:#222">&#x2315;&nbsp; NomeBroker<span style="color:#1565c0">|</span></div>
+        <div class="row"><div class="ico" style="background:#ffd54f"></div><div><b>NomeBroker Ltd</b><small>3 server</small></div></div>
+        <div class="row" style="padding-left:12mm"><div><b>NomeBroker-Demo</b><small>Conti demo</small></div></div>
+        <div class="row mark" style="padding-left:12mm;background:#e3eefc;margin:0 1.5mm"><div><b>NomeBroker-Live</b><small>Conti reali</small></div></div>
+        <div class="row" style="padding-left:12mm"><div><b>NomeBroker-Live2</b><small>Conti reali</small></div></div>
+        <div class="tapin">Quello scritto nell'email</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>6</span></div>
+</section>
+
+<!-- ============ PASSO 5 ============ -->
+<section class="page">
+  <h2><span class="n">5</span>Inserisci login e password</h2>
+  <div class="step">
+    <div class="txt">
+      <ol>
+        <li>Nel campo <b>Login</b> scrivi il <b>numero del conto</b> (solo numeri).</li>
+        <li>Nel campo <b>Password</b> scrivi la password. Attenzione a maiuscole/minuscole e a non lasciare spazi in fondo.</li>
+        <li>Controlla che il <b>Server</b> mostrato sia quello giusto.</li>
+        <li>Lascia attivo <b>Salva password</b>, così non dovrai riscriverla ogni volta.</li>
+        <li>Tocca <b>Accedi</b> (Android) oppure <b>Login / Entra</b> (iPhone).</li>
+      </ol>
+      <div class="tip"><b>Trucco:</b> se copi la password dall'email, a volte viene copiato anche uno spazio in fondo che la rende sbagliata. Se non entra, prova a scriverla a mano.</div>
+      <div class="warn"><b>Password "investor".</b> Alcuni broker danno due password: quella <b>principale</b> (per operare) e quella <b>investor</b> (solo per guardare). Con la password investor entri, ma non puoi aprire ordini.</div>
+    </div>
+    <div class="phone">
+      <div class="scr">
+        <div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>5G</span></div>
+        <div class="topbar"><span>&#8592;</span><span>Accedi al conto</span></div>
+        <div class="row" style="border:none"><div class="ico" style="background:#ffd54f"></div><div><b>NomeBroker Ltd</b><small>NomeBroker-Live</small></div></div>
+        <div class="field mark"><label>Login</label><div class="num">51234567</div></div>
+        <div class="field mark"><label>Password</label><div>&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;</div></div>
+        <div class="field"><label>Server</label><div>NomeBroker-Live</div></div>
+        <div style="margin:3mm 3.5mm;font-size:8.5pt"><span class="check">&#10003;</span>Salva password</div>
+        <div class="btn mark" style="margin-top:5mm">ACCEDI</div>
+        <div class="tapin">Poi tocca qui</div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>7</span></div>
+</section>
+
+<!-- ============ PASSO 6 ============ -->
+<section class="page">
+  <h2><span class="n">6</span>Controlla di essere entrato</h2>
+  <div class="step">
+    <div class="txt">
+      <p>Se tutto è andato bene, dopo qualche secondo:</p>
+      <ol>
+        <li>Nella barra in basso tocca <b>Trade</b> (o <b>Operazioni</b>).</li>
+        <li>In alto devi vedere <b>Saldo</b> (Balance), <b>Equity</b> e <b>Margine libero</b> con le cifre del tuo conto.</li>
+        <li>In <b>Gestisci conti</b> / <b>Impostazioni</b> il tuo conto appare con il numero di login e il nome del server.</li>
+      </ol>
+      <div class="ok"><b>Fatto!</b> Sei dentro al tuo conto. La prossima volta che apri l'app entrerai in automatico.</div>
+      <h3 style="font-size:13pt;margin:7mm 0 1mm;color:#0b3d91">Vuoi vedere l'oro (XAUUSD)?</h3>
+      <ol>
+        <li>Tocca <b>Quotazioni</b> nella barra in basso.</li>
+        <li>Tocca il <b>+</b> in alto e cerca <span class="pill">XAUUSD</span> (o <span class="pill">GOLD</span>: dipende dal broker, a volte con una lettera in fondo, es. XAUUSD-E).</li>
+        <li>Tocca il simbolo per aggiungerlo all'elenco.</li>
+      </ol>
+    </div>
+    <div class="phone">
+      <div class="scr">
+        <div class="notch"></div>
+        <div class="sbar"><span>9:41</span><span>5G</span></div>
+        <div class="topbar"><span style="flex:1">Trade</span><span style="font-weight:normal">&#8645;</span></div>
+        <div class="mark" style="padding:2mm 3mm;line-height:1.9;font-size:8.5pt;margin:2mm 2mm 0">
+          <div style="display:flex;justify-content:space-between"><span>Saldo:</span><b class="num">1 000.00</b></div>
+          <div style="display:flex;justify-content:space-between"><span>Equity:</span><b class="num">1 000.00</b></div>
+          <div style="display:flex;justify-content:space-between"><span>Margine libero:</span><b class="num">1 000.00</b></div>
+        </div>
+        <div class="tapin">Le cifre del tuo conto</div>
+        <div style="margin-top:2mm;background:#f3f5f8;padding:1.5mm 3.5mm;font-size:7.5pt;color:#667;font-weight:bold">Posizioni</div>
+        <div style="padding:5mm 3.5mm;color:#999;text-align:center;font-size:8pt">Nessuna posizione aperta</div>
+        <div class="tabs">
+          <div><b></b>Quotazioni</div><div><b></b>Grafici</div><div class="on mark" style="padding:.5mm 1mm"><b></b>Trade</div><div><b></b>Storico</div><div><b></b>Impost.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>8</span></div>
+</section>
+
+<!-- ============ PROBLEMI ============ -->
+<section class="page faq">
+  <h2>Se qualcosa non funziona</h2>
+  <p class="lead">I problemi più comuni alla prima connessione e come risolverli.</p>
+
+  <h3>"Conto non valido" / "Invalid account"</h3>
+  <p>Quasi sempre è il <b>server sbagliato</b> (es. hai scelto <i>-Live</i> invece di <i>-Live2</i>, o un server <i>Demo</i>). Torna al passo 4 e scegli il server esattamente come scritto nell'email. Controlla anche di aver scritto bene il numero di login.</p>
+
+  <h3>"Password errata" / "Invalid password"</h3>
+  <p>Riscrivi la password <b>a mano</b>, facendo attenzione a maiuscole/minuscole e a spazi in fondo. Se ancora non va, chiedi al broker di reimpostarla.</p>
+
+  <h3>In basso a destra c'è scritto "Nessuna connessione"</h3>
+  <p>Controlla internet (prova ad aprire un sito). Poi chiudi completamente l'app e riaprila. Se il server è giusto ma resta scollegato, aspetta qualche minuto: a volte il broker fa manutenzione (soprattutto nel weekend).</p>
+
+  <h3>Entro, ma non riesco ad aprire ordini</h3>
+  <p>Probabilmente hai usato la password <b>investor</b> (sola lettura). Rientra con la password <b>principale</b>. Ricorda anche che nel weekend i mercati sono chiusi e non si possono aprire operazioni.</p>
+
+  <h3>Vedo il saldo a zero o un saldo che non è il mio</h3>
+  <p>Forse sei entrato in un <b>conto demo</b> creato automaticamente. Vai in <b>Gestisci conti</b> / <b>Impostazioni</b> e tocca il conto con il tuo numero di login.</p>
+
+  <h3>Non trovo l'oro (XAUUSD) tra le quotazioni</h3>
+  <p>Ogni broker lo chiama in modo un po' diverso: prova a cercare <b>XAU</b> o <b>GOLD</b>.</p>
+
+  <div class="tip" style="margin-top:8mm">Se dopo questi controlli non riesci ancora ad entrare, scrivi a chi ti ha aperto il conto indicando <b>il numero di login</b>, <b>il server che hai scelto</b> e <b>il messaggio di errore</b> che vedi (puoi mandare uno screenshot, ma <b>senza la password</b>).</div>
+
+  <div class="foot"><span>Guida MetaTrader 5 da telefono</span><span>9</span></div>
+</section>
+
+</body>
+</html>
